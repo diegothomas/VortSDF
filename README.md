@@ -8,7 +8,7 @@ Official implementation of ***VortSDF paper***
 <sup>2</sup> INRIA Rhone Alpes, Grenoble, France<br>
 <sup>3</sup> Meta, Zurich, Swiss<br>
 
-![method overview](https://qu365-my.sharepoint.com/:u:/r/personal/thomas_gabriel_francis_diego_691_m_kyushu-u_ac_jp/Documents/CVT-INRIA/Teaser.svg?csf=1&web=1&e=v3LOoy)<br>
+![method overview](https://github.com/diegothomas/VortSDF/tree/main/Resources/Images/Teaser.svg)<br>
 The input to VortSDF is a sequence of multi-view color images with known camera poses. VortSDF reconstructs detailed 3D surfaces with using Centroidal Voronoi Tessellation that adapts to the reconstructed geometry.<br>
 
 [![demo blender lego (sparse)]()]()
