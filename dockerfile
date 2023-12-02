@@ -35,7 +35,11 @@ RUN git clone https://github.com/PyMesh/PyMesh.git && cd PyMesh && git submodule
 
 RUN pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 pykdtree pyembree # for 11.7
 
-RUN pip install -r requirements.txt 
+RUN git config --global user.name "diegothomas"
+RUN git config --global github.token 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
+
+RUN git clone https://github.com/diegothomas/VortSDF.git && cd VortSDF && pip install -r requirements.txt 
+
 RUN pip install scikit-image human_body_prior
 RUN apt install -y python-opengl ninja-build
 
