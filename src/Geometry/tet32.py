@@ -3,10 +3,11 @@ import open3d as o3d
 import numpy as np
 import sys
 from timeit import default_timer as timer 
-sys.path.append('/VortSDF/')
+sys.path.append('/root/VortSDF/')
 import src.IO.ply as ply
 
-import tet_utils
+from torch.utils.cpp_extension import load
+tet_utils = load('tet_utils', ['src/Geometry/tet_utils.cpp'], verbose=True)
 
 def get_faces_list_from_tetrahedron(tetrahedron):
     """
