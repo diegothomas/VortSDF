@@ -56,7 +56,7 @@ class Runner:
         ##### 2. Initialize SDF field    
         if not hasattr(self, 'sdf'):
             norm_sites = torch.linalg.norm(sites, ord=2, axis=-1, keepdims=True)
-            self.sdf = norm_sites[:,0] - 0.5 #norm_sites[:,0]**2 - 50.0**2    
+            self.sdf = norm_sites[:,0] - 0.5
             self.sdf = self.sdf.contiguous()
             self.sdf.requires_grad_(True)
         
