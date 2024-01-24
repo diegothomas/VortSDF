@@ -57,17 +57,18 @@ class Tet32:
         KDtree = o3d.geometry.KDTreeFlann(point_cloud)
         print('KDTreeFlann time:', timer() - start)    
 
-        o3d_mesh, _ = o3d.geometry.TetraMesh.create_from_point_cloud(point_cloud)
+        self.o3d_mesh, _ = o3d.geometry.TetraMesh.create_from_point_cloud(point_cloud)
         
-        self.vertices = o3d_mesh.vertices
-        self.tetras = o3d_mesh.tetras
+        self.vertices = self.o3d_mesh.vertices
+        self.tetras = self.o3d_mesh.tetras
 
         ## 4 values for indices of summits
-        self.summits = np.asarray(self.tetras)
-        self.nb_tets = self.summits.shape[0]
+        self.nb_tets = np.asarray(self.tetras).shape[0]
+
+        self.summits = np.zeros([self.nb_tets, 4], dtype = np.int32)
+        self.summits[:,] = np.asarray(self.tetras)[:,:]
 
         print("nb tets: ", self.nb_tets)
-        return
 
         ## 4 values for indices of neighbors
 
@@ -101,12 +102,15 @@ class Tet32:
 
         print("Neighboors computed")
 
-        values = np.tile(np.array([1.]),len(sites))
-        tri_mesh = o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(values),1.)
+
+    def surface_from_sdf(self, values, filename = ""):
+        print(values.shape)
+        tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(values.astype(np.float64)),0.0)
         print(tri_mesh)
         self.tri_vertices = np.asarray(tri_mesh.vertices)
         self.tri_faces = np.asarray(tri_mesh.triangles)
-
+        if not filename == "":
+            ply.save_ply(filename, np.asarray(self.tri_vertices).transpose(), f=(np.asarray(self.tri_faces)).transpose())
 
 
     def save(self, filename):
@@ -116,7 +120,6 @@ class Tet32:
                 curr_face = list(x)
                 if len(curr_face) == 3:
                     faces_list.append(curr_face)
-        print(np.asarray(faces_list).shape)
 
         ply.save_ply(filename, np.asarray(self.vertices).transpose(), f=(np.asarray(faces_list)).transpose())
 

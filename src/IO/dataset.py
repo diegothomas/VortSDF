@@ -9,7 +9,7 @@ from scipy.spatial.transform import Rotation as Rot
 from scipy.spatial.transform import Slerp
 import scipy.ndimage as ndimage
 import matplotlib.pyplot as plt
-from Confs.VisHull import Load_Visual_Hull
+from src.Confs.VisHull import Load_Visual_Hull
 import cv2
 import imageio
 
@@ -514,10 +514,7 @@ class Dataset:
         mask = (self.masks[img_idx][(pixels[1,:], pixels[0,:])]).cuda() 
 
         return z_buff, pixels, img_idx, torch.cat([rays_o, rays_v, color, mask], dim=-1)
-
-
-
-            
+  
 
     def gen_rays_at(self, img_idx, resolution_level=1):
         """
