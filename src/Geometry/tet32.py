@@ -7,7 +7,10 @@ sys.path.append('/root/VortSDF/')
 import src.IO.ply as ply
 
 from torch.utils.cpp_extension import load
-tet_utils = load('tet_utils', ['src/Geometry/tet_utils.cpp'], verbose=True)
+tet32_march_cuda = load(
+    'tet32_march_cuda', ['src/Cuda/tet32_march_cuda.cpp', 'src/Cuda/tet32_march_cuda.cu'], verbose=True)
+#help(cvt_march_cuda)
+
 
 def get_faces_list_from_tetrahedron(tetrahedron):
     """
@@ -100,6 +103,8 @@ class Tet32:
             # make last summit index as xor 
             self.summits[i,3] = self.summits[i,0] ^ self.summits[i,1] ^ self.summits[i,2] ^ self.summits[i,3] 
 
+        self.summits = torch.from_numpy(self.summits).float().cuda()
+        self.sites = torch.from_numpy(np.asarray(self.vertices)).float().cuda()
         print("Neighboors computed")
 
 
@@ -124,10 +129,14 @@ class Tet32:
         ply.save_ply(filename, np.asarray(self.vertices).transpose(), f=(np.asarray(faces_list)).transpose())
 
 
+    ## Sample points along a ray at the faces of Tet32 structure
+    def sample_rays_cuda(self, cam_id, ray_o, ray_d, sdf, in_z, in_sdf, in_ids, offset, nb_samples = 256):
+        nb_rays = ray_d.shape[0]
+        nb_samples = tet32_march_cuda.tet32_march(nb_rays, cam_id, nb_samples, ray_o, ray_d, self.sites, self.summits, sdf, in_z, in_sdf, in_ids, offset)
 
+        return nb_samples
 
 if __name__=='__main__':
-    tet_utils.helloworld()
     visual_hull = [-1, -1, -1, 1, 1, 1]
     import sampling as sampler
     sites = sampler.sample_Bbox(visual_hull[0:3], visual_hull[3:6], 16, perturb_f =  visual_hull[3]*0.005) 

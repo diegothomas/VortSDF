@@ -231,38 +231,8 @@ class Dataset:
             print("unknown datatype")
             exit()
 
-        
-        # smooth images
-        """self.images_np_smooth = []
-        self.masks_np_smooth = []
-        if res > 1:
-            H, W = self.images_np[0].shape[0], self.images_np[0].shape[1]
-            H, W = int(H / res), int(W / res)
-            for i in range(self.n_images):                
-                self.images_np_smooth.append(cv2.resize(self.images_np[i], (W,H), interpolation = cv2.INTER_AREA))# F.interpolate(torch.from_numpy(self.images_np[i]).permute(0,1,2), size=(H, W)).permute(0,1,2).numpy()
-                self.masks_np_smooth.append(cv2.resize(self.masks_np[i], (W,H), interpolation = cv2.INTER_AREA)) #F.interpolate(torch.from_numpy(self.masks_np[i]).permute(0,1,2), size=(H, W)).permute(0,1,2).numpy()
-                self.intrinsics_all[i][:2] = self.intrinsics_all[i][:2] / res
-            self.images_np_smooth = np.stack(self.images_np_smooth)
-            self.masks_np_smooth  = np.stack(self.masks_np_smooth)
-        else:"""
-        self.images_np_smooth = self.images_np
-        self.masks_np_smooth = self.masks_np
-
-        #for i in range(self.n_images):
-        #    self.images_np[i] = ndimage.gaussian_filter(self.images_np[i], sigma=(res, res, 0), order=0)
-        #    self.images_np_smooth.append(ndimage.gaussian_filter(self.images_np[i], sigma=(5, 5, 0), order=0))            
-        #    plt.imshow(self.masks_np[i], interpolation='nearest')
-        #    plt.show()
-        #    plt.imshow(self.images_np[i], interpolation='nearest')
-        #    plt.show()
-        #    plt.imshow(self.images_np_smooth[i], interpolation='nearest')
-        #    plt.show()"""
-        #self.images_np_smooth = np.stack(self.images_np_smooth)
-
-        self.images = torch.from_numpy(self.images_np_smooth.astype(np.float32)).cpu()  # [n_images, H, W, 3]
-        self.images_smooth = torch.from_numpy(self.images_np_smooth.astype(np.float32)).cpu()  # [n_images, H, W, 3]
-        #self.images_smooth = torch.from_numpy(self.images_np_smooth.astype(np.float32)).cpu()  # [n_images, H, W, 3]
-        self.masks  = torch.from_numpy(self.masks_np_smooth.astype(np.float32)).cpu()   # [n_images, H, W, 3]
+        self.images = torch.from_numpy(self.images_np.astype(np.float32)).cpu()  # [n_images, H, W, 3]
+        self.masks  = torch.from_numpy(self.masks_np.astype(np.float32)).cpu()   # [n_images, H, W, 3]
         self.intrinsics_all = torch.stack(self.intrinsics_all).to(self.device)   # [n_images, 4, 4]
         self.intrinsics_all_inv = torch.inverse(self.intrinsics_all)  # [n_images, 4, 4]
         self.focal = self.intrinsics_all[0][0, 0]
@@ -273,9 +243,6 @@ class Dataset:
         self.image_pixels = self.H * self.W
 
         print('Load data: End')
-
-        #self.save_dataset(data_name)
-        #exit()
 
     def save_dataset(self, data_name):
         self.render_cameras_name = self.data_dir + 'intrinsics.txt'
@@ -653,9 +620,7 @@ class Dataset:
         pixels_y[pixels_y > self.H-1] = self.H-1
 
         color = self.images[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
-        color_smooth = self.images_smooth[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
         mask = self.masks[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
-        z_buff = self.z_buff[img_idx][(pixels_y, pixels_x)]      # batch_size, 9
 
         pixels_x_f = pixels_x.float() + torch.rand(pixels_x.shape)-0.5
         pixels_y_f = pixels_y.float() + torch.rand(pixels_y.shape)-0.5
@@ -664,7 +629,7 @@ class Dataset:
         rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)    # batch_size, 3
         rays_v = torch.matmul(self.pose_all[img_idx, None, :3, :3], rays_v[:, :, None]).squeeze()  # batch_size, 3
         rays_o = self.pose_all[img_idx, None, :3, 3].expand(rays_v.shape) # batch_size, 3
-        return z_buff, pixels_x, pixels_y, torch.cat([rays_o.cpu(), rays_v.cpu(), color, color_smooth, mask[:, :1]], dim=-1).cuda()     # batch_size, 10
+        return torch.cat([rays_o.cpu(), rays_v.cpu(), color, mask[:, :1]], dim=-1).cuda()     # batch_size, 10
     
     def gen_random_rays_zbuff_topk_at(self, conf_map, img_idx, batch_size):
         """
