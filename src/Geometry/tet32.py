@@ -103,9 +103,45 @@ class Tet32:
             # make last summit index as xor 
             self.summits[i,3] = self.summits[i,0] ^ self.summits[i,1] ^ self.summits[i,2] ^ self.summits[i,3] 
 
-        self.summits = torch.from_numpy(self.summits).float().cuda()
+        self.summits = torch.from_numpy(self.summits).int().cuda()
         self.sites = torch.from_numpy(np.asarray(self.vertices)).float().cuda()
         print("Neighboors computed")
+
+
+
+
+    ## Make adjacencies for cameras
+    def make_adjacencies(self, cam_ids):
+        cam_tets = [[] for _ in range(cam_ids.shape[0])]
+
+        summ_cpu = self.summits.cpu().numpy()
+        for i, _ in enumerate(self.tetras):
+            if summ_cpu[i,0] in cam_ids:
+                tet_id = np.where(summ_cpu[i,0] == cam_ids)[0][0]
+                cam_tets[tet_id].append(i)
+            if summ_cpu[i,1] in cam_ids:
+                tet_id = np.where(summ_cpu[i,1] == cam_ids)[0][0]
+                cam_tets[tet_id].append(i)
+            if summ_cpu[i,2] in cam_ids:
+                tet_id = np.where(summ_cpu[i,2] == cam_ids)[0][0]
+                cam_tets[tet_id].append(i)
+            if summ_cpu[i,0] ^ summ_cpu[i,1] ^ summ_cpu[i,2] ^ summ_cpu[i,3] in cam_ids:
+                tet_id = np.where(summ_cpu[i,0] ^ summ_cpu[i,1] ^ summ_cpu[i,2] ^ summ_cpu[i,3] == cam_ids)[0][0]
+                cam_tets[tet_id].append(i)
+            
+        self.offsets_cam = np.zeros(cam_ids.shape[0])
+        self.cam_tets = []
+        offset_curr = 0
+        for i in range(cam_ids.shape[0]):
+            self.cam_tets = self.cam_tets + cam_tets[i]
+            offset_curr = offset_curr + len(cam_tets[i])
+            self.offsets_cam[i] = offset_curr
+
+        self.cam_tets = np.stack(self.cam_tets)
+
+        self.offsets_cam = torch.from_numpy(self.offsets_cam).int().cuda()
+        self.cam_tets = torch.from_numpy(self.cam_tets).int().cuda()
+
 
 
     def surface_from_sdf(self, values, filename = ""):
@@ -130,9 +166,9 @@ class Tet32:
 
 
     ## Sample points along a ray at the faces of Tet32 structure
-    def sample_rays_cuda(self, cam_id, ray_o, ray_d, sdf, in_z, in_sdf, in_ids, offset, nb_samples = 256):
+    def sample_rays_cuda(self, cam_id, ray_d, sdf, cam_ids, in_z, in_sdf, in_ids, offset, nb_samples = 256):
         nb_rays = ray_d.shape[0]
-        nb_samples = tet32_march_cuda.tet32_march(nb_rays, cam_id, nb_samples, ray_o, ray_d, self.sites, self.summits, sdf, in_z, in_sdf, in_ids, offset)
+        nb_samples = tet32_march_cuda.tet32_march(nb_rays, nb_samples, cam_id, ray_d, self.sites, sdf, self.summits, sdf, cam_ids, self.offsets_cam, self.cam_tets, in_z) #, in_sdf, in_ids, offset)
 
         return nb_samples
 

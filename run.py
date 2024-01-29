@@ -44,6 +44,9 @@ class Runner:
         
         # Training parameters
         self.end_iter = self.conf.get_int('train.end_iter')
+        self.n_samples = self.conf.get_int('model.cvt_renderer.n_samples')
+        self.batch_size = self.conf.get_int('train.batch_size')
+
 
 
     def train(self, data_name, verbose = True):
@@ -64,6 +67,7 @@ class Runner:
 
             sites = np.asarray(self.tet32.vertices)  
             cam_ids = np.stack([np.where((sites == cam_sites[i,:]).all(axis = 1))[0] for i in range(cam_sites.shape[0])]).reshape(-1)
+            self.tet32.make_adjacencies(cam_ids)
             
             outside_flag = np.zeros(sites.shape[0], np.int32)
             outside_flag[sites[:,0] < visual_hull[0] + (visual_hull[2]-visual_hull[0])/(2*res)] = 1
@@ -93,13 +97,14 @@ class Runner:
         self.s_start = 0.1
         self.inv_s = 0.1
         image_perm = self.get_image_perm()
+        num_rays = 512
         for iter_step in tqdm(range(self.end_iter)):
             img_idx = image_perm[iter_step % len(image_perm)] 
             self.inv_s = min(self.s_max, iter_step/self.R + self.s_start)
 
             ## Generate rays
-            data = self.dataset.gen_random_rays_zbuff_at(img_idx, 512, 0)  
-            rays_o, rays_d_batch, true_rgb_batch, mask_batch = data[:, :3], data[:, 3: 6], data[:, 6: 9], data[:, 9: 10]
+            data = self.dataset.gen_random_rays_zbuff_at(img_idx, num_rays, 0)  
+            rays_o, rays_d, true_rgb_batch, mask_batch = data[:, :3], data[:, 3: 6], data[:, 6: 9], data[:, 9: 10]
 
             rays_o = rays_o.reshape(-1, 3)
             rays_d = rays_d.reshape(-1, 3)
@@ -114,9 +119,8 @@ class Runner:
             ## sample points along the rays
             start = timer()
             self.offsets[:] = 0
-            nb_samples = self.tet32.sample_rays_cuda(img_idx, rays_o, rays_d, self.sdf, 
-                                                   self.in_z, self.in_sdf, self.in_ids, 
-                                                   self.offsets, nb_samples = self.n_samples)
+            nb_samples = self.tet32.sample_rays_cuda(img_idx, rays_d, self.sdf, cam_ids, self.in_z, self.in_sdf, self.out_ids, self.offsets)            
+
             if verbose:
                 print('CVT_Sample time:', timer() - start)    
 
