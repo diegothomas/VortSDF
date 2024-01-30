@@ -88,7 +88,7 @@ class Tet32:
         print("Faces adjacencies computed")
 
         # second iterate over all tetrahedron and get neighbors from faces
-        self.neighbors = torch.zeros([self.nb_tets, 4], dtype = torch.int32).cuda().contiguous()
+        self.neighbors = -torch.ones([self.nb_tets, 4], dtype = torch.int32).cuda().contiguous()
 
         for i, tetrahedron in enumerate(self.tetras):
             faces = get_faces_from_tetrahedron(tetrahedron)
@@ -166,9 +166,14 @@ class Tet32:
 
 
     ## Sample points along a ray at the faces of Tet32 structure
-    def sample_rays_cuda(self, cam_id, ray_d, sdf, cam_ids, in_z, in_sdf, in_ids, offset, nb_samples = 256):
+    def sample_rays_cuda(self, cam_id, ray_d, sdf, cam_ids, weights, in_z, in_sdf, in_ids, offset, nb_samples = 256):
+        #ply.save_ply("Exp/bmvs_man/cam.ply", (self.sites[cam_ids[cam_id]]).reshape(1,3).cpu().numpy().transpose())
         nb_rays = ray_d.shape[0]
-        nb_samples = tet32_march_cuda.tet32_march(nb_rays, nb_samples, cam_id, ray_d, self.sites, sdf, self.summits, sdf, cam_ids, self.offsets_cam, self.cam_tets, in_z) #, in_sdf, in_ids, offset)
+        nb_samples = tet32_march_cuda.tet32_march(nb_rays, nb_samples, cam_id, ray_d, self.sites, sdf, self.summits, self.neighbors,
+                                                  cam_ids, self.offsets_cam, self.cam_tets, weights, in_z, in_sdf, 
+                                                  in_ids, offset)
+        #for i in range(nb_rays):
+        #    print(in_ids[3*nb_samples*i], ", ", in_ids[3*nb_samples*i + 1] , ", ", in_ids[3*nb_samples*i + 2])
 
         return nb_samples
 

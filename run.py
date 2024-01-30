@@ -11,6 +11,12 @@ from src.IO.dataset import Dataset
 from pyhocon import ConfigFactory
 from tqdm import tqdm
 from timeit import default_timer as timer 
+import matplotlib
+import matplotlib.pyplot as plt
+
+from torch.utils.cpp_extension import load
+tet32_march_cuda = load(
+    'tet32_march_cuda', ['src/Cuda/tet32_march_cuda.cpp', 'src/Cuda/tet32_march_cuda.cu'], verbose=True)
 
 class Runner:
     def __init__(self, conf_path, data_name, mode='train', is_continue=False, checkpoint = ''):
@@ -55,7 +61,7 @@ class Runner:
             ##### 2. Load initial sites
             visual_hull = [-1.0, -1.0, -1.0, 1.0, 1.0, 1.0]
             import src.Geometry.sampling as sampler
-            res = 16
+            res = 8
             sites = sampler.sample_Bbox(visual_hull[0:3], visual_hull[3:6], res, perturb_f =  (visual_hull[3] - visual_hull[0])*0.1)
             
             #### Add cameras as sites 
@@ -68,6 +74,8 @@ class Runner:
             sites = np.asarray(self.tet32.vertices)  
             cam_ids = np.stack([np.where((sites == cam_sites[i,:]).all(axis = 1))[0] for i in range(cam_sites.shape[0])]).reshape(-1)
             self.tet32.make_adjacencies(cam_ids)
+
+            cam_ids = torch.from_numpy(cam_ids).int().cuda()
             
             outside_flag = np.zeros(sites.shape[0], np.int32)
             outside_flag[sites[:,0] < visual_hull[0] + (visual_hull[2]-visual_hull[0])/(2*res)] = 1
@@ -99,7 +107,7 @@ class Runner:
         image_perm = self.get_image_perm()
         num_rays = 512
         for iter_step in tqdm(range(self.end_iter)):
-            img_idx = image_perm[iter_step % len(image_perm)] 
+            img_idx = 0 #image_perm[iter_step % len(image_perm)].item() 
             self.inv_s = min(self.s_max, iter_step/self.R + self.s_start)
 
             ## Generate rays
@@ -119,26 +127,76 @@ class Runner:
             ## sample points along the rays
             start = timer()
             self.offsets[:] = 0
-            nb_samples = self.tet32.sample_rays_cuda(img_idx, rays_d, self.sdf, cam_ids, self.in_z, self.in_sdf, self.out_ids, self.offsets)            
-
+            nb_samples = self.tet32.sample_rays_cuda(img_idx, rays_d, self.sdf, cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_ids, self.offsets)    
             if verbose:
                 print('CVT_Sample time:', timer() - start)    
+                
+            start = timer()
+            self.samples[:] = 0.0
+            tet32_march_cuda.fill_samples(rays_o.shape[0], self.n_samples, rays_o, rays_d, self.tet32.sites, 
+                                        self.in_z, self.in_sdf, self.in_weights, self.in_ids, 
+                                        self.out_z, self.out_sdf, self.out_weights, self.out_ids, 
+                                        self.offsets, self.samples, self.samples_loc, self.samples_rays)
+            if verbose:
+                print('fill_samples time:', timer() - start)   
 
 
+            if True: 
+                #pts = self.samples[:nb_samples,:].cpu()
+                norm = matplotlib.colors.Normalize(vmin=-0.3, vmax=0.3 , clip = False)
+                sdf_rgb = plt.cm.jet(norm(self.out_sdf[:,0].cpu())).astype(np.float32)
+                print("NB rays == ", rays_o.shape[0])
+                print("img_idx == ", img_idx)
+                print("nb_samples == ", nb_samples)
+                """sdf_samp = torch.zeros((rays_o.shape[0]*256, 3)).cuda()
+                for i in range(rays_o.shape[0]):
+                    for j in range(256):
+                        sdf_samp[i*256+j, :] = rays_o[i,:] + self.in_z[2*i*256+2*j]*rays_d[i,:]"""
+                """colors_samples = torch.zeros_like(pts)
+                for i in range(rays_o.shape[0]):                            
+                    start = self.offsets[2*i]
+                    end = self.offsets[2*i+1]
+                    for j in range(start, start+end-1):
+                        colors_samples[j,:] = true_rgb[i,:]"""
+                ply.save_ply("Exp/bmvs_man/samples.ply", np.transpose(self.samples[:nb_samples,:].cpu()), col = 255*np.transpose(sdf_rgb))
+                #ply.save_ply("TMP/meshes/samples_"+str(self.iter_step).zfill(5)+".ply", np.transpose(pts.cpu()), col = 255*np.transpose(sdf_rgb))
+                #print("nb samples: ", nb_samples)
+                input()
+
+            """samples = self.samples[:nb_samples,:]
+            samples = samples.contiguous()
+
+            ##### ##### ##### ##### ##### ##### 
+            xyz_emb = (samples.unsqueeze(-1) * self.posfreq).flatten(-2)
+            xyz_emb = torch.cat([samples, xyz_emb.sin(), xyz_emb.cos()], -1)
+
+            ##### ##### ##### ##### ##### ##### ##### 
+            # Build fine features
+            fine_features = self.fine_features[self.out_ids[:nb_samples, 1]]
+
+            rgb_fine_feat = torch.cat([xyz_emb, fine_features], -1)
+            rgb_fine_feat.requires_grad_(True)
+            rgb_fine_feat.retain_grad()
+
+            self.colors_fine = torch.sigmoid(self.color_fine_network.rgb(rgb_fine_feat)) 
+            self.colors_fine = self.colors_fine.contiguous()"""
 
             print("DONE")
             input()
 
 
-    def Allocate_batch_data(self):
-        self.samples = torch.zeros([self.n_samples * self.batch_size, 2], dtype=torch.float32).cuda()
+    def Allocate_batch_data(self, K_NN = 8):
+        self.samples = torch.zeros([self.n_samples * self.batch_size, 3], dtype=torch.float32).cuda()
         self.samples = self.samples.contiguous()
         
-        self.samples_loc = torch.zeros([self.n_samples * self.batch_size, 2], dtype=torch.float32).cuda()
+        self.samples_loc = torch.zeros([self.n_samples * self.batch_size, 3], dtype=torch.float32).cuda()
         self.samples_loc = self.samples_loc.contiguous()
         
-        self.samples_rays = torch.zeros([self.n_samples * self.batch_size, 2], dtype=torch.float32).cuda()
+        self.samples_rays = torch.zeros([self.n_samples * self.batch_size, 3], dtype=torch.float32).cuda()
         self.samples_rays = self.samples_rays.contiguous()
+        
+        self.in_weights = torch.zeros([2*(K_NN+1)*self.n_samples * self.batch_size], dtype=torch.float32).cuda()
+        self.in_weights = self.in_weights.contiguous()
 
         self.in_ids = -torch.ones([3*self.n_samples* self.batch_size], dtype=torch.int32).cuda()
         self.in_ids = self.in_ids.contiguous()
@@ -157,6 +215,9 @@ class Runner:
         
         self.out_sdf = torch.zeros([2*self.n_samples * self.batch_size], dtype=torch.float32).cuda()
         self.out_sdf = self.out_sdf.contiguous()
+        
+        self.out_weights = torch.zeros([2*(K_NN+1)*self.n_samples * self.batch_size], dtype=torch.float32).cuda()
+        self.out_weights = self.out_weights.contiguous()
         
         self.offsets = torch.zeros([2*self.batch_size], dtype=torch.int32).cuda()
         self.offsets = self.offsets.contiguous()
