@@ -185,7 +185,7 @@ class Runner:
             input()
 
 
-    def Allocate_batch_data(self, K_NN = 8):
+    def Allocate_batch_data(self, K_NN = 24):
         self.samples = torch.zeros([self.n_samples * self.batch_size, 3], dtype=torch.float32).cuda()
         self.samples = self.samples.contiguous()
         
@@ -213,7 +213,7 @@ class Runner:
         self.out_z = torch.zeros([self.n_samples * self.batch_size], dtype=torch.float32).cuda()
         self.out_z = self.out_z.contiguous()
         
-        self.out_sdf = torch.zeros([2*self.n_samples * self.batch_size], dtype=torch.float32).cuda()
+        self.out_sdf = torch.zeros([self.n_samples * self.batch_size, 2], dtype=torch.float32).cuda()
         self.out_sdf = self.out_sdf.contiguous()
         
         self.out_weights = torch.zeros([2*(K_NN+1)*self.n_samples * self.batch_size], dtype=torch.float32).cuda()

@@ -5,6 +5,7 @@ import sys
 from timeit import default_timer as timer 
 sys.path.append('/root/VortSDF/')
 import src.IO.ply as ply
+import scipy.spatial
 
 from torch.utils.cpp_extension import load
 tet32_march_cuda = load(
@@ -49,17 +50,13 @@ def get_faces_from_tetrahedron(tetrahedron):
 ## Implements the 32 bits tetrahedral mesh data structure
 class Tet32:
     ## sites must be a (n,3) numpy array
-    def __init__(self, sites):
+    def __init__(self, sites, KNN = 24):
         self.device = torch.device('cuda')
 
         ## Build the tetrahedral mesh from the sites
         point_cloud = o3d.geometry.PointCloud()
         point_cloud.points = o3d.utility.Vector3dVector(sites)
         
-        start = timer()
-        KDtree = o3d.geometry.KDTreeFlann(point_cloud)
-        print('KDTreeFlann time:', timer() - start)    
-
         self.o3d_mesh, _ = o3d.geometry.TetraMesh.create_from_point_cloud(point_cloud)
         
         self.vertices = self.o3d_mesh.vertices
@@ -104,8 +101,20 @@ class Tet32:
             self.summits[i,3] = self.summits[i,0] ^ self.summits[i,1] ^ self.summits[i,2] ^ self.summits[i,3] 
 
         self.summits = torch.from_numpy(self.summits).int().cuda()
-        self.sites = torch.from_numpy(np.asarray(self.vertices)).float().cuda()
+        self.sites = np.asarray(self.vertices)
         print("Neighboors computed")
+        
+        start = timer()
+        self.KDtree = scipy.spatial.KDTree(self.sites)
+        self.knn_sites = -1 * torch.ones((self.sites.shape[0], KNN)).int().cuda()
+        self.knn_sites = self.knn_sites.contiguous()
+        for i in range(self.sites.shape[0]):
+            _, idx = self.KDtree.query(self.sites[i], k=KNN+1)
+            self.knn_sites[i,:] = torch.from_numpy(np.asarray(idx[1:])).cuda()
+        print('KDTreeFlann time:', timer() - start)    
+
+        
+        self.sites = torch.from_numpy(self.sites).float().cuda()
 
 
 
@@ -169,7 +178,7 @@ class Tet32:
     def sample_rays_cuda(self, cam_id, ray_d, sdf, cam_ids, weights, in_z, in_sdf, in_ids, offset, nb_samples = 256):
         #ply.save_ply("Exp/bmvs_man/cam.ply", (self.sites[cam_ids[cam_id]]).reshape(1,3).cpu().numpy().transpose())
         nb_rays = ray_d.shape[0]
-        nb_samples = tet32_march_cuda.tet32_march(nb_rays, nb_samples, cam_id, ray_d, self.sites, sdf, self.summits, self.neighbors,
+        nb_samples = tet32_march_cuda.tet32_march(nb_rays, 24, nb_samples, cam_id, ray_d, self.knn_sites, self.sites, sdf, self.summits, self.neighbors,
                                                   cam_ids, self.offsets_cam, self.cam_tets, weights, in_z, in_sdf, 
                                                   in_ids, offset)
         #for i in range(nb_rays):
