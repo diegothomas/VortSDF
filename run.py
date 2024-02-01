@@ -58,6 +58,8 @@ class Runner:
         self.end_iter = self.conf.get_int('train.end_iter')
         self.n_samples = self.conf.get_int('model.cvt_renderer.n_samples')
         self.batch_size = self.conf.get_int('train.batch_size')
+        self.learning_rate_sdf = self.conf.get_float('train.learning_rate_sdf')
+        self.learning_rate_feat = self.conf.get_float('train.learning_rate_feat')
 
 
         self.vortSDF_renderer_fine = VortSDFRenderer(**self.conf['model.cvt_renderer'])
@@ -116,6 +118,11 @@ class Runner:
             self.grad_features = self.grad_features.contiguous()
             
         self.Allocate_batch_data()
+
+        
+        if not hasattr(self, 'optimizer_sdf'):
+            self.optimizer_sdf = torch.optim.Adam([self.sdf], lr=self.learning_rate_sdf)        
+            self.optimizer_feat= torch.optim.Adam([self.fine_features], lr=self.learning_rate_feat) 
         
         self.s_max = 1000
         self.R = 50
@@ -210,6 +217,31 @@ class Runner:
             if verbose:
                 print('RenderingFunction time:', timer() - start)
 
+            # Total loss   
+            mask = (mask > 0.5).float()
+            mask_sum = mask.sum()
+            loss = color_fine_loss / (mask_sum + 1.0e-5)
+
+            ########################################
+            # Backprop feature gradients to gradients on sites
+            # step optimize color features
+            self.grad_features[:] = 0
+            self.grad_features[self.out_ids[:nb_samples, 1], :3] = self.vortSDF_renderer_fine.grads_color[:nb_samples,:] / (mask_sum + 1.0e-5)
+            self.optimizer_feat.zero_grad()
+            self.fine_features.grad = self.grad_features
+            self.optimizer_feat.step()
+
+            ########################################
+            ####### Optimize sdf values ############
+            ########################################
+
+            #grad_sdf = (0.5*self.voro_renderer_coarse.grads_sdf[:,0] + 1.0*self.voro_renderer_fine.grads_sdf[:,0]) / (mask_sum + 1.0e-5)
+            grad_sdf = self.vortSDF_renderer_fine.grads_sdf[:,0] / (mask_sum + 1.0e-5)
+            grad_sdf[outside_flag[:] == 1.0] = 0.0   
+
+            self.optimizer_sdf.zero_grad()
+            self.sdf.grad = grad_sdf 
+            self.optimizer_sdf.step()
 
             print("DONE")
             input()

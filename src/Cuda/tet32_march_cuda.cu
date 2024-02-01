@@ -493,18 +493,25 @@ __global__ void tet32_march_cuda_kernel(
 				z_sdf_ray[2 * s_id] = prev_sdf;
 				z_sdf_ray[2 * s_id + 1] = curr_sdf;
 
-				for (int l = 0; l < 6; l++)
+				for (int l = 0; l < 6; l++) 
 					z_feat_ray[6 * s_id + l] = (prev_feat[l] + curr_feat[l])/2.0f;
 
-				z_id_ray[3 * s_id] = prev_prev_tet_id; //prev_closest_id; //prev_prev_tet_id;
-				z_id_ray[3 * s_id + 1] = prev_tet_id;
-				z_id_ray[3 * s_id + 2] = tet_id; // ids[closest_id]; //
+				z_id_ray[6 * s_id] = prev_ids[0]; 
+				z_id_ray[6 * s_id + 1] = prev_ids[1];
+				z_id_ray[6 * s_id + 2] = prev_ids[2]; 
+				
+				z_id_ray[6 * s_id + 3] = ids[0]; 
+				z_id_ray[6 * s_id + 3 + 1] = ids[1];
+				z_id_ray[6 * s_id + 3 + 2] = ids[2]; 
 
-				/*for (int i = 0; i < num_knn+1; i++) {
-					weights_ray[2*(num_knn+1)*s_id + i] = prev_sdf_weights[i];
-					weights_ray[2*(num_knn+1)*s_id + i + num_knn+1] = weights_tot > 0.0f ? curr_sdf_weights[i]/weights_tot : 0.0f;
-					prev_sdf_weights[i] = weights_tot > 0.0f ? curr_sdf_weights[i]/weights_tot : 0.0f;
-				}*/
+				
+				weights_ray[6 * s_id] = prev_weights[0]; 
+				weights_ray[6 * s_id + 1] = prev_weights[1];
+				weights_ray[6 * s_id + 2] = prev_weights[2]; 
+				
+				weights_ray[6 * s_id + 3] = weights[0]; 
+				weights_ray[6 * s_id + 3 + 1] = weights[1];
+				weights_ray[6 * s_id + 3 + 2] = weights[2]; 
 
 				s_id++;
 				if (s_id > num_samples - 1) {
@@ -600,9 +607,13 @@ __global__ void fill_samples_kernel(
 		for (int l = 0; l < 6; l++)
 			out_feat[6*i+l] = in_feat_rays[6 * s_id+l];
         
-        out_ids[3*i] = in_ids_rays[3 * s_id];
-        out_ids[3*i+1] = in_ids_rays[3 * s_id+1];
-        out_ids[3*i+2] = in_ids_rays[3 * s_id+2];
+        out_ids[6*i] = in_ids_rays[6 * s_id];
+        out_ids[6*i+1] = in_ids_rays[6 * s_id+1];
+        out_ids[6*i+2] = in_ids_rays[6 * s_id+2];
+		
+        out_ids[6*i + 3] = in_ids_rays[6 * s_id + 3];
+        out_ids[6*i + 3 +1] = in_ids_rays[6 * s_id + 3 +1];
+        out_ids[6*i + 3 +2] = in_ids_rays[6 * s_id + 3 +2];
 
         samples[3 * i] = ray.origin[0] + out_z[i]*ray.direction[0];
         samples[3 * i + 1] = ray.origin[1] + out_z[i]*ray.direction[1];
@@ -615,11 +626,14 @@ __global__ void fill_samples_kernel(
         sample_rays[3 * i] = ray.direction[0];
         sample_rays[3 * i + 1] = ray.direction[1];
         sample_rays[3 * i + 2] = ray.direction[2];
-
-        for (int j = 0; j < num_knn+1; j++) {
-            out_weights[2*(num_knn+1)*i + j] = in_weights_rays[2*(num_knn+1)*s_id + j];
-            out_weights[2*(num_knn+1)*i + j + num_knn+1] = in_weights_rays[2*(num_knn+1)*s_id + j + num_knn+1];
-        }
+        
+        out_weights[6*i] = in_weights_rays[6 * s_id];
+        out_weights[6*i+1] = in_weights_rays[6 * s_id+1];
+        out_weights[6*i+2] = in_weights_rays[6 * s_id+2];
+		
+        out_weights[6*i + 3] = in_weights_rays[6 * s_id + 3];
+        out_weights[6*i + 3 +1] = in_weights_rays[6 * s_id + 3 +1];
+        out_weights[6*i + 3 +2] = in_weights_rays[6 * s_id + 3 +2];
 
         s_id++;
     }

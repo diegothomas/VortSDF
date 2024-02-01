@@ -108,7 +108,7 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
 
     float alpha, dalpha_dsdf_p, dalpha_dsdf_n, dalpha, contrib;
     double sdf_prev_clamp, sdf_clamp, inv_clipped_p, inv_clipped;
-    int knn_id, knn_id_prev;
+    int id, id_prev;
 
     int start = offsets[2 * n];
     int end = offsets[2 * n + 1];
@@ -167,29 +167,22 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
         if (NoColorSpilling != 0) {
             dc = dc * Wtotal * Wtotal;
         }
-        
-        //atomicAdd(&grads_sdf[2 * cell_ids[3 * t]], dalpha * dalpha_dsdf_p * 0.5f);
-        //atomicAdd(&grads_sdf[2 * cell_ids[3 * t + 1]], dalpha * dalpha_dsdf_n * 0.5f);
 
-        for (int i = 0; i < num_knn; i++) {
-            knn_id_prev = neighbors[num_knn*(cell_ids[3 * t]+1) + i];
-            knn_id = neighbors[num_knn*(cell_ids[3 * t + 1]+1) + i];
-            if (knn_id_prev != cell_ids[3 * t])
-                atomicAdd(&grads_sdf[2 * knn_id_prev], weights_seg[2*(num_knn+1)*t + i] * dalpha * dalpha_dsdf_p);
-            if (knn_id != cell_ids[3 * t + 1])
-                atomicAdd(&grads_sdf[2 * knn_id], weights_seg[2*(num_knn+1)*t + i + (num_knn+1)] * dalpha * dalpha_dsdf_n);
+        for (int i = 0; i < 3; i++) {
+            id_prev = cell_ids[6 * t + i];
+            id = cell_ids[6 * t + 3 + i];
+
+            atomicAdd(&grads_sdf[id_prev], weights_seg[6*t + i] * dalpha * dalpha_dsdf_p);
+            atomicAdd(&grads_sdf[id], weights_seg[6*t + 3 + i] * dalpha * dalpha_dsdf_n);
+            
+            atomicAdd(&grads_color[3 * id_prev], weights_seg[6*t + i] * 0.5 * dc.x);
+            atomicAdd(&grads_color[3 * id_prev+1], weights_seg[6*t + i] * 0.5 * dc.y);
+            atomicAdd(&grads_color[3 * id_prev+2], weights_seg[6*t + i] * 0.5 * dc.z);
+            
+            atomicAdd(&grads_color[3 * id], weights_seg[6*t + 3 + i] * 0.5 * dc.x);
+            atomicAdd(&grads_color[3 * id+1], weights_seg[6*t + 3 + i] * 0.5 * dc.y);
+            atomicAdd(&grads_color[3 * id+2], weights_seg[6*t + 3 + i] * 0.5 * dc.z);
         }
-        atomicAdd(&grads_sdf[2 * cell_ids[3 * t]], weights_seg[2*(num_knn+1)*t + num_knn] * dalpha * dalpha_dsdf_p);
-        atomicAdd(&grads_sdf[2 * cell_ids[3 * t + 1]], weights_seg[2*(num_knn+1)*t + num_knn + (num_knn+1)] * dalpha * dalpha_dsdf_n);
-        
-        /*atomicAdd(&grads_sdf[2 * cell_ids[3 * t]], dalpha * dalpha_dsdf_p * 0.5f);
-        atomicAdd(&grads_sdf[2 * cell_ids[3 * t + 1]], dalpha * (dalpha_dsdf_p + dalpha_dsdf_n) * 0.5f);
-        atomicAdd(&grads_sdf[2 * cell_ids[3 * t + 2]], dalpha * dalpha_dsdf_n * 0.5f);*/
-
-        
-        grads_color[3 * t] = dc.x;
-        grads_color[3 * t + 1] = dc.y;
-        grads_color[3 * t + 2] = dc.z;
 
         Tpartial = Tpartial * alpha;
 
