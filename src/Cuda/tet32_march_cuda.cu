@@ -228,8 +228,8 @@ __global__ void tet32_march_cuda_kernel(
     float *z_val_ray = &z_vals[idx*num_samples*2];
     float *z_sdf_ray = &z_sdfs[idx*num_samples*2];
     float *z_feat_ray = &z_feat[idx*num_samples*6];
-    float *weights_ray = &weights_samp[idx*num_samples*2*(num_knn+1)];
-    int *z_id_ray = &z_ids[idx*num_samples*3];
+    float *weights_ray = &weights_samp[idx*num_samples*6];
+    int *z_id_ray = &z_ids[idx*num_samples*6];
     
     // build base w.r.t ray
 	float u[3]{};
@@ -485,7 +485,7 @@ __global__ void tet32_march_cuda_kernel(
 			curr_sdf = get_sdf_triangle32(weights, curr_p, vertices, sdf, tets, ids[0], ids[1], ids[2]);
 			get_feat_triangle32(curr_feat, weights, curr_p, vertices, vol_feat, tets, ids[0], ids[1], ids[2]);
 
-			if (prev_prev_tet_id != -1) { //(contrib > 1.0e-10/) && prev_sdf != 20.0f) {
+			if (prev_prev_tet_id != -1 && curr_dist > prev_dist && prev_sdf > curr_sdf) { //(contrib > 1.0e-10/) && prev_sdf != 20.0f) {
 
 				z_val_ray[2 * s_id] = prev_dist;
 				z_val_ray[2 * s_id + 1] = curr_dist;
@@ -591,9 +591,9 @@ __global__ void fill_samples_kernel(
 
     float* in_z_rays = &in_z[2*num_samples * idx];
     float* in_sdf_rays = &in_sdf[2*num_samples * idx];
-    float* in_feat_rays = &in_feat[2*num_samples * idx];
-    float* in_weights_rays = &in_weights[2*(num_knn+1)*num_samples * idx];
-    int* in_ids_rays = &in_ids[3*num_samples * idx];
+    float* in_feat_rays = &in_feat[6*num_samples * idx];
+    float* in_weights_rays = &in_weights[6*num_samples * idx];
+    int* in_ids_rays = &in_ids[6*num_samples * idx];
 
     int start = offset[2*idx];
     int end = offset[2*idx+1];

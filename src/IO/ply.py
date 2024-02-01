@@ -117,7 +117,8 @@ def save_ply(fname, v, nv = None, f=None, col=None, lab=None, fcol=None):
             fout.write('property uchar blue\n')
         fout.write('end_header\n')
 
-        for i in tqdm(range(n)):
+        #for i in tqdm(range(n)):
+        for i in range(n):
             if col is not None:
                 c = col[:,i]
             else:

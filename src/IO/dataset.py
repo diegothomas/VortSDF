@@ -519,31 +519,24 @@ class Dataset:
         return rays_o.transpose(0, 1), rays_v.transpose(0, 1), z_buff.transpose(0, 1)
         #return rays_o, rays_v, z_buff#, mask
         
-    def gen_rays_z_buff_RGB_at(self, img_idx, resolution_level=1, shift = 0):
+    def gen_rays_RGB_at(self, img_idx, resolution_level=1):
         """
         Generate rays at world space from one camera.
         """
         l = resolution_level
-        tx = torch.linspace(0, self.W - l, self.W // l) + shift
-        ty = torch.linspace(0, self.H - l, self.H // l) + shift
-        #tx = torch.linspace(0, self.W //l-1, self.W // l) + torch.randint(low=0, high=self.W // l, size=[1])
-        #ty = torch.linspace(0, self.H //l-1, self.H // l) + torch.randint(low=0, high=self.H // l, size=[1])
+        tx = torch.linspace(0, self.W - l, self.W // l)
+        ty = torch.linspace(0, self.H - l, self.H // l)
         pixels_x, pixels_y = torch.meshgrid(tx, ty)
         color = (self.images[img_idx][(pixels_y.long(), pixels_x.long())]).cuda()    # batch_size, 3
         mask = (self.masks[img_idx][(pixels_y.long(), pixels_x.long())]).cuda()      # batch_size, 3
-        #z_buff = (torch.from_numpy(self.z_buff[img_idx][(pixels_y.int(), pixels_x.int())])).cuda()
-        #Sprint(self.z_buff[img_idx].shape)
-        z_buff = self.z_buff[img_idx][(pixels_y.long(), pixels_x.long())]
-        #mask = self.masks[img_idx][(pixels_y.int(), pixels_x.int())]
-        pixels_x_f = pixels_x.float() # + torch.rand(pixels_x.shape)-0.5
-        pixels_y_f = pixels_y.float() # + torch.rand(pixels_y.shape)-0.5
+        pixels_x_f = pixels_x.float() 
+        pixels_y_f = pixels_y.float() 
         p = torch.stack([pixels_x_f, pixels_y_f, torch.ones_like(pixels_y_f)], dim=-1).to(self.device)   # W, H, 3
         p = torch.matmul(self.intrinsics_all_inv[img_idx, None, None, :3, :3], p[:, :, :, None]).squeeze()  # W, H, 3
         rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)  # W, H, 3
         rays_v = torch.matmul(self.pose_all[img_idx, None, None, :3, :3], rays_v[:, :, :, None]).squeeze()  # W, H, 3
         rays_o = self.pose_all[img_idx, None, None, :3, 3].expand(rays_v.shape)  # W, H, 3
-        #return rays_o.transpose(0, 1), rays_v.transpose(0, 1), z_buff
-        return z_buff.transpose(0, 1), torch.cat([rays_o.transpose(0, 1), rays_v.transpose(0, 1), color.transpose(0, 1), mask[:, :, :1].transpose(0, 1)], dim=-1)
+        return torch.cat([rays_o.transpose(0, 1), rays_v.transpose(0, 1), color.transpose(0, 1), mask[:, :, :1].transpose(0, 1)], dim=-1)
     
     def gen_rays_z_id_RGB_at(self, img_idx, resolution_level=1, shift = 0):
         """

@@ -6,6 +6,7 @@ from timeit import default_timer as timer
 sys.path.append('/root/VortSDF/')
 import src.IO.ply as ply
 import scipy.spatial
+from tqdm import tqdm
 
 from torch.utils.cpp_extension import load
 tet32_march_cuda = load(
@@ -85,9 +86,9 @@ class Tet32:
         print("Faces adjacencies computed")
 
         # second iterate over all tetrahedron and get neighbors from faces
-        self.neighbors = -torch.ones([self.nb_tets, 4], dtype = torch.int32).cuda().contiguous()
+        self.neighbors = -np.ones([self.nb_tets, 4], dtype = np.int32)
 
-        for i, tetrahedron in enumerate(self.tetras):
+        for i, tetrahedron in tqdm(enumerate(self.tetras)):
             faces = get_faces_from_tetrahedron(tetrahedron)
             for j, face in enumerate(faces):
                 if len(faces_to_tetrahedron[face]) == 1:
@@ -95,13 +96,14 @@ class Tet32:
                 elif faces_to_tetrahedron[face][0] == i:
                     self.neighbors[i,j] = faces_to_tetrahedron[face][1] 
                 else:
-                    self.neighbors[i,j] = faces_to_tetrahedron[face][0] 
+                    self.neighbors[i,j] = faces_to_tetrahedron[face][0]
 
             # make last summit index as xor 
             self.summits[i,3] = self.summits[i,0] ^ self.summits[i,1] ^ self.summits[i,2] ^ self.summits[i,3] 
 
         self.summits = torch.from_numpy(self.summits).int().cuda()
         self.sites = np.asarray(self.vertices)
+        self.neighbors = torch.from_numpy(self.neighbors).int().cuda().contiguous()
         print("Neighboors computed")
         
         start = timer()
@@ -154,9 +156,9 @@ class Tet32:
 
 
     def surface_from_sdf(self, values, filename = ""):
-        print(values.shape)
+        #print(values.shape)
         tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(values.astype(np.float64)),0.0)
-        print(tri_mesh)
+        #print(tri_mesh)
         self.tri_vertices = np.asarray(tri_mesh.vertices)
         self.tri_faces = np.asarray(tri_mesh.triangles)
         if not filename == "":

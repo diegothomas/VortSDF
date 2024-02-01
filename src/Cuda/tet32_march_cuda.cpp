@@ -76,7 +76,7 @@ int tet32_march(
     torch::Tensor z_ids,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor offset     // [N_voxels, 4] for each voxel => it's vertices
 ) {
-    std::cout << "March through Tet32" << std::endl; 
+    //std::cout << "March through Tet32" << std::endl; 
 
     return tet32_march_cuda(
         num_rays,
