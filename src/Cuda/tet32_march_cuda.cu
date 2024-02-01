@@ -16,6 +16,7 @@
 #define FAKEINIT
 #endif
 
+#define DIM_L_FEAT 6
 
 
 /** Device functions **/
@@ -178,6 +179,14 @@ __device__ float get_sdf_triangle32(float weights[3], float p[3], float* sites, 
 	return sdf[id0] * weights[0] + sdf[id1] * weights[1] + sdf[id2] * weights[2];
 }
 
+__device__ void get_feat_triangle32(float *feat, float weights[3], float p[3], float* sites, float* vol_feat, int* tets, int id0, int id1, int id2) {
+	for (int i = 0; i < DIM_L_FEAT; i++) {
+		feat[i] = vol_feat[DIM_L_FEAT * id0 + i] * weights[0] + vol_feat[DIM_L_FEAT * id1 + i] * weights[1] +
+			vol_feat[DIM_L_FEAT * id2 + i] * weights[2];
+	}
+	return;
+}
+
 
 __global__ void tet32_march_cuda_kernel(
     const size_t num_rays,                // number of rays
@@ -188,6 +197,7 @@ __global__ void tet32_march_cuda_kernel(
     const int *__restrict__ neighbors,  // [N_voxels, 4] for each voxel => it's neighbors
     float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ vol_feat,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ tets,  
     int *__restrict__ nei_tets,  
     const int *__restrict__ cam_ids,  
@@ -196,6 +206,7 @@ __global__ void tet32_march_cuda_kernel(
     float *__restrict__ weights_samp,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ z_vals,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ z_sdfs,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ z_feat,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ z_ids,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ counter,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ offset     // [N_voxels, 4] for each voxel => it's vertices
@@ -216,6 +227,7 @@ __global__ void tet32_march_cuda_kernel(
 	
     float *z_val_ray = &z_vals[idx*num_samples*2];
     float *z_sdf_ray = &z_sdfs[idx*num_samples*2];
+    float *z_feat_ray = &z_feat[idx*num_samples*6];
     float *weights_ray = &weights_samp[idx*num_samples*2*(num_knn+1)];
     int *z_id_ray = &z_ids[idx*num_samples*3];
     
@@ -426,7 +438,7 @@ __global__ void tet32_march_cuda_kernel(
 		// compute averaged sdf
 
 		// Search clossest id
-		int closest_id = 0;
+		/*int closest_id = 0;
 		float min_dist = (vertices[3*ids[0]] - curr_p[0])*(vertices[3*ids[0]] - curr_p[0]) + 
 							(vertices[3*ids[0]+1] - curr_p[1])*(vertices[3*ids[0]+1] - curr_p[1])+ 
 							(vertices[3*ids[0]+2] - curr_p[2])*(vertices[3*ids[0]+2] - curr_p[2]);
@@ -466,14 +478,14 @@ __global__ void tet32_march_cuda_kernel(
 
         curr_sdf_weights[num_knn] = exp(-dist/sigma);
         sdf_tot = sdf_tot + exp(-dist/sigma) * sdf[ids[closest_id]];
-        weights_tot = weights_tot + exp(-dist/sigma);
+        weights_tot = weights_tot + exp(-dist/sigma);*/
 
         if (prev_tet_id != -1) 
-            curr_sdf = weights_tot > 0.0f ? sdf_tot/weights_tot : (sdf[ids[0]] + sdf[ids[1]] + sdf[ids[2]]) / 3.0f;
-			//curr_sdf = get_sdf_triangle32(weights, curr_p, vertices, sdf, tets, ids[0], ids[1], ids[2]);
+            //curr_sdf = weights_tot > 0.0f ? sdf_tot/weights_tot : (sdf[ids[0]] + sdf[ids[1]] + sdf[ids[2]]) / 3.0f;
+			curr_sdf = get_sdf_triangle32(weights, curr_p, vertices, sdf, tets, ids[0], ids[1], ids[2]);
+			get_feat_triangle32(curr_feat, weights, curr_p, vertices, vol_feat, tets, ids[0], ids[1], ids[2]);
 
 			if (prev_prev_tet_id != -1) { //(contrib > 1.0e-10/) && prev_sdf != 20.0f) {
-				//get_feat_triangle32(curr_feat, weights, curr_p, vertices, vol_feat, tets, ids[0], ids[1], ids[2]);
 
 				z_val_ray[2 * s_id] = prev_dist;
 				z_val_ray[2 * s_id + 1] = curr_dist;
@@ -481,15 +493,18 @@ __global__ void tet32_march_cuda_kernel(
 				z_sdf_ray[2 * s_id] = prev_sdf;
 				z_sdf_ray[2 * s_id + 1] = curr_sdf;
 
-				z_id_ray[3 * s_id] = prev_closest_id; //prev_prev_tet_id;
-				z_id_ray[3 * s_id + 1] = prev_tet_id;
-				z_id_ray[3 * s_id + 2] = ids[closest_id]; //tet_id;
+				for (int l = 0; l < 6; l++)
+					z_feat_ray[6 * s_id + l] = (prev_feat[l] + curr_feat[l])/2.0f;
 
-				for (int i = 0; i < num_knn+1; i++) {
+				z_id_ray[3 * s_id] = prev_prev_tet_id; //prev_closest_id; //prev_prev_tet_id;
+				z_id_ray[3 * s_id + 1] = prev_tet_id;
+				z_id_ray[3 * s_id + 2] = tet_id; // ids[closest_id]; //
+
+				/*for (int i = 0; i < num_knn+1; i++) {
 					weights_ray[2*(num_knn+1)*s_id + i] = prev_sdf_weights[i];
 					weights_ray[2*(num_knn+1)*s_id + i + num_knn+1] = weights_tot > 0.0f ? curr_sdf_weights[i]/weights_tot : 0.0f;
 					prev_sdf_weights[i] = weights_tot > 0.0f ? curr_sdf_weights[i]/weights_tot : 0.0f;
-				}
+				}*/
 
 				s_id++;
 				if (s_id > num_samples - 1) {
@@ -509,7 +524,7 @@ __global__ void tet32_march_cuda_kernel(
 		prev_dist = curr_dist;
         prev_prev_tet_id = prev_tet_id;
 		prev_tet_id = tet_id;
-		prev_closest_id = ids[closest_id];
+		//prev_closest_id = ids[closest_id];
 
 		v_new[0] = vertices[3 * ids[3]] - ray_o[0];
 		v_new[1] = vertices[3 * ids[3] + 1] - ray_o[1];
@@ -542,10 +557,12 @@ __global__ void fill_samples_kernel(
     const float *__restrict__ sites,       // [N_rays, 6]
     float *__restrict__ in_z,       // [N_rays, 6]
     float *__restrict__ in_sdf,       // [N_rays, 6]
+    float *__restrict__ in_feat,       // [N_rays, 6]
     float *__restrict__ in_weights,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ in_ids,       // [N_rays, 6]
     float *__restrict__ out_z,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ out_sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ out_feat,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ out_weights,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ out_ids,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ offset,     // [N_voxels, 4] for each voxel => it's vertices
@@ -567,6 +584,7 @@ __global__ void fill_samples_kernel(
 
     float* in_z_rays = &in_z[2*num_samples * idx];
     float* in_sdf_rays = &in_sdf[2*num_samples * idx];
+    float* in_feat_rays = &in_feat[2*num_samples * idx];
     float* in_weights_rays = &in_weights[2*(num_knn+1)*num_samples * idx];
     int* in_ids_rays = &in_ids[3*num_samples * idx];
 
@@ -578,6 +596,9 @@ __global__ void fill_samples_kernel(
 
         out_sdf[2*i] = in_sdf_rays[2 * s_id];
         out_sdf[2*i+1] = in_sdf_rays[2 * s_id+1];
+		
+		for (int l = 0; l < 6; l++)
+			out_feat[6*i+l] = in_feat_rays[6 * s_id+l];
         
         out_ids[3*i] = in_ids_rays[3 * s_id];
         out_ids[3*i+1] = in_ids_rays[3 * s_id+1];
@@ -621,6 +642,7 @@ int tet32_march_cuda(
     torch::Tensor neighbors, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor vertices, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor sdf, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor vol_feat, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor nei_tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor cam_ids,    // [N_sites, 3] for each voxel => it's vertices
@@ -629,6 +651,7 @@ int tet32_march_cuda(
     torch::Tensor weights,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor z_vals,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor z_sdfs,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor z_feat,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor z_ids,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor offset     // [N_voxels, 4] for each voxel => it's vertices
 )   {
@@ -649,6 +672,7 @@ int tet32_march_cuda(
                 neighbors.data_ptr<int>(),
                 vertices.data_ptr<float>(),
                 sdf.data_ptr<float>(),
+                vol_feat.data_ptr<float>(),
                 tets.data_ptr<int>(),
                 nei_tets.data_ptr<int>(),
                 cam_ids.data_ptr<int>(),
@@ -657,6 +681,7 @@ int tet32_march_cuda(
                 weights.data_ptr<float>(),
                 z_vals.data_ptr<float>(),
                 z_sdfs.data_ptr<float>(),
+                z_feat.data_ptr<float>(),
                 z_ids.data_ptr<int>(),
                 counter,
                 offset.data_ptr<int>()); 
@@ -679,10 +704,12 @@ void fill_samples_cuda(
     torch::Tensor sites,       // [N_rays, 6]
     torch::Tensor in_z,       // [N_rays, 6]
     torch::Tensor in_sdf,       // [N_rays, 6]
+    torch::Tensor in_feat,       // [N_rays, 6]
     torch::Tensor in_weights,       // [N_rays, 6]
     torch::Tensor in_ids,       // [N_rays, 6]
     torch::Tensor out_z,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor out_feat,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_weights,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_ids,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor offset,     // [N_voxels, 4] for each voxel => it's vertices
@@ -700,11 +727,13 @@ void fill_samples_cuda(
                 rays_d.data_ptr<float>(),
                 sites.data_ptr<float>(),
                 in_z.data_ptr<float>(),
-                in_sdf.data_ptr<float>(),     
+                in_sdf.data_ptr<float>(),  
+                in_feat.data_ptr<float>(),    
                 in_weights.data_ptr<float>(),     
                 in_ids.data_ptr<int>(),       
                 out_z.data_ptr<float>(),    
                 out_sdf.data_ptr<float>(),    
+                out_feat.data_ptr<float>(),    
                 out_weights.data_ptr<float>(),     
                 out_ids.data_ptr<int>(),    
                 offset.data_ptr<int>(),     
