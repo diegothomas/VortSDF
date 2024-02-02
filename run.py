@@ -14,7 +14,8 @@ from timeit import default_timer as timer
 import matplotlib
 import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw
-from src.Models.VortSDFRenderer import VortSDFRenderer, VortSDFRenderingFunction
+from src.Models.VortSDFRenderer import VortSDFRenderer, VortSDFRenderingFunction, VortSDFDirectRenderer
+from src.Models.fields import ColorNetwork
 
 from torch.utils.cpp_extension import load
 tet32_march_cuda = load(
@@ -58,6 +59,7 @@ class Runner:
         self.end_iter = self.conf.get_int('train.end_iter')
         self.n_samples = self.conf.get_int('model.cvt_renderer.n_samples')
         self.batch_size = self.conf.get_int('train.batch_size')
+        self.learning_rate = self.conf.get_float('train.learning_rate')
         self.learning_rate_sdf = self.conf.get_float('train.learning_rate_sdf')
         self.learning_rate_feat = self.conf.get_float('train.learning_rate_feat')
         self.learning_rate_alpha = self.conf.get_float('train.learning_rate_alpha')
@@ -65,7 +67,25 @@ class Runner:
         self.report_freq = self.conf.get_float('train.report_freq')
         self.val_freq = self.conf.get_float('train.val_freq')
 
+        self.vortSDF_renderer_coarse = VortSDFDirectRenderer(**self.conf['model.cvt_renderer'])
+
         self.vortSDF_renderer_fine = VortSDFRenderer(**self.conf['model.cvt_renderer'])
+        
+        self.color_network = ColorNetwork(**self.conf['model.color_network']).to(self.device)
+        
+        params_to_train = []
+        params_to_train += list(self.color_network.parameters())
+        self.optimizer = torch.optim.Adam(params_to_train, lr=self.learning_rate)
+        
+        posbase_pe=5
+        viewbase_pe= 1#4
+        self.posfreq = torch.FloatTensor([(2**i) for i in range(posbase_pe)]).cuda()
+        self.viewfreq = torch.FloatTensor([(2**i) for i in range(viewbase_pe)]).cuda()
+
+        k_posbase_pe=5
+        k_viewbase_pe= 1
+        self.k_posfreq = torch.FloatTensor([(2**i) for i in range(k_posbase_pe)]).cuda()
+        self.k_viewfreq = torch.FloatTensor([(2**i) for i in range(k_viewbase_pe)]).cuda()
 
 
     def train(self, data_name, verbose = True):
@@ -129,6 +149,7 @@ class Runner:
             self.optimizer_sdf = torch.optim.Adam([self.sdf], lr=self.learning_rate_sdf)        
             self.optimizer_feat= torch.optim.Adam([self.fine_features], lr=self.learning_rate_feat) 
 
+        self.vortSDF_renderer_coarse.prepare_buffs(self.batch_size, self.n_samples, sites.shape[0])
         self.vortSDF_renderer_fine.prepare_buffs(self.batch_size, self.n_samples, sites.shape[0])
         
         self.s_max = 1000
@@ -197,29 +218,33 @@ class Runner:
             samples = self.samples[:nb_samples,:]
             samples = samples.contiguous()
 
-            ##### ##### ##### ##### ##### ##### 
-            """xyz_emb = (samples.unsqueeze(-1) * self.posfreq).flatten(-2)
-            xyz_emb = torch.cat([samples, xyz_emb.sin(), xyz_emb.cos()], -1)"""
-
             ##### ##### ##### ##### ##### ##### ##### 
             # Build fine features
             fine_features = self.out_feat[:nb_samples] #self.fine_features[self.out_ids[:nb_samples, 1]]
+            self.colors = fine_features[:,:3] 
+            self.colors = self.colors.contiguous()
 
-            """rgb_fine_feat = torch.cat([xyz_emb, fine_features], -1)
-            rgb_fine_feat.requires_grad_(True)
-            rgb_fine_feat.retain_grad()
+            
+            ##### ##### ##### ##### ##### ##### 
+            xyz_emb = (samples.unsqueeze(-1) * self.posfreq).flatten(-2)
+            xyz_emb = torch.cat([samples, xyz_emb.sin(), xyz_emb.cos()], -1)
 
-            self.colors_fine = torch.sigmoid(self.color_fine_network.rgb(rgb_fine_feat)) 
-            self.colors_fine = self.colors_fine.contiguous()"""
-            self.colors_fine = fine_features[:,:3] 
+            viewdirs_emb = (self.samples_rays[:nb_samples,:].unsqueeze(-1) * self.viewfreq).flatten(-2)
+            viewdirs_emb = torch.cat([self.samples_rays[:nb_samples,:], viewdirs_emb.sin(), viewdirs_emb.cos()], -1)
+
+            rgb_feat = torch.cat([xyz_emb, viewdirs_emb, fine_features], -1)
+            rgb_feat.requires_grad_(True)
+            rgb_feat.retain_grad()
+
+            self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat)) 
             self.colors_fine = self.colors_fine.contiguous()
 
             ########################################
             ####### Render the image ###############
             ########################################
             start = timer()       
-            #color_coarse_loss = VORORendering2DFunction.apply(self.voro_renderer_coarse, rays_o.shape[0], self.inv_s, self.out_sdf, self.cvt.knn_sites, self.out_weights, self.colors, true_rgb, mask, self.out_ids, self.offsets)
-
+            self.vortSDF_renderer_coarse.render_gpu(rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors, true_rgb, mask, self.out_ids, self.offsets)
+            
             color_fine_loss = VortSDFRenderingFunction.apply(self.vortSDF_renderer_fine, rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors_fine, true_rgb, mask, self.out_ids, self.offsets)
             if verbose:
                 print('RenderingFunction time:', timer() - start)
@@ -227,14 +252,22 @@ class Runner:
             # Total loss   
             mask = (mask > 0.5).float()
             mask_sum = mask.sum()
+            
+            self.optimizer.zero_grad()
             loss = color_fine_loss / (mask_sum + 1.0e-5)
+            loss.backward()
 
             ########################################
             # Backprop feature gradients to gradients on sites
             # step optimize color features
             self.grad_features[:] = 0.0
-            self.grad_features[:, :3] = self.vortSDF_renderer_fine.grads_color[:,:] / (mask_sum + 1.0e-5)
+            #cvt_lib.Back_Prop_Feat(self.grad_feat_vol.data_ptr(), self.fine_rgb_feat.grad[:, :6].data_ptr(), self.fine_features_id.data_ptr(), self.z_facts.data_ptr(), self.fine_features_w.data_ptr(), nb_samples)
+            self.grad_features[:, :3] = self.vortSDF_renderer_coarse.grads_color[:,:] / (mask_sum + 1.0e-5)
             self.grad_features[outside_flag[:] == 1.0] = 0.0   
+
+            
+            self.optimizer.step()
+            
             self.optimizer_feat.zero_grad()
             self.fine_features.grad = self.grad_features
             self.optimizer_feat.step()
@@ -308,7 +341,21 @@ class Runner:
             samples = self.samples[:nb_samples,:]
             samples = samples.contiguous()
             
-            self.colors_fine = self.out_feat[:nb_samples,:3] 
+            #self.colors = self.out_feat[:nb_samples,:3] 
+            #self.colors = self.colors_fine.contiguous()
+            
+            ##### ##### ##### ##### ##### ##### 
+            xyz_emb = (samples.unsqueeze(-1) * self.posfreq).flatten(-2)
+            xyz_emb = torch.cat([samples, xyz_emb.sin(), xyz_emb.cos()], -1)
+
+            viewdirs_emb = (self.samples_rays[:nb_samples,:].unsqueeze(-1) * self.viewfreq).flatten(-2)
+            viewdirs_emb = torch.cat([self.samples_rays[:nb_samples,:], viewdirs_emb.sin(), viewdirs_emb.cos()], -1)
+
+            rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_feat[:nb_samples]], -1)
+            rgb_feat.requires_grad_(True)
+            rgb_feat.retain_grad()
+
+            self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat)) 
             self.colors_fine = self.colors_fine.contiguous()
 
             ########################################

@@ -19,6 +19,42 @@ from torch.utils.cpp_extension import load
 renderer_cuda = load(
     'renderer_cuda', ['src/Models/renderer.cpp', 'src/Models/renderer.cu'], verbose=True)
 
+class VortSDFDirectRenderer:
+    def __init__(self, n_samples):
+        self.n_samples = n_samples
+        self.mask_reg = 1.0
+
+        self.grads_color = torch.zeros([1], dtype=torch.float32).to(torch.device('cuda')).contiguous()
+        self.grads_sdf = torch.zeros([1], dtype=torch.float32).to(torch.device('cuda')).contiguous()
+        self.colors_loss = torch.zeros([1], dtype=torch.float32).to(torch.device('cuda')).contiguous()
+        self.mask_loss = torch.zeros([1], dtype=torch.float32).to(torch.device('cuda')).contiguous()
+       
+
+    def render_gpu(self, num_rays, inv_s, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, cell_ids, offsets):   
+        self.grads_color[:, :] = 0
+        self.grads_sdf[:] = 0
+        
+        renderer_cuda.render(num_rays, inv_s, self.mask_reg, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, 
+                             cell_ids, offsets, self.grads_sdf,self.grads_color, self.colors_loss, self.mask_loss)
+        
+    
+    def prepare_buffs(self, nb_points, nb_samples, nb_sites):
+        del self.grads_sdf
+        del self.grads_color
+
+        self.grads_color = torch.zeros([nb_sites, 3], dtype=torch.float32).to(torch.device('cuda')).contiguous()
+        self.grads_sdf = torch.zeros([nb_sites], dtype=torch.float32).to(torch.device('cuda')).contiguous()
+        
+        self.grads_color = self.grads_color.contiguous()
+        self.grads_sdf = self.grads_sdf.contiguous()
+        
+        self.colors_loss = torch.zeros([nb_points,1]).to(torch.device('cuda'))
+        self.mask_loss = torch.zeros([nb_points,1]).to(torch.device('cuda'))
+        self.colors_loss = self.colors_loss.contiguous()
+        self.mask_loss = self.mask_loss.contiguous()
+
+        
+
 class VortSDFRenderer:
     def __init__(self, n_samples):
         self.n_samples = n_samples
@@ -34,7 +70,8 @@ class VortSDFRenderer:
         self.grads_color[:, :] = 0
         self.grads_sdf[:] = 0
         
-        renderer_cuda.render(num_rays, inv_s, self.mask_reg, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, cell_ids, offsets, self.grads_sdf, self.grads_color, self.colors_loss, self.mask_loss)
+        renderer_cuda.render(num_rays, inv_s, self.mask_reg, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, 
+                             cell_ids, offsets, self.grads_sdf, self.grads_color, self.colors_loss, self.mask_loss)
         
         return self.colors_loss, self.grads_color
     
@@ -42,8 +79,7 @@ class VortSDFRenderer:
         del self.grads_sdf
         del self.grads_color
 
-        #self.grads_color = torch.zeros([nb_points * nb_samples, 3], dtype=torch.float32).to(torch.device('cuda')).contiguous()
-        self.grads_color = torch.zeros([nb_sites, 3], dtype=torch.float32).to(torch.device('cuda')).contiguous()
+        self.grads_color = torch.zeros([nb_points * nb_samples, 3], dtype=torch.float32).to(torch.device('cuda')).contiguous()
         self.grads_sdf = torch.zeros([nb_sites], dtype=torch.float32).to(torch.device('cuda')).contiguous()
         
         self.grads_color = self.grads_color.contiguous()
