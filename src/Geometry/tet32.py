@@ -59,8 +59,12 @@ class Tet32:
         point_cloud.points = o3d.utility.Vector3dVector(sites)
         
         self.o3d_mesh, _ = o3d.geometry.TetraMesh.create_from_point_cloud(point_cloud)
+
+        self.o3d_edges = o3d.geometry.LineSet.create_from_tetra_mesh(self.o3d_mesh)
         
         self.vertices = self.o3d_mesh.vertices
+        self.edges = np.asarray(self.o3d_edges.lines).int().cuda().contiguous()
+        print("nb edges: ", self.edges.shape)
         self.tetras = self.o3d_mesh.tetras
 
         ## 4 values for indices of summits

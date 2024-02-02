@@ -21,9 +21,11 @@ from torch.utils.cpp_extension import load
 tet32_march_cuda = load(
     'tet32_march_cuda', ['src/Cuda/tet32_march_cuda.cpp', 'src/Cuda/tet32_march_cuda.cu'], verbose=True)
 
-
 renderer_cuda = load(
     'renderer_cuda', ['src/Models/renderer.cpp', 'src/Models/renderer.cu'], verbose=True)
+
+backprop_cuda = load(
+    'backprop_cuda', ['src/Models/backprop.cpp', 'src/Models/backprop.cu'], verbose=True)
 
 class Runner:
     def __init__(self, conf_path, data_name, mode='train', is_continue=False, checkpoint = ''):
@@ -92,7 +94,7 @@ class Runner:
         ##### 2. Load initial sites
         if not hasattr(self, 'tet32'):
             ##### 2. Load initial sites
-            visual_hull = [-1.0, -1.0, -1.0, 1.0, 1.0, 1.0]
+            visual_hull = [-1.2, -1.2, -1.2, 1.2, 1.2, 1.2]
             import src.Geometry.sampling as sampler
             res = 32
             sites = sampler.sample_Bbox(visual_hull[0:3], visual_hull[3:6], res, perturb_f =  (visual_hull[3] - visual_hull[0])*0.01)
@@ -236,12 +238,14 @@ class Runner:
             rgb_feat.requires_grad_(True)
             rgb_feat.retain_grad()
 
-            self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat)) 
+            self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat)) + self.colors
             self.colors_fine = self.colors_fine.contiguous()
 
             ########################################
             ####### Render the image ###############
             ########################################
+            mask = (mask > 0.5).float()
+
             start = timer()       
             self.vortSDF_renderer_coarse.render_gpu(rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors, true_rgb, mask, self.out_ids, self.offsets)
             
@@ -250,7 +254,6 @@ class Runner:
                 print('RenderingFunction time:', timer() - start)
 
             # Total loss   
-            mask = (mask > 0.5).float()
             mask_sum = mask.sum()
             
             self.optimizer.zero_grad()
@@ -260,13 +263,24 @@ class Runner:
             ########################################
             # Backprop feature gradients to gradients on sites
             # step optimize color features
+            fine_features_grad = rgb_feat.grad[:,:-6]
+            fine_features_grad = fine_features_grad.contiguous()
             self.grad_features[:] = 0.0
-            #cvt_lib.Back_Prop_Feat(self.grad_feat_vol.data_ptr(), self.fine_rgb_feat.grad[:, :6].data_ptr(), self.fine_features_id.data_ptr(), self.z_facts.data_ptr(), self.fine_features_w.data_ptr(), nb_samples)
+            backprop_cuda.backprop_feat(nb_samples, self.grad_features, fine_features_grad, self.out_ids, self.out_weights)
             self.grad_features[:, :3] = self.vortSDF_renderer_coarse.grads_color[:,:] / (mask_sum + 1.0e-5)
             self.grad_features[outside_flag[:] == 1.0] = 0.0   
-
             
             self.optimizer.step()
+
+            
+            ########################################
+            ####### Regularization terms ###########
+            ########################################
+
+            
+            ########################################
+            ####### Optimize features ##############
+            ########################################
             
             self.optimizer_feat.zero_grad()
             self.fine_features.grad = self.grad_features
@@ -284,6 +298,9 @@ class Runner:
             self.sdf.grad = grad_sdf 
             self.optimizer_sdf.step()
 
+            ########################################
+            ####### Regularization terms ###########
+            ########################################
             
             if iter_step % self.report_freq == 0:
                 print('iter:{:8>d} loss = {} lr={}'.format(iter_step, loss, self.optimizer_sdf.param_groups[0]['lr']))
@@ -341,8 +358,8 @@ class Runner:
             samples = self.samples[:nb_samples,:]
             samples = samples.contiguous()
             
-            #self.colors = self.out_feat[:nb_samples,:3] 
-            #self.colors = self.colors_fine.contiguous()
+            self.colors = self.out_feat[:nb_samples,:3] 
+            self.colors = self.colors.contiguous()
             
             ##### ##### ##### ##### ##### ##### 
             xyz_emb = (samples.unsqueeze(-1) * self.posfreq).flatten(-2)
@@ -355,14 +372,14 @@ class Runner:
             rgb_feat.requires_grad_(True)
             rgb_feat.retain_grad()
 
-            self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat)) 
+            self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat)) + self.colors
             self.colors_fine = self.colors_fine.contiguous()
 
             ########################################
             ####### Render the image ###############
             ########################################
             renderer_cuda.render_no_grad(rays_o_batch.shape[0], self.inv_s, self.out_sdf, self.colors_fine, self.offsets, colors_out, mask_out)
-            #renderer_cuda.render_no_grad(rays_o.shape[0], self.inv_s, self.out_sdf, self.colors, self.offsets, colors_out, mask_out)
+            #renderer_cuda.render_no_grad(rays_o_batch.shape[0], self.inv_s, self.out_sdf, self.colors, self.offsets, colors_out, mask_out)
 
             start = 3*it*self.batch_size
             end = min(3*(it+1)*self.batch_size, 3*(self.dataset.H // resolution_level) * (self.dataset.W // resolution_level))

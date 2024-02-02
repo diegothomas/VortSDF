@@ -34,7 +34,7 @@ class VortSDFDirectRenderer:
         self.grads_color[:, :] = 0
         self.grads_sdf[:] = 0
         
-        renderer_cuda.render(num_rays, inv_s, self.mask_reg, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, 
+        renderer_cuda.render_no_sdf(num_rays, inv_s, self.mask_reg, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, 
                              cell_ids, offsets, self.grads_sdf,self.grads_color, self.colors_loss, self.mask_loss)
         
     
@@ -96,9 +96,10 @@ class VortSDFRenderingFunction(autograd.Function):
     def forward(ctx, cvt_renderer, num_rays, inv_s, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, cell_ids, offsets):
         
         color_error, grads_color = cvt_renderer.render_gpu(num_rays, inv_s, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, cell_ids, offsets)
-
+        
+        mask_sum = mask.sum()
         grads_color.requires_grad_(True)
-        ctx.save_for_backward(grads_color, torch.tensor([color_samples.shape[0]]))   
+        ctx.save_for_backward(grads_color / (mask_sum + 1.0e-5), torch.tensor([color_samples.shape[0]]))   
             
         """norm = matplotlib.colors.Normalize(vmin=0.0, vmax=1.0 , clip = False)
         #print(color_error.shape)
