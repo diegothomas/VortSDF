@@ -480,6 +480,12 @@ __global__ void tet32_march_cuda_kernel(
         sdf_tot = sdf_tot + exp(-dist/sigma) * sdf[ids[closest_id]];
         weights_tot = weights_tot + exp(-dist/sigma);*/
 
+		/*if (curr_dist < prev_dist) {
+			offset[2 * idx] = atomicAdd(counter, s_id);
+			offset[2 * idx + 1] = -1;
+			return;
+		}*/
+
         if (prev_tet_id != -1) 
             //curr_sdf = weights_tot > 0.0f ? sdf_tot/weights_tot : (sdf[ids[0]] + sdf[ids[1]] + sdf[ids[2]]) / 3.0f;
 			curr_sdf = get_sdf_triangle32(weights, curr_p, vertices, sdf, tets, ids[0], ids[1], ids[2]);

@@ -7,6 +7,8 @@ sys.path.append('/root/VortSDF/')
 import src.IO.ply as ply
 import scipy.spatial
 from tqdm import tqdm
+from multiprocessing import Process, Value, Array, Manager
+import time 
 
 from torch.utils.cpp_extension import load
 tet32_march_cuda = load(
@@ -49,27 +51,34 @@ def get_faces_from_tetrahedron(tetrahedron):
     ]
 
 ## Implements the 32 bits tetrahedral mesh data structure
-class Tet32:
+class Tet32(Process):
     ## sites must be a (n,3) numpy array
-    def __init__(self, sites, KNN = 24):
+    def __init__(self, sites, id = 0, KNN = 24):
+        super(Tet32, self).__init__() 
+        self.id = id
+        self.KNN = KNN
+        self.sites = sites
         self.device = torch.device('cuda')
+        self.manager = Manager()
+        self.d = self.manager.dict()
+
+    def run(self): 
+        time.sleep(1) 
+        print("I'm the process with id: {}".format(self.id)) 
 
         ## Build the tetrahedral mesh from the sites
         point_cloud = o3d.geometry.PointCloud()
-        point_cloud.points = o3d.utility.Vector3dVector(sites)
+        point_cloud.points = o3d.utility.Vector3dVector(self.sites)
         
         self.o3d_mesh, _ = o3d.geometry.TetraMesh.create_from_point_cloud(point_cloud)
-
         self.o3d_edges = o3d.geometry.LineSet.create_from_tetra_mesh(self.o3d_mesh)
         
         self.vertices = self.o3d_mesh.vertices
-        self.edges = np.asarray(self.o3d_edges.lines).int().cuda().contiguous()
-        print("nb edges: ", self.edges.shape)
+        self.edges = np.asarray(self.o3d_edges.lines)
         self.tetras = self.o3d_mesh.tetras
 
         ## 4 values for indices of summits
         self.nb_tets = np.asarray(self.tetras).shape[0]
-
         self.summits = np.zeros([self.nb_tets, 4], dtype = np.int32)
         self.summits[:,] = np.asarray(self.tetras)[:,:]
 
@@ -105,25 +114,32 @@ class Tet32:
             # make last summit index as xor 
             self.summits[i,3] = self.summits[i,0] ^ self.summits[i,1] ^ self.summits[i,2] ^ self.summits[i,3] 
 
-        self.summits = torch.from_numpy(self.summits).int().cuda()
         self.sites = np.asarray(self.vertices)
-        self.neighbors = torch.from_numpy(self.neighbors).int().cuda().contiguous()
         print("Neighboors computed")
         
         start = timer()
         self.KDtree = scipy.spatial.KDTree(self.sites)
-        self.knn_sites = -1 * torch.ones((self.sites.shape[0], KNN)).int().cuda()
-        self.knn_sites = self.knn_sites.contiguous()
+        self.knn_sites = -1 * np.ones((self.sites.shape[0], self.KNN))
         for i in range(self.sites.shape[0]):
-            _, idx = self.KDtree.query(self.sites[i], k=KNN+1)
-            self.knn_sites[i,:] = torch.from_numpy(np.asarray(idx[1:])).cuda()
+            _, idx = self.KDtree.query(self.sites[i], k=self.KNN+1)
+            self.knn_sites[i,:] = np.asarray(idx[1:])
         print('KDTreeFlann time:', timer() - start)    
 
-        
-        self.sites = torch.from_numpy(self.sites).float().cuda()
+        self.d['summits'] = self.summits
+        self.d['edges'] = self.edges
+        self.d['neighbors'] = self.neighbors
+        self.d['sites'] = self.sites
+        self.d['knn_sites'] = self.knn_sites
+        #self.d['tetras'] = self.tetras
 
-
-
+    def load_cuda(self):
+        self.edges = torch.from_numpy(self.d['edges']).int().cuda().contiguous()
+        self.summits = torch.from_numpy(self.d['summits']).int().cuda().contiguous()  
+        self.neighbors = torch.from_numpy(self.d['neighbors']).int().cuda().contiguous()        
+        self.knn_sites = torch.from_numpy(self.d['knn_sites']).int().cuda().contiguous()
+        self.sites = torch.from_numpy(self.d['sites']).float().cuda().contiguous()  
+        #self.tetras = self.d['tetras']
+        print("nb edges: ", self.edges.shape)
 
     ## Make adjacencies for cameras
     def make_adjacencies(self, cam_ids):
