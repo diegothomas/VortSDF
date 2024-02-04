@@ -39,10 +39,6 @@ void cvt_grad_cuda(
 void sdf_grad_cuda(
     size_t num_sites,
     size_t num_knn,
-    float weight_sdf,
-    torch::Tensor thetas,      
-    torch::Tensor grad_sdf_space,      // [N_rays, 6]
-    torch::Tensor grad_grad, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor neighbors,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
@@ -143,10 +139,6 @@ void cvt_grad(
 void sdf_grad(
     size_t num_sites,
     size_t num_knn,
-    float weight_sdf,
-    torch::Tensor thetas,      // [N_rays, 6]
-    torch::Tensor grad_sdf_space,      // [N_rays, 6]
-    torch::Tensor grad_grad, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor neighbors,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
@@ -161,10 +153,6 @@ void sdf_grad(
     sdf_grad_cuda(
         num_sites,
         num_knn,
-        weight_sdf,
-        thetas,
-        grad_sdf_space,   
-        grad_grad, 
         neighbors,   
         sites, 
         sdf,

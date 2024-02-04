@@ -337,7 +337,7 @@ __global__ void sdf_space_grad_cuda_kernel(
     float *Weights_curr = &Weights[3*num_knn*idx];    
 
     for (int r_id = 0; r_id < num_knn; r_id++) {
-        knn_id = neighbors[num_knn*(idx+1) + r_id];
+        knn_id = neighbors[num_knn*idx + r_id];
 
         // Coords of k-Nearest Neighbors
         curr_n[0] = sites[3*knn_id];
@@ -390,7 +390,7 @@ __global__ void sdf_space_grad_cuda_kernel(
     float feat_1[6] ={0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     float feat_2[6] ={0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     for (int i = 0; i < num_knn; i++) {
-        knn_id = neighbors[num_knn*(idx+1) + i];
+        knn_id = neighbors[num_knn*idx + i];
         elem_0 += (SDF[knn_id] - SDF[idx]) * Weights_curr[3*i];
         elem_1 += (SDF[knn_id] - SDF[idx]) * Weights_curr[3*i + 1];
         elem_2 += (SDF[knn_id] - SDF[idx]) * Weights_curr[3*i + 2];
@@ -476,7 +476,7 @@ __global__ void cvt_grad_cuda_kernel(
         float dist = 0.0f;
 
         for (int i = 0; i < num_knn; i++) {
-            knn_id = neighbors[num_knn*(idx+1) + i];
+            knn_id = neighbors[num_knn*idx + i];
             if (knn_id == -1)
                 break;
 
@@ -499,7 +499,7 @@ __global__ void cvt_grad_cuda_kernel(
             // Compute ray - plane intersection point
             denom = nmle[0] * curr_ray[0] + nmle[1] * curr_ray[1] + nmle[2] * curr_ray[2];
             if (abs(denom) > 1.0e-6) {
-                dist = (nmle[0] * (b_point[0] - curr_site[0]) + nmle[1] * (b_point[1] - curr_site[1]) + nmle[2] * (b_point[21] - curr_site[2])) / denom;
+                dist = (nmle[0] * (b_point[0] - curr_site[0]) + nmle[1] * (b_point[1] - curr_site[1]) + nmle[2] * (b_point[2] - curr_site[2])) / denom;
                 if (dist >= 0.0 && dist < min_dist) {
                     min_dist = dist;
                     min_id = knn_id;
@@ -529,7 +529,7 @@ __global__ void cvt_grad_cuda_kernel(
 
         d_min_dist[0] = 0.5 * (-(sites[3*min_id] - curr_site[0])/denom1 + num1 * curr_ray[0]/(denom1*denom1));
         d_min_dist[1] = 0.5 * (-(sites[3*min_id+1] - curr_site[1])/denom1 + num1 * curr_ray[1]/(denom1*denom1));
-        d_min_dist[2] = 0.5 * (-(sites[3*min_id+2] - curr_site[2])/denom1 + num1 * curr_ray[21]/(denom1*denom1));
+        d_min_dist[2] = 0.5 * (-(sites[3*min_id+2] - curr_site[2])/denom1 + num1 * curr_ray[2]/(denom1*denom1));
 
         d_max_dist[0] = 0.5 * (-(sites[3*max_id] - curr_site[0])/denom2 + num2 * curr_ray[0]/(denom2*denom2));
         d_max_dist[1] = 0.5 * (-(sites[3*max_id+1] - curr_site[1])/denom2 + num2 * curr_ray[1]/(denom2*denom2));   
@@ -547,10 +547,6 @@ __global__ void cvt_grad_cuda_kernel(
 __global__ void sdf_grad_cuda_kernel(
     const size_t num_sites,                // number of rays
     const size_t num_knn,                // number of rays
-    float weight_sdf,
-    const float *__restrict__ thetas, 
-    const float *__restrict__ grad_sdf_space,       
-    const float *__restrict__ grad_grad,       
     const int *__restrict__ neighbors,  // [N_voxels, 4] for each voxel => it's neighbors
     const float *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices
     const float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
@@ -563,11 +559,11 @@ __global__ void sdf_grad_cuda_kernel(
         return;
     }
 
-    float curr_site[2] {sites[2*idx], sites[2*idx + 1]};
+    float curr_site[3] {sites[3*idx], sites[3*idx + 1], sites[3*idx + 2]};
     
-    float curr_ray[2] {0.0, 0.0};
-    float nmle[2] {0.0, 0.0};
-    float b_point[2] {0.0, 0.0};
+    float curr_ray[3] {0.0, 0.0, 0.0};
+    float nmle[3] {0.0, 0.0, 0.0};
+    float b_point[3] {0.0, 0.0, 0.0};
     int knn_id = -1;
 
     float denom = 0.0f;
@@ -576,18 +572,20 @@ __global__ void sdf_grad_cuda_kernel(
     float sdf_mid, dot_prod_g;
 
     for (int r_id = 0; r_id < num_knn; r_id++) {
-        knn_id = neighbors[num_knn*(idx+1) + r_id];
+        knn_id = neighbors[num_knn*idx + r_id];
         if (sdf[idx]*sdf[knn_id] >= 0.0f)
             continue;
         
         // Check if k-nn neighbor is adjacent in the CVT 
-        curr_ray[0] = sites[2*knn_id] - sites[2*idx];
-        curr_ray[1] = sites[2*knn_id + 1] - sites[2*idx + 1];
-        nmle_length = sqrt(curr_ray[0]*curr_ray[0] + curr_ray[1]*curr_ray[1]);
+        curr_ray[0] = sites[3*knn_id] - sites[3*idx];
+        curr_ray[1] = sites[3*knn_id + 1] - sites[3*idx + 1];
+        curr_ray[2] = sites[3*knn_id + 2] - sites[3*idx + 2];
+        nmle_length = sqrt(curr_ray[0]*curr_ray[0] + curr_ray[1]*curr_ray[1] + curr_ray[2]*curr_ray[2]);
         if (nmle_length == 0.0f)
             continue;
         curr_ray[0] = curr_ray[0] / nmle_length;
         curr_ray[1] = curr_ray[1] / nmle_length;
+        curr_ray[2] = curr_ray[2] / nmle_length;
 
         float min_dist = 1.0e32;
         int min_id = -1;
@@ -595,27 +593,30 @@ __global__ void sdf_grad_cuda_kernel(
         int kk_nn_id = -1;
 
         for (int i = 0; i < num_knn; i++) {
-            kk_nn_id  = neighbors[num_knn*(idx+1) + i];
+            kk_nn_id  = neighbors[num_knn*idx + i];
             if (kk_nn_id == -1)
                 break;
 
             // Compute bisector normal vector
-            nmle[0] = (sites[2*kk_nn_id] - curr_site[0]);
-            nmle[1] = (sites[2*kk_nn_id + 1] - curr_site[1]);
-            nmle_length = sqrt(nmle[0]*nmle[0] + nmle[1]*nmle[1]);
+            nmle[0] = (sites[3*kk_nn_id] - curr_site[0]);
+            nmle[1] = (sites[3*kk_nn_id + 1] - curr_site[1]);
+            nmle[2] = (sites[3*kk_nn_id + 2] - curr_site[2]);
+            nmle_length = sqrt(nmle[0]*nmle[0] + nmle[1]*nmle[1] + nmle[2]*nmle[2]);
             if (nmle_length == 0.0f)
                 continue;
             nmle[0] = nmle[0] / nmle_length;
             nmle[1] = nmle[1] / nmle_length;
+            nmle[2] = nmle[2] / nmle_length;
             
             // Compute middle point
-            b_point[0] = (sites[2*kk_nn_id] + curr_site[0]) / 2.0f;
-            b_point[1] = (sites[2*kk_nn_id + 1] + curr_site[1]) / 2.0f;
+            b_point[0] = (sites[3*kk_nn_id] + curr_site[0]) / 2.0f;
+            b_point[1] = (sites[3*kk_nn_id + 1] + curr_site[1]) / 2.0f;
+            b_point[2] = (sites[3*kk_nn_id + 2] + curr_site[2]) / 2.0f;
             
             // Compute ray - plane intersection point
-            denom = nmle[0] * curr_ray[0] + nmle[1] * curr_ray[1];
+            denom = nmle[0] * curr_ray[0] + nmle[1] * curr_ray[1] + nmle[2] * curr_ray[2];
             if (abs(denom) > 1.0e-6) {
-                dist = (nmle[0] * (b_point[0] - curr_site[0]) + nmle[1] * (b_point[1] - curr_site[1])) / denom;
+                dist = (nmle[0] * (b_point[0] - curr_site[0]) + nmle[1] * (b_point[1] - curr_site[1]) + nmle[2] * (b_point[2] - curr_site[2])) / denom;
                 if (dist >= 0.0 && dist < min_dist) {
                     min_dist = dist;
                     min_id = kk_nn_id;
@@ -629,29 +630,27 @@ __global__ void sdf_grad_cuda_kernel(
         }
 
         sdf_mid = (sdf[idx] + sdf[knn_id])/2.0f; 
-        denom = sqrt((sites[2*knn_id] - curr_site[0]) * (sites[2*knn_id] - curr_site[0]) + (sites[2*knn_id+1] - curr_site[1])* (sites[2*knn_id+1] - curr_site[1]));  
+        denom = sqrt((sites[3*knn_id] - curr_site[0]) * (sites[3*knn_id] - curr_site[0]) + 
+                    (sites[3*knn_id+1] - curr_site[1]) * (sites[3*knn_id+1] - curr_site[1])+ 
+                    (sites[3*knn_id+2] - curr_site[2]) * (sites[3*knn_id+2] - curr_site[2]));  
         
         if (sdf_mid * sdf[idx] > 0.0f) {
-            atomicAdd(&grad_sites[2*idx], -weight_sdf*fabs(sdf_mid)*(sites[2*knn_id] - curr_site[0])/denom);
-            atomicAdd(&grad_sites[2*idx + 1], -weight_sdf*fabs(sdf_mid)*(sites[2*knn_id+1] - curr_site[1])/denom);
+            atomicAdd(&grad_sites[3*idx], -fabs(sdf_mid)*(sites[3*knn_id] - curr_site[0])/denom);
+            atomicAdd(&grad_sites[3*idx + 1], -fabs(sdf_mid)*(sites[3*knn_id+1] - curr_site[1])/denom);
+            atomicAdd(&grad_sites[3*idx + 2], -fabs(sdf_mid)*(sites[3*knn_id+2] - curr_site[2])/denom);
             
-            atomicAdd(&grad_sites[2*knn_id], -weight_sdf*fabs(sdf_mid)*(sites[2*knn_id] - curr_site[0])/denom);
-            atomicAdd(&grad_sites[2*knn_id + 1], -weight_sdf*fabs(sdf_mid)*(sites[2*knn_id+1] - curr_site[1])/denom);
+            atomicAdd(&grad_sites[3*knn_id], -fabs(sdf_mid)*(sites[3*knn_id] - curr_site[0])/denom);
+            atomicAdd(&grad_sites[3*knn_id + 1], -fabs(sdf_mid)*(sites[3*knn_id+1] - curr_site[1])/denom);
+            atomicAdd(&grad_sites[3*knn_id + 2], -fabs(sdf_mid)*(sites[3*knn_id+2] - curr_site[2])/denom);
         } else {
-            atomicAdd(&grad_sites[2*idx], weight_sdf*fabs(sdf_mid)*(sites[2*knn_id] - curr_site[0])/denom);
-            atomicAdd(&grad_sites[2*idx + 1], weight_sdf*fabs(sdf_mid)*(sites[2*knn_id+1] - curr_site[1])/denom);
+            atomicAdd(&grad_sites[3*idx], fabs(sdf_mid)*(sites[3*knn_id] - curr_site[0])/denom);
+            atomicAdd(&grad_sites[3*idx + 1], fabs(sdf_mid)*(sites[3*knn_id+1] - curr_site[1])/denom);
+            atomicAdd(&grad_sites[3*idx + 2], fabs(sdf_mid)*(sites[3*knn_id+2] - curr_site[2])/denom);
             
-            atomicAdd(&grad_sites[2*knn_id], weight_sdf*fabs(sdf_mid)*(sites[2*knn_id] - curr_site[0])/denom);
-            atomicAdd(&grad_sites[2*knn_id + 1], weight_sdf*fabs(sdf_mid)*(sites[2*knn_id+1] - curr_site[1])/denom);
+            atomicAdd(&grad_sites[3*knn_id], fabs(sdf_mid)*(sites[3*knn_id] - curr_site[0])/denom);
+            atomicAdd(&grad_sites[3*knn_id + 1], fabs(sdf_mid)*(sites[3*knn_id+1] - curr_site[1])/denom);
+            atomicAdd(&grad_sites[3*knn_id + 2], fabs(sdf_mid)*(sites[3*knn_id+2] - curr_site[2])/denom);
         } 
-
-        /*if (sdf_mid * sdf[idx] > 0.0f) {
-            grad_sites[2*idx] = grad_sites[2*idx] - weight_sdf*fabs(sdf_mid)*(sites[2*knn_id] - curr_site[0])/denom;
-            grad_sites[2*idx+1] = grad_sites[2*idx+1] - weight_sdf*fabs(sdf_mid)*(sites[2*knn_id+1] - curr_site[1])/denom;
-        }/* else {
-            grad_sites[2*knn_id] = grad_sites[2*knn_id] - weight_sdf*sdf_mid*(sites[2*knn_id] - curr_site[0])/denom;
-            grad_sites[2*knn_id+1] = grad_sites[2*knn_id+1] - weight_sdf*sdf_mid*(sites[2*knn_id+1] - curr_site[1])/denom;
-        }  */
     }
 
     return;
@@ -819,10 +818,6 @@ void cvt_grad_cuda(
 void sdf_grad_cuda(
     size_t num_sites,
     size_t num_knn,
-    float weight_sdf,
-    torch::Tensor thetas, 
-    torch::Tensor grad_sdf_space,      // [N_rays, 6]
-    torch::Tensor grad_grad, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor neighbors,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
@@ -834,10 +829,6 @@ void sdf_grad_cuda(
             sdf_grad_cuda_kernel CUDA_KERNEL(blocks,threads) (
                 num_sites,
                 num_knn,
-                weight_sdf,
-                thetas.data_ptr<float>(),
-                grad_sdf_space.data_ptr<float>(),
-                grad_grad.data_ptr<float>(),
                 neighbors.data_ptr<int>(),
                 sites.data_ptr<float>(),
                 sdf.data_ptr<float>(),

@@ -138,6 +138,12 @@ class Runner:
         
         self.grad_sites = torch.zeros(self.sites.shape).cuda()       
         self.grad_sites = self.grad_sites.contiguous()
+
+        self.grad_sites_sdf = torch.zeros(self.sites.shape).cuda()       
+        self.grad_sites_sdf = self.grad_sites_sdf.contiguous()
+
+        self.mask_grad = torch.zeros(self.sites.shape).cuda()       
+        self.mask_grad = self.mask_grad.contiguous()
         print(self.sites.shape)
 
         delta_sites = torch.zeros(self.sites.shape).float().cuda()
@@ -349,7 +355,7 @@ class Runner:
             ##### Optimize sites positions #########
             ########################################
             loss_cvt = 0.0
-            if iter_step > 1000 and iter_step % self.CVT_freq == 0:
+            if iter_step > 10 and iter_step % self.CVT_freq == 0:
                 thetas = torch.from_numpy(np.random.rand(self.sites.shape[0])).float().cuda()
                 phis = torch.from_numpy(np.random.rand(self.sites.shape[0])).float().cuda()
                 gammas = torch.from_numpy(np.random.rand(self.sites.shape[0])).float().cuda()
@@ -361,19 +367,32 @@ class Runner:
                 start = timer()       
                 self.grad_sites[:] = 0.0
                 cvt_grad_cuda.cvt_grad(self.sites.shape[0], K_NN, thetas, phis, gammas, self.tet32.knn_sites, self.sites, self.sdf, self.grad_sites)
+                self.grad_sites = self.grad_sites / self.sites.shape[0]
                 
+                self.grad_sites_sdf[:] = 0.0
+                cvt_grad_cuda.sdf_grad(self.sites.shape[0], K_NN, self.tet32.knn_sites, self.sites, self.sdf, self.grad_sites_sdf)
+
+                print(self.grad_sites_sdf[(torch.linalg.norm(self.grad_sites_sdf, ord=2, axis=-1, keepdims=True) > 0.0).reshape(-1),:].mean())
+                print(self.grad_sites.mean())
+                
+                self.mask_grad[:,:] = 1.0e-3
+                #self.mask_grad[(torch.linalg.norm(self.grad_sites_sdf, ord=2, axis=-1, keepdims=True) > 0.0).reshape(-1),:] = 1.0e-3
+
                 if verbose:
                     print('cvt_grad time:', timer() - start)
 
-                self.grad_sites[outside_flag == 1.0] = 0.0
+                self.grad_sites[outside_flag == 1.0, :] = 0.0
+                self.grad_sites[cam_ids, :] = 0.0
+                self.grad_sites_sdf[outside_flag == 1.0] = 0.0
                 self.optimizer_cvt.zero_grad()
-                self.sites.grad = self.grad_sites
+                self.sites.grad = self.grad_sites*self.mask_grad #+ 0.00001*self.grad_sites_sdf
                 self.optimizer_cvt.step()
 
-                self.tet32.sites[:] = self.sites[:]
-
                 with torch.no_grad():
+                    self.sites[cam_ids] = delta_sites[cam_ids]
                     delta_sites[:] = self.sites[:] - delta_sites[:] 
+
+                self.tet32.sites[:] = self.sites[:]
 
                 """self.sdf_diff[:] = 0.0
                 self.feat_diff[:] = 0.0
@@ -384,10 +403,35 @@ class Runner:
                     for i in range(6):
                         self.fine_features[:, i] = self.fine_features[:, i] + (delta_sites*self.grad_feat_space[:, :, i]).sum(dim = 1)[:] # self.feat_diff[:]
 
+                """with torch.no_grad():
+                    if iter_step % 100 == 0:
+                        self.tet32 = tet32.Tet32(self.sites.detach().cpu().numpy(), id = 0)
+                        #self.tet32.start() 
+                        #print("parallel process started")
+                        #self.tet32.join()
+                        self.tet32.run() 
+                        self.tet32.load_cuda()
+                        
+                        sites = np.asarray(self.tet32.vertices)  
+                        cam_ids = np.stack([np.where((sites == cam_sites[i,:]).all(axis = 1))[0] for i in range(cam_sites.shape[0])]).reshape(-1)
+                        self.tet32.make_adjacencies(cam_ids)
+
+                        cam_ids = torch.from_numpy(cam_ids).int().cuda()
+                        
+                        outside_flag[:] = 0
+                        outside_flag[sites[:,0] < visual_hull[0] + (visual_hull[3]-visual_hull[0])/(2*res)] = 1
+                        outside_flag[sites[:,1] < visual_hull[1] + (visual_hull[4]-visual_hull[1])/(2*res)] = 1
+                        outside_flag[sites[:,2] < visual_hull[2] + (visual_hull[5]-visual_hull[2])/(2*res)] = 1
+                        outside_flag[sites[:,0] > visual_hull[3] - (visual_hull[3]-visual_hull[0])/(2*res)] = 1
+                        outside_flag[sites[:,1] > visual_hull[4] - (visual_hull[4]-visual_hull[1])/(2*res)] = 1
+                        outside_flag[sites[:,2] > visual_hull[5] - (visual_hull[5]-visual_hull[2])/(2*res)] = 1
+
+                        sites = torch.from_numpy(sites.astype(np.float32)).cuda()
+                        self.sites[:] = sites[:]"""
+
+                        
                 with torch.no_grad():
                     delta_sites[:] = self.sites[:]
-
-                #self.cvt = CVT_2D(sites.detach().cpu().numpy(), self.cameras_center, KNN = K_NN)  
             
             if iter_step % self.report_freq == 0:
                 print('iter:{:8>d} loss = {} lr={}'.format(iter_step, loss, self.optimizer_sdf.param_groups[0]['lr']))
@@ -548,14 +592,17 @@ class Runner:
         progress = it / self.end_iter
         learning_factor = (np.cos(np.pi * progress) + 1.0) * 0.5 * (1 - alpha) + alpha
 
-        #for g in self.optimizer.param_groups:
-        #    g['lr'] = self.learning_rate * learning_factor
+        for g in self.optimizer.param_groups:
+            g['lr'] = self.learning_rate * learning_factor
 
         for g in self.optimizer_feat.param_groups:
             g['lr'] = self.learning_rate_feat * learning_factor
             
         for g in self.optimizer_sdf.param_groups:
             g['lr'] = self.learning_rate_sdf * learning_factor
+            
+        for g in self.optimizer_cvt.param_groups:
+            g['lr'] = self.learning_rate_cvt * learning_factor
 
 if __name__=='__main__':
     print("Code by Diego Thomas")

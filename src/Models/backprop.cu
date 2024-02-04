@@ -38,6 +38,9 @@ __global__ void backprop_feat_kernel(
     for (int i = 0; i < 3; i++) {
             id_prev = cell_ids[6 * idx + i];
             id = cell_ids[6 * idx + 3 + i];
+
+            if (id_prev < 0 || id < 0)
+                return;
             
             for (int k = 0; k < DIM_L_FEAT; k++) {  
                 atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[6*idx + i] * 0.5 * grad_samples[DIM_L_FEAT * idx + k]);              

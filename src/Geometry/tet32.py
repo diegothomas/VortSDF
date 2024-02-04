@@ -120,9 +120,8 @@ class Tet32(Process):
         start = timer()
         self.KDtree = scipy.spatial.KDTree(self.sites)
         self.knn_sites = -1 * np.ones((self.sites.shape[0], self.KNN))
-        for i in range(self.sites.shape[0]):
-            _, idx = self.KDtree.query(self.sites[i], k=self.KNN+1)
-            self.knn_sites[i,:] = np.asarray(idx[1:])
+        _, idx = self.KDtree.query(self.sites, k=self.KNN+1)
+        self.knn_sites[:,:] = np.asarray(idx[:,1:])
         print('KDTreeFlann time:', timer() - start)    
 
         self.d['summits'] = self.summits

@@ -509,7 +509,6 @@ __global__ void tet32_march_cuda_kernel(
 				z_id_ray[6 * s_id + 3] = ids[0]; 
 				z_id_ray[6 * s_id + 3 + 1] = ids[1];
 				z_id_ray[6 * s_id + 3 + 2] = ids[2]; 
-
 				
 				weights_ray[6 * s_id] = prev_weights[0]; 
 				weights_ray[6 * s_id + 1] = prev_weights[1];
