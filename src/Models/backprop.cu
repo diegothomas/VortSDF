@@ -36,17 +36,17 @@ __global__ void backprop_feat_kernel(
 
     int id_prev, id;
     for (int i = 0; i < 3; i++) {
-            id_prev = cell_ids[6 * idx + i];
-            id = cell_ids[6 * idx + 3 + i];
+        id_prev = cell_ids[6 * idx + i];
+        id = cell_ids[6 * idx + 3 + i];
 
-            if (id_prev < 0 || id < 0)
-                return;
-            
-            for (int k = 0; k < DIM_L_FEAT; k++) {  
-                atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[6*idx + i] * 0.5 * grad_samples[DIM_L_FEAT * idx + k]);              
-                atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[6*idx + 3 + i] * 0.5 * grad_samples[DIM_L_FEAT * idx + k]);
-            }
+        if (id_prev < 0 || id < 0)
+            return;
+        
+        for (int k = 0; k < DIM_L_FEAT; k++) {  
+            atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[6*idx + i] * 0.5 * grad_samples[DIM_L_FEAT * idx + k]);              
+            atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[6*idx + 3 + i] * 0.5 * grad_samples[DIM_L_FEAT * idx + k]);
         }
+    }
 
     return;
 }
@@ -90,6 +90,7 @@ __global__ void eikonal_loss_kernel(
 
 __global__ void smooth_kernel(
     const size_t num_edges,                // number of rays
+    float sigma,
     float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ feat,     // [N_voxels, 4] for each voxel => it's vertices
@@ -105,21 +106,97 @@ __global__ void smooth_kernel(
         return;
     }
     
-    float sigma = 0.01f;
     float length_edge = (vertices[3*edges[2*idx]] - vertices[3*edges[2*idx+1]])*(vertices[3*edges[2*idx]] - vertices[3*edges[2*idx+1]]) +
                             (vertices[3*edges[2*idx] + 1] - vertices[3*edges[2*idx+1] + 1])*(vertices[3*edges[2*idx] + 1] - vertices[3*edges[2*idx+1] + 1]) +
                             (vertices[3*edges[2*idx] + 2] - vertices[3*edges[2*idx+1] + 2])*(vertices[3*edges[2*idx] + 2] - vertices[3*edges[2*idx+1] + 2]);
               
-    atomicAdd(&sdf_grad[edges[2*idx]], exp(-length_edge/sigma) * (sdf[edges[2*idx]] - sdf[edges[2*idx+1]]));          
-    atomicAdd(&sdf_grad[edges[2*idx + 1]], -exp(-length_edge/sigma) * (sdf[edges[2*idx]] - sdf[edges[2*idx+1]]));
+    atomicAdd(&sdf_grad[edges[2*idx]], exp(-length_edge/(sigma*sigma)) * (sdf[edges[2*idx]] - sdf[edges[2*idx+1]]));          
+    atomicAdd(&sdf_grad[edges[2*idx + 1]], -exp(-length_edge/(sigma*sigma)) * (sdf[edges[2*idx]] - sdf[edges[2*idx+1]]));
 
     for (int i = 0; i < DIM_L_FEAT; i++) {
-        atomicAdd(&feat_grad[DIM_L_FEAT*edges[2*idx] + i], exp(-length_edge/sigma) * (feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i]));          
-        atomicAdd(&feat_grad[DIM_L_FEAT*edges[2*idx + 1] + i], -exp(-length_edge/sigma) * (feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i]));
+        atomicAdd(&feat_grad[DIM_L_FEAT*edges[2*idx] + i], exp(-length_edge/(sigma*sigma)) * (feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i]));          
+        atomicAdd(&feat_grad[DIM_L_FEAT*edges[2*idx + 1] + i], -exp(-length_edge/(sigma*sigma)) * (feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i]));
     }
     
-    atomicAdd(&counter[edges[2*idx]], exp(-length_edge/sigma));
-    atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/sigma));
+    atomicAdd(&counter[edges[2*idx]], exp(-length_edge/(sigma*sigma)));
+    atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/(sigma*sigma)));
+
+    return;
+}
+
+__global__ void space_reg_kernel(
+    const size_t num_rays,                // number of rays
+    const float *__restrict__ rays_d,       // [N_rays, 6]
+    const float *__restrict__ grad_space,       // [N_rays, 6]
+    const float *__restrict__ out_weights,       // [N_rays, 6]
+    const float *__restrict__ out_z,       // [N_rays, 6]
+    const float *__restrict__ out_sdf,       // [N_rays, 6]
+    const float *__restrict__ out_feat,       // [N_rays, 6]
+    const int *__restrict__ out_ids,     // [N_voxels, 4] for each voxel => it's vertices)
+    const int *__restrict__ offset,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ sdf_grad,    // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ feat_grad
+    )
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_rays)
+    {
+        return;
+    }
+
+    float direction[3] {rays_d[idx * 3], rays_d[idx * 3 + 1], rays_d[idx * 3 + 2]};
+
+    float grad_in[3] {0.0f, 0.0f, 0.0f};
+    float grad_exit[3] {0.0f, 0.0f, 0.0f};
+    float grad_curr[3] {0.0f, 0.0f, 0.0f};
+    float vec_curr[3] {0.0f, 0.0f, 0.0f};
+
+    float diff_sdf = 0.0f;
+    float err_diff, weight_color;
+
+    int start = offset[2*idx];
+    int end = offset[2*idx+1];
+    int s_id = 0;
+    for (int i = start; i < start+end; i++) {
+        for (int j = 0; j < 3; j++) {
+            grad_in[j] = grad_space[3*out_ids[6*i] + j]*out_weights[6*i] + 
+                            grad_space[3*out_ids[6*i+1] + j]*out_weights[6*i+1] + 
+                            grad_space[3*out_ids[6*i+2] + j]*out_weights[6*i+2];
+                            
+            grad_exit[j] = grad_space[3*out_ids[6*i + 3] + j]*out_weights[6*i + 3] + 
+                            grad_space[3*out_ids[6*i + 3 + 1] + j]*out_weights[6*i + 3 + 1] + 
+                            grad_space[3*out_ids[6*i + 3 + 2] + j]*out_weights[6*i + 3 + 2];
+            
+            grad_curr[j] = (grad_in[j] + grad_exit[j]) / 2.0f;
+        }
+
+        float norm = sqrt(grad_curr[0]*grad_curr[0] + grad_curr[1]*grad_curr[1] + grad_curr[2]*grad_curr[2]);
+        if (norm == 0.0f)
+            continue;
+        grad_curr[0] = grad_curr[0]/norm;  grad_curr[1] = grad_curr[1]/norm; grad_curr[2] = grad_curr[2]/norm; 
+
+        vec_curr[0] = direction[0] * (out_z[2*i + 1] - out_z[2*i]);
+        vec_curr[1] = direction[1] * (out_z[2*i + 1] - out_z[2*i]);
+        vec_curr[2] = direction[2] * (out_z[2*i + 1] - out_z[2*i]);
+
+        diff_sdf = grad_curr[0]*vec_curr[0] + grad_curr[1]*vec_curr[1] + grad_curr[2]*vec_curr[2];
+
+        err_diff = ((out_sdf[2*i + 1] - out_sdf[2*i]) - diff_sdf) ;
+        for (int j = 0; j < 3; j++) {            
+            atomicAdd(&sdf_grad[out_ids[6*i + j]], out_weights[6*i + j] * err_diff);
+            atomicAdd(&sdf_grad[out_ids[6*i + 3 + j]], -out_weights[6*i + 3 + j] * err_diff);
+        }
+
+        weight_color = fabs(grad_curr[0]*direction[0] + grad_curr[1]*direction[1] + grad_curr[2]*direction[2]);
+    
+        for (int j = 0; j < 3; j++) {            
+            for (int k = 0; k < 6; k++) {
+                atomicAdd(&feat_grad[6*out_ids[6*i + j] + k], out_weights[6*i + j] * weight_color * (out_feat[12*i + 6 + k] - out_feat[12*i + k]));
+                atomicAdd(&feat_grad[6*out_ids[6*i + 3 + j] + k], -out_weights[6*i + 3 + j] * weight_color * (out_feat[12*i + 6 + k] - out_feat[12*i + k]));
+            }
+        }
+    }
+
 
     return;
 }
@@ -189,6 +266,7 @@ float eikonal_loss_cuda(
 // *************************
 void smooth_cuda(
     size_t num_edges,
+    float sigma,
     torch::Tensor vertices,
     torch::Tensor sdf,
     torch::Tensor feat,
@@ -203,6 +281,7 @@ void smooth_cuda(
     AT_DISPATCH_FLOATING_TYPES( sdf.type(),"smooth_kernel", ([&] {  
         smooth_kernel CUDA_KERNEL(blocks,threads) (
             num_edges,
+            sigma,
             vertices.data_ptr<float>(),
             sdf.data_ptr<float>(),
             feat.data_ptr<float>(),
@@ -210,6 +289,40 @@ void smooth_cuda(
             sdf_grad.data_ptr<float>(),
             feat_grad.data_ptr<float>(),
             counter.data_ptr<float>());
+    }));
+    
+}
+
+// *************************
+void space_reg_cuda(
+    size_t num_rays,
+    torch::Tensor rays_d,
+    torch::Tensor grad_space,
+    torch::Tensor out_weights,
+    torch::Tensor out_z,
+    torch::Tensor out_sdf,
+    torch::Tensor out_feat,
+    torch::Tensor out_ids,
+    torch::Tensor offset,
+    torch::Tensor sdf_grad,
+    torch::Tensor feat_grad 
+)
+{
+    const int threads = 1024;
+    const int blocks = (num_rays + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+    AT_DISPATCH_FLOATING_TYPES( out_sdf.type(),"space_reg_kernel", ([&] {  
+        space_reg_kernel CUDA_KERNEL(blocks,threads) (
+            num_rays,                // number of rays
+            rays_d.data_ptr<float>(),       // [N_rays, 6]
+            grad_space.data_ptr<float>(),       // [N_rays, 6]
+            out_weights.data_ptr<float>(),       // [N_rays, 6]
+            out_z.data_ptr<float>(),       // [N_rays, 6]
+            out_sdf.data_ptr<float>(),       // [N_rays, 6]
+            out_feat.data_ptr<float>(),       // [N_rays, 6]
+            out_ids.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)
+            offset.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)
+            sdf_grad.data_ptr<float>(),    // [N_voxels, 4] for each voxel => it's vertices
+            feat_grad.data_ptr<float>());
     }));
     
 }

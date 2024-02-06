@@ -16,7 +16,7 @@
 
 
 #define PI 3.141592653589793238462643383279502884197
-#define _MAX_K_NN 24
+#define _MAX_K_NN 6
 #define _BUFF_SIZE 2048
 
 /** Device functions **/
@@ -336,7 +336,7 @@ __global__ void sdf_space_grad_cuda_kernel(
 
     float *Weights_curr = &Weights[3*num_knn*idx];    
 
-    for (int r_id = 0; r_id < num_knn; r_id++) {
+    for (int r_id = 0; r_id < _MAX_K_NN; r_id++) {
         knn_id = neighbors[num_knn*idx + r_id];
 
         // Coords of k-Nearest Neighbors
@@ -389,7 +389,7 @@ __global__ void sdf_space_grad_cuda_kernel(
     float feat_0[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     float feat_1[6] ={0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     float feat_2[6] ={0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-    for (int i = 0; i < num_knn; i++) {
+    for (int i = 0; i < _MAX_K_NN; i++) {
         knn_id = neighbors[num_knn*idx + i];
         elem_0 += (SDF[knn_id] - SDF[idx]) * Weights_curr[3*i];
         elem_1 += (SDF[knn_id] - SDF[idx]) * Weights_curr[3*i + 1];
@@ -424,8 +424,8 @@ __global__ void cvt_grad_cuda_kernel(
     const float *__restrict__ gammas, 
     const int *__restrict__ neighbors,  // [N_voxels, 4] for each voxel => it's neighbors
     const float *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices
-    const float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
-    float *__restrict__ grad_sites     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ grad_sites,     // [N_voxels, 4] for each voxel => it's vertices
+    float* loss
 )
 {
     const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -467,7 +467,7 @@ __global__ void cvt_grad_cuda_kernel(
         
         curr_ray[0] = rot[0]*ray[3*r_id] + rot[1]*ray[3*r_id+1] + rot[2]*ray[3*r_id+2];
         curr_ray[1] = rot[3]*ray[3*r_id] + rot[4]*ray[3*r_id+1] + rot[5]*ray[3*r_id+2];
-        curr_ray[3] = rot[6]*ray[3*r_id] + rot[7]*ray[3*r_id+1] + rot[8]*ray[3*r_id+2];
+        curr_ray[2] = rot[6]*ray[3*r_id] + rot[7]*ray[3*r_id+1] + rot[8]*ray[3*r_id+2];
 
         float min_dist = 1.0e32;
         int min_id = -1;
@@ -520,6 +520,7 @@ __global__ void cvt_grad_cuda_kernel(
         num1 = (sites[3*min_id] - curr_site[0]) * (sites[3*min_id] - curr_site[0]) + 
                 (sites[3*min_id+1] - curr_site[1]) * (sites[3*min_id+1] - curr_site[1])+ 
                 (sites[3*min_id+2] - curr_site[2]) * (sites[3*min_id+2] - curr_site[2]);
+                
         denom2 = curr_ray[0] * (sites[3*max_id] - curr_site[0]) + 
                 curr_ray[1] * (sites[3*max_id+1] - curr_site[1])+ 
                 curr_ray[2] * (sites[3*max_id+2] - curr_site[2]);    
@@ -538,7 +539,11 @@ __global__ void cvt_grad_cuda_kernel(
         // gradients related to CVT loss
         grad_sites[3*idx] = grad_sites[3*idx] - (min_dist * d_min_dist[0] + max_dist * d_max_dist[0]);  
         grad_sites[3*idx+1] = grad_sites[3*idx+1] - (min_dist * d_min_dist[1] + max_dist * d_max_dist[1]);    
-        grad_sites[3*idx+2] = grad_sites[3*idx+2] - (min_dist * d_min_dist[2] + max_dist * d_max_dist[2]);    
+        grad_sites[3*idx+2] = grad_sites[3*idx+2] - (min_dist * d_min_dist[2] + max_dist * d_max_dist[2]);   
+        /*grad_sites[3*idx] = grad_sites[3*idx] - (min_dist+max_dist) * curr_ray[0];  
+        grad_sites[3*idx+1] = grad_sites[3*idx+1] - (min_dist+max_dist) * curr_ray[1];    
+        grad_sites[3*idx+2] = grad_sites[3*idx+2] - (min_dist+max_dist) * curr_ray[2];*/ 
+        atomicAdd(loss, fabs(min_dist+max_dist));
     }
 
     return;
@@ -787,8 +792,8 @@ void sdf_space_grad_cuda(
 }
 
 
-// Ray marching in 3D
-void cvt_grad_cuda(
+// 
+float cvt_grad_cuda(
     size_t num_sites,
     size_t num_knn,
     torch::Tensor thetas, 
@@ -796,9 +801,14 @@ void cvt_grad_cuda(
     torch::Tensor gammas, 
     torch::Tensor neighbors,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor grad_sites    // [N_sites, 3] for each voxel => it's vertices
 )   {
+    
+        float* loss;
+        cudaMalloc((void**)&loss, sizeof(float));
+        cudaMemset(loss, 0, sizeof(float));
+
+
         const int threads = 1024;
         const int blocks = (num_sites + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
         AT_DISPATCH_FLOATING_TYPES( sites.type(),"cvt_grad_cuda", ([&] {  
@@ -810,9 +820,17 @@ void cvt_grad_cuda(
                 gammas.data_ptr<float>(),
                 neighbors.data_ptr<int>(),
                 sites.data_ptr<float>(),
-                sdf.data_ptr<float>(),
-                grad_sites.data_ptr<float>()); 
+                grad_sites.data_ptr<float>(),
+                loss); 
     }));
+
+    
+		cudaDeviceSynchronize();
+		float res = 0;
+		cudaMemcpy(&res, loss, sizeof(float), cudaMemcpyDeviceToHost);
+		cudaFree(loss);
+
+		return res;
 }
 
 void sdf_grad_cuda(

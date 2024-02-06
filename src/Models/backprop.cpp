@@ -21,6 +21,7 @@ float eikonal_loss_cuda(
 
 void smooth_cuda(
     size_t num_edges,
+    float sigma,
     torch::Tensor vertices,
     torch::Tensor sdf,
     torch::Tensor feat,
@@ -28,6 +29,20 @@ void smooth_cuda(
     torch::Tensor sdf_grad,
     torch::Tensor feat_grad,
     torch::Tensor counter 
+);
+
+void space_reg_cuda(
+    size_t num_rays,
+    torch::Tensor rays_d,
+    torch::Tensor grad_space,
+    torch::Tensor out_weights,
+    torch::Tensor out_z,
+    torch::Tensor out_sdf,
+    torch::Tensor out_feat,
+    torch::Tensor out_ids,
+    torch::Tensor offset,
+    torch::Tensor sdf_grad,
+    torch::Tensor feat_grad 
 );
 
 
@@ -72,6 +87,7 @@ float eikonal_loss(
 
 void smooth_sdf(
     size_t num_edges,
+    float sigma,
     torch::Tensor vertices,
     torch::Tensor sdf,
     torch::Tensor feat,
@@ -82,6 +98,7 @@ void smooth_sdf(
 ){
     //std::cout << "Backprop feature gradients" << std::endl; 
     smooth_cuda(num_edges,
+    sigma,
     vertices,
     sdf,
     feat,
@@ -91,9 +108,36 @@ void smooth_sdf(
     counter);
 }
 
+void space_reg(
+    size_t num_rays,
+    torch::Tensor rays_d,
+    torch::Tensor grad_space,
+    torch::Tensor out_weights,
+    torch::Tensor out_z,
+    torch::Tensor out_sdf,
+    torch::Tensor out_feat,
+    torch::Tensor out_ids,
+    torch::Tensor offset,
+    torch::Tensor sdf_grad,
+    torch::Tensor feat_grad 
+){
+    //std::cout << "Backprop feature gradients" << std::endl; 
+    space_reg_cuda(num_rays,
+    rays_d,
+    grad_space,
+    out_weights,
+    out_z,
+    out_sdf,
+    out_feat,
+    out_ids,
+    offset,
+    sdf_grad,
+    feat_grad );
+}
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("eikonal_loss", &eikonal_loss, "eikonal_loss (CPP)");
     m.def("smooth_sdf", &smooth_sdf, "smooth_sdf (CPP)");
     m.def("backprop_feat", &backprop_feat, "backprop_feat (CPP)");
+    m.def("space_reg", &space_reg, "space_reg (CPP)");
 }

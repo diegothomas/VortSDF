@@ -227,7 +227,7 @@ __global__ void tet32_march_cuda_kernel(
 	
     float *z_val_ray = &z_vals[idx*num_samples*2];
     float *z_sdf_ray = &z_sdfs[idx*num_samples*2];
-    float *z_feat_ray = &z_feat[idx*num_samples*6];
+    float *z_feat_ray = &z_feat[idx*num_samples*12];
     float *weights_ray = &weights_samp[idx*num_samples*6];
     int *z_id_ray = &z_ids[idx*num_samples*6];
     
@@ -400,7 +400,7 @@ __global__ void tet32_march_cuda_kernel(
     float sdf_tot, weights_tot, dist;
 	int knn_id;
 	int prev_closest_id = 0;
-	while (tet_id >= 0 && iter_max < 10000) {
+	while (tet_id >= 0 && iter_max < 1000) {
 		prev_ids[0] = ids[0]; prev_ids[1] = ids[1]; prev_ids[2] = ids[2]; ; prev_ids[3] = ids[3];
 		prev_weights[0] = weights[0]; prev_weights[1] = weights[1]; prev_weights[2] = weights[2];
 		ids[id_exit_face] = ids[3];
@@ -499,8 +499,10 @@ __global__ void tet32_march_cuda_kernel(
 				z_sdf_ray[2 * s_id] = prev_sdf;
 				z_sdf_ray[2 * s_id + 1] = curr_sdf;
 
-				for (int l = 0; l < 6; l++) 
-					z_feat_ray[6 * s_id + l] = (prev_feat[l] + curr_feat[l])/2.0f;
+				for (int l = 0; l < 6; l++) {
+					z_feat_ray[12 * s_id + l] = prev_feat[l];
+					z_feat_ray[12 * s_id + 6 + l] = curr_feat[l];
+				}
 
 				z_id_ray[6 * s_id] = prev_ids[0]; 
 				z_id_ray[6 * s_id + 1] = prev_ids[1];
@@ -596,7 +598,7 @@ __global__ void fill_samples_kernel(
 
     float* in_z_rays = &in_z[2*num_samples * idx];
     float* in_sdf_rays = &in_sdf[2*num_samples * idx];
-    float* in_feat_rays = &in_feat[6*num_samples * idx];
+    float* in_feat_rays = &in_feat[12*num_samples * idx];
     float* in_weights_rays = &in_weights[6*num_samples * idx];
     int* in_ids_rays = &in_ids[6*num_samples * idx];
 
@@ -604,13 +606,16 @@ __global__ void fill_samples_kernel(
     int end = offset[2*idx+1];
     int s_id = 0;
     for (int i = start; i < start+end; i++) {
-        out_z[i] = in_z_rays[2*s_id]; //(in_z_rays[2*s_id] + in_z_rays[2*s_id+1])/2.0f;
+        out_z[2*i] = in_z_rays[2*s_id];
+		out_z[2*i + 1] = in_z_rays[2*s_id+1];
 
         out_sdf[2*i] = in_sdf_rays[2 * s_id];
         out_sdf[2*i+1] = in_sdf_rays[2 * s_id+1];
 		
-		for (int l = 0; l < 6; l++)
-			out_feat[6*i+l] = in_feat_rays[6 * s_id+l];
+		for (int l = 0; l < 6; l++) {
+			out_feat[12*i+l] = in_feat_rays[12 * s_id+l];
+			out_feat[12*i+6+l] = in_feat_rays[12 * s_id+6+l];
+		}
         
         out_ids[6*i] = in_ids_rays[6 * s_id];
         out_ids[6*i+1] = in_ids_rays[6 * s_id+1];
@@ -620,9 +625,9 @@ __global__ void fill_samples_kernel(
         out_ids[6*i + 3 +1] = in_ids_rays[6 * s_id + 3 +1];
         out_ids[6*i + 3 +2] = in_ids_rays[6 * s_id + 3 +2];
 
-        samples[3 * i] = ray.origin[0] + out_z[i]*ray.direction[0];
-        samples[3 * i + 1] = ray.origin[1] + out_z[i]*ray.direction[1];
-        samples[3 * i + 2] = ray.origin[2] + out_z[i]*ray.direction[2];
+        samples[3 * i] = ray.origin[0] + 0.5*(out_z[2*i] + out_z[2*i+1])*ray.direction[0];
+        samples[3 * i + 1] = ray.origin[1] + 0.5*(out_z[2*i] + out_z[2*i+1])*ray.direction[1];
+        samples[3 * i + 2] = ray.origin[2] + 0.5*(out_z[2*i] + out_z[2*i+1])*ray.direction[2];
         
         samples_loc[3 * i] = samples[3 * i] - sites[3*out_ids[3*i+1]];
         samples_loc[3 * i + 1] = samples[3 * i + 1] - sites[3*out_ids[3*i+1] + 1];

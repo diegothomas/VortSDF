@@ -140,6 +140,15 @@ class Tet32(Process):
         #self.tetras = self.d['tetras']
         print("nb edges: ", self.edges.shape)
 
+    def make_knn(self):
+        start = timer()
+        self.KDtree = scipy.spatial.KDTree(self.sites.cpu().numpy())
+        self.knn_sites = -1 * np.ones((self.sites.shape[0], self.KNN))
+        _, idx = self.KDtree.query(self.sites.cpu().numpy(), k=self.KNN+1)
+        self.knn_sites[:,:] = np.asarray(idx[:,1:])  
+        self.knn_sites = torch.from_numpy(self.knn_sites).int().cuda().contiguous()
+        print('KDTreeFlann time:', timer() - start)    
+        
     ## Make adjacencies for cameras
     def make_adjacencies(self, cam_ids):
         cam_tets = [[] for _ in range(cam_ids.shape[0])]
@@ -172,6 +181,40 @@ class Tet32(Process):
         self.offsets_cam = torch.from_numpy(self.offsets_cam).int().cuda()
         self.cam_tets = torch.from_numpy(self.cam_tets).int().cuda()
 
+    def upsample(self, sdf, feat):        
+        sites = self.sites.cpu().numpy()
+        in_sdf = sdf
+        in_feat = feat
+
+        new_sites = []
+        new_sdf = []
+        new_feat = []
+        for _, edge in enumerate(self.o3d_edges.lines):
+            if sdf[edge[0]]*sdf[edge[1]] < 0.0:
+                new_sites.append((sites[edge[0]] + sites[edge[1]])/2.0)
+                new_sdf.append((sdf[edge[0]] + sdf[edge[1]])/2.0)
+                new_feat.append((feat[edge[0]] + feat[edge[1]])/2.0)
+
+        new_sites = np.stack(new_sites)
+        new_sdf = np.stack(new_sdf)
+        new_feat = np.stack(new_feat)
+        print("nb new sites: ", new_sites.shape)
+        self.sites = np.concatenate((sites, new_sites))
+        in_sdf = np.concatenate((sdf, new_sdf))
+        in_feat = np.concatenate((feat, new_feat))
+        new_sites = self.sites
+
+        #prev_kdtree = self.KDtree
+        self.run()
+        _, idx = self.KDtree.query(new_sites, k=1)
+
+        out_sdf = np.zeros(in_sdf.shape)
+        out_sdf[idx] = in_sdf[:]
+        
+        out_feat = np.zeros(in_feat.shape)
+        out_feat[idx] = in_feat[:]
+
+        return torch.from_numpy(out_sdf).float().cuda(), torch.from_numpy(out_feat).float().cuda()
 
 
     def surface_from_sdf(self, values, filename = ""):
@@ -192,7 +235,7 @@ class Tet32(Process):
                 if len(curr_face) == 3:
                     faces_list.append(curr_face)
 
-        ply.save_ply(filename, np.asarray(self.vertices).transpose(), f=(np.asarray(faces_list)).transpose())
+        ply.save_ply(filename, self.sites.cpu().numpy().transpose(), f=(np.asarray(faces_list)).transpose())
 
 
     ## Sample points along a ray at the faces of Tet32 structure
