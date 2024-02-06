@@ -625,13 +625,21 @@ __global__ void fill_samples_kernel(
         out_ids[6*i + 3 +1] = in_ids_rays[6 * s_id + 3 +1];
         out_ids[6*i + 3 +2] = in_ids_rays[6 * s_id + 3 +2];
 
-        samples[3 * i] = ray.origin[0] + 0.5*(out_z[2*i] + out_z[2*i+1])*ray.direction[0];
+        samples[3 * i] = ray.origin[0] + out_z[2*i]*ray.direction[0];
+        samples[3 * i + 1] = ray.origin[1] + out_z[2*i]*ray.direction[1];
+        samples[3 * i + 2] = ray.origin[2] + out_z[2*i]*ray.direction[2];
+
+        samples_loc[3 * i] = ray.origin[0] + out_z[2*i+1]*ray.direction[0];
+        samples_loc[3 * i + 1] = ray.origin[1] + out_z[2*i+1]*ray.direction[1];
+        samples_loc[3 * i + 2] = ray.origin[2] + out_z[2*i+1]*ray.direction[2];
+
+        /*samples[3 * i] = ray.origin[0] + 0.5*(out_z[2*i] + out_z[2*i+1])*ray.direction[0];
         samples[3 * i + 1] = ray.origin[1] + 0.5*(out_z[2*i] + out_z[2*i+1])*ray.direction[1];
         samples[3 * i + 2] = ray.origin[2] + 0.5*(out_z[2*i] + out_z[2*i+1])*ray.direction[2];
         
         samples_loc[3 * i] = samples[3 * i] - sites[3*out_ids[3*i+1]];
         samples_loc[3 * i + 1] = samples[3 * i + 1] - sites[3*out_ids[3*i+1] + 1];
-        samples_loc[3 * i + 2] = samples[3 * i + 2] - sites[3*out_ids[3*i+1] + 2];
+        samples_loc[3 * i + 2] = samples[3 * i + 2] - sites[3*out_ids[3*i+1] + 2];*/
 
         sample_rays[3 * i] = ray.direction[0];
         sample_rays[3 * i + 1] = ray.direction[1];

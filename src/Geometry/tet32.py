@@ -15,6 +15,9 @@ tet32_march_cuda = load(
     'tet32_march_cuda', ['src/Cuda/tet32_march_cuda.cpp', 'src/Cuda/tet32_march_cuda.cu'], verbose=True)
 #help(cvt_march_cuda)
 
+mt_cuda_kernel = load(
+    'mt_cuda_kernel', ['src/Geometry/mt_cuda_kernel.cpp', 'src/Geometry/mt_cuda_kernel.cu'], verbose=True)
+
 
 def get_faces_list_from_tetrahedron(tetrahedron):
     """
@@ -215,6 +218,39 @@ class Tet32(Process):
         out_feat[idx] = in_feat[:]
 
         return torch.from_numpy(out_sdf).float().cuda(), torch.from_numpy(out_feat).float().cuda()
+
+    def marching_tets(self, sdf, filename, m_iso = 0.0):
+        nb_tets = self.nb_tets
+        faces = torch.zeros([3*2*nb_tets], dtype=torch.int32).cuda()
+        faces = faces.contiguous()
+        normals = torch.zeros([3*2*nb_tets], dtype=torch.float32).cuda()
+        normals = normals.contiguous()
+
+        nb_edges = self.edges.shape[0]
+        vertices = torch.zeros([3*nb_edges], dtype=torch.float32).cuda()
+        vertices = vertices.contiguous()
+
+        mt_cuda_kernel.marching_tets(self.sites.shape[0], nb_edges, nb_tets, m_iso, faces, vertices, normals, self.sites, sdf, self.edges, self.summits)
+
+        # Reshape all outputs
+        faces_out = faces.reshape((2*nb_tets, 3))
+        normals_out = normals.reshape((2*nb_tets, 3))
+        vertices_out = vertices.reshape((nb_edges, 3))
+
+        # Remove 0 entries
+        nnz = torch.nonzero(torch.sum(vertices_out,1))[:,0]
+        nnz_vertices_out = vertices_out[nnz,:]
+
+        indices_v = torch.zeros((vertices_out.shape[0]), dtype=torch.int32).cuda()
+        indices_nnz_v = torch.arange(nnz_vertices_out.shape[0], dtype=torch.int32).cuda()
+        indices_v[nnz] = indices_nnz_v
+        
+        nnz_f = torch.nonzero(torch.sum(faces_out,1))[:,0]
+        nnz_faces = faces_out[nnz_f,:]
+        nnz_normals = normals_out[nnz_f,:]
+        nnz_faces[:,:] = indices_v[nnz_faces[:,:].long()]
+        nnz_normals[:,:] = indices_v[nnz_normals[:,:].long()]        
+        ply.save_ply(filename, np.transpose(nnz_vertices_out.cpu()),  f = np.transpose(nnz_faces.cpu()))  
 
 
     def surface_from_sdf(self, values, filename = ""):

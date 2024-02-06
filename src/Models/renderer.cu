@@ -220,7 +220,7 @@ __global__ void render_no_sdf_kernel(
     float Wtotal = 0.0f;
     float4 color = trace_ray(sdf_seg, color_samples, offsets, &Wtotal, inv_s, idx);
 
-    if (color.w < 1.0f) {
+    //if (color.w < 1.0f) {
         float msk = mask[idx] > 0.5f ? 1.0f : 0.0f;
         float3 integrated_color = make_float3(color.x + color.w * BACK_R, color.y + color.w * BACK_G, color.z + color.w * BACK_B);
         float3 in_color = make_float3(true_color[3 * idx], true_color[3 * idx + 1], true_color[3 * idx + 2]);
@@ -236,7 +236,7 @@ __global__ void render_no_sdf_kernel(
         color_loss[idx] = msk*huber_loss(integrated_color - in_color);      
         //color_loss[idx] = msk*(fabs(grad_color_diff.x) + fabs(grad_color_diff.y) + fabs(grad_color_diff.z));    
         mask_loss[idx] = (msk - Wtotal)*(msk - Wtotal); //-(msk * logf(Wtotal) + (1.0f - msk) * logf(1.0f-Wtotal));
-    }
+    //}
     return;
 }
 
@@ -371,7 +371,7 @@ __global__ void render_kernel(
     float Wtotal = 0.0f;
     float4 color = trace_ray(sdf_seg, color_samples, offsets, &Wtotal, inv_s, idx);
 
-    if (color.w < 1.0f) {
+    //if (color.w < 1.0f) {
         float msk = mask[idx] > 0.5f ? 1.0f : 0.0f;
         float3 integrated_color = make_float3(color.x + color.w * BACK_R, color.y + color.w * BACK_G, color.z + color.w * BACK_B);
         float3 in_color = make_float3(true_color[3 * idx], true_color[3 * idx + 1], true_color[3 * idx + 2]);
@@ -387,7 +387,7 @@ __global__ void render_kernel(
         color_loss[idx] = msk*huber_loss(integrated_color - in_color);      
         //color_loss[idx] = msk*(fabs(grad_color_diff.x) + fabs(grad_color_diff.y) + fabs(grad_color_diff.z));    
         mask_loss[idx] = (msk - Wtotal)*(msk - Wtotal); //-(msk * logf(Wtotal) + (1.0f - msk) * logf(1.0f-Wtotal));
-    }
+    //}
     return;
 }
 

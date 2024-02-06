@@ -58,7 +58,7 @@ class VortSDFDirectRenderer:
 class VortSDFRenderer:
     def __init__(self, n_samples):
         self.n_samples = n_samples
-        self.mask_reg = 0.1
+        self.mask_reg = 1.0
 
         self.grads_color = torch.zeros([1], dtype=torch.float32).to(torch.device('cuda')).contiguous()
         self.grads_sdf = torch.zeros([1], dtype=torch.float32).to(torch.device('cuda')).contiguous()

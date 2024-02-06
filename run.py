@@ -155,6 +155,8 @@ class Runner:
             self.sdf.requires_grad_(True)
                     
         self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri.ply")
+        #self.tet32.marching_tets(self.sdf.detach(), "Exp/bmvs_man/test_MT.ply")
+        #input()
         
         ##### 2. Initialize feature field    
         if not hasattr(self, 'fine_features'):
@@ -247,7 +249,7 @@ class Runner:
                 #print("nb samples: ", nb_samples)
                 input()
 
-            samples = self.samples[:nb_samples,:]
+            samples = (self.samples[:nb_samples,:] + self.samples_loc[:nb_samples,:])/2.0
             samples = samples.contiguous()
 
             ##### ##### ##### ##### ##### ##### ##### 
@@ -263,6 +265,11 @@ class Runner:
 
             viewdirs_emb = (self.samples_rays[:nb_samples,:].unsqueeze(-1) * self.viewfreq).flatten(-2)
             viewdirs_emb = torch.cat([self.samples_rays[:nb_samples,:], viewdirs_emb.sin(), viewdirs_emb.cos()], -1)
+
+            # Get sdf values
+            #sdf_prev = self.sdf_network.rgb(torch.cat([xyz_emb, self.out_feat[:nb_samples,3:6]], -1))
+            #sdf_next = self.sdf_network.rgb(torch.cat([xyz_emb, self.out_feat[:nb_samples,:-3]], -1))
+
                         
             """geo_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:]], -1)
             colors_feat = self.color_coarse.rgb(geo_feat)   
@@ -275,7 +282,7 @@ class Runner:
             rgb_feat.retain_grad()
 
             #self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat) + colors_feat.detach()) 
-            self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat)) + self.colors
+            self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat)) #+ self.colors
             self.colors_fine = self.colors_fine.contiguous()
 
             ########################################
@@ -307,7 +314,7 @@ class Runner:
             fine_features_grad = fine_features_grad.contiguous()
             self.grad_features[:] = 0.0
             backprop_cuda.backprop_feat(nb_samples, self.grad_features, fine_features_grad, self.out_ids, self.out_weights)
-            self.grad_features[:, :3] = 0.5*self.grad_features[:, :3] + 0.5*self.vortSDF_renderer_coarse.grads_color[:,:] / (mask_sum + 1.0e-5)
+            self.grad_features[:, :3] = 0.9*self.grad_features[:, :3] + 0.01*self.vortSDF_renderer_coarse.grads_color[:,:] / (mask_sum + 1.0e-5)
             self.grad_features[outside_flag[:] == 1.0] = 0.0   
             if verbose:
                 print('backprop_feat time:', timer() - start)
@@ -360,7 +367,7 @@ class Runner:
             grad_sdf[outside_flag[:] == 1.0] = 0.0   
 
             self.optimizer_sdf.zero_grad()
-            self.sdf.grad = grad_sdf + 1.0e-3*self.grad_sdf_reg / (mask_sum + 1.0e-5) + 0.001*self.grad_sdf_smooth
+            self.sdf.grad = grad_sdf + 0.001*self.grad_sdf_smooth #+ 1.0e-3*self.grad_sdf_reg / (mask_sum + 1.0e-5) #
             self.optimizer_sdf.step()
 
             ########################################
@@ -448,7 +455,7 @@ class Runner:
                 with torch.no_grad():
                     delta_sites[:] = self.sites[:]
 
-            if (iter_step+1) % 1000 == 0 and iter_step < 3000:
+            if False: #(iter_step+1) % 1000 == 0 and iter_step < 3000:
                 self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy())
                 self.sdf = self.sdf.contiguous()
                 self.sdf.requires_grad_(True)
@@ -499,6 +506,7 @@ class Runner:
             if iter_step % self.val_freq == 0:
                 self.render_image(cam_ids, img_idx)
                 self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri.ply")
+                #self.tet32.marching_tets(self.sdf.detach(), "Exp/bmvs_man/test_MT.ply")
                 #if iter_step > 1000:
                 #    self.tet32.save("Exp/bmvs_man/test.ply")       
 
@@ -576,7 +584,7 @@ class Runner:
             rgb_feat.retain_grad()
 
             #self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat) + colors_feat.detach())
-            self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat)) + self.colors
+            self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat)) #+ self.colors
             self.colors_fine = self.colors_fine.contiguous()
 
             ########################################
