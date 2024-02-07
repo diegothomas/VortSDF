@@ -193,7 +193,8 @@ class Tet32(Process):
         new_sdf = []
         new_feat = []
         for _, edge in enumerate(self.o3d_edges.lines):
-            if sdf[edge[0]]*sdf[edge[1]] < 0.0:
+            edge_length = np.linalg.norm(sites[edge[0]] - sites[edge[1]], ord=2, axis=-1, keepdims=True)
+            if sdf[edge[0]]*sdf[edge[1]] <= 0.0: # or min(abs(sdf[edge[0]]), abs(sdf[edge[0]])) < edge_length:
                 new_sites.append((sites[edge[0]] + sites[edge[1]])/2.0)
                 new_sdf.append((sdf[edge[0]] + sdf[edge[1]])/2.0)
                 new_feat.append((feat[edge[0]] + feat[edge[1]])/2.0)

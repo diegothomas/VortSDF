@@ -16,7 +16,7 @@
 
 
 #define PI 3.141592653589793238462643383279502884197
-#define _MAX_K_NN 6
+#define _MAX_K_NN 8
 #define _BUFF_SIZE 2048
 
 /** Device functions **/
