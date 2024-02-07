@@ -253,12 +253,14 @@ class Runner:
                 #print("nb samples: ", nb_samples)
                 input()
 
-            samples = (self.samples[:nb_samples,:] + self.samples_loc[:nb_samples,:])/2.0
+            #samples = (self.samples[:nb_samples,:] + self.samples_loc[:nb_samples,:])/2.0
+            samples = self.samples[:nb_samples,:]
             samples = samples.contiguous()
 
             ##### ##### ##### ##### ##### ##### ##### 
             # Build fine features
-            fine_features = (self.out_feat[:nb_samples,:6] + self.out_feat[:nb_samples,:-6])/2.0#self.fine_features[self.out_ids[:nb_samples, 1]]
+            #fine_features = (self.out_feat[:nb_samples,:6] + self.out_feat[:nb_samples,:-6])/2.0#self.fine_features[self.out_ids[:nb_samples, 1]]
+            fine_features = self.out_feat[:nb_samples,:6]
             self.colors = fine_features[:,:3] 
             self.colors = self.colors.contiguous()
 
@@ -286,7 +288,7 @@ class Runner:
             rgb_feat.retain_grad()
 
             #self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat) + colors_feat.detach()) 
-            self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat)) + self.colors
+            self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat)) #+ self.colors
             self.colors_fine = self.colors_fine.contiguous()
 
             ########################################
@@ -318,8 +320,8 @@ class Runner:
             fine_features_grad = fine_features_grad.contiguous()
             self.grad_features[:] = 0.0
             backprop_cuda.backprop_feat(nb_samples, self.grad_features, fine_features_grad, self.out_ids, self.out_weights)
-            #self.grad_features[:, :3] = 0.5*self.grad_features[:, :3] + 0.5*self.vortSDF_renderer_coarse.grads_color[:,:] / (mask_sum + 1.0e-5)
-            self.grad_features[:, :3] = self.vortSDF_renderer_coarse.grads_color[:,:] / (mask_sum + 1.0e-5)
+            self.grad_features[:, :3] = 0.5*self.grad_features[:, :3] + 0.5*self.vortSDF_renderer_coarse.grads_color[:,:] / (mask_sum + 1.0e-5)
+            #self.grad_features[:, :3] = self.vortSDF_renderer_coarse.grads_color[:,:] / (mask_sum + 1.0e-5)
             self.grad_features[outside_flag[:] == 1.0] = 0.0   
             if verbose:
                 print('backprop_feat time:', timer() - start)
@@ -360,7 +362,7 @@ class Runner:
             ########################################
             
             self.optimizer_feat.zero_grad()
-            self.fine_features.grad = self.grad_features + 0.01*self.grad_feat_smooth #+ 1.0e+5*self.grad_feat_reg / (mask_sum + 1.0e-5)
+            self.fine_features.grad = self.grad_features # + 0.001*self.grad_feat_smooth #+ 1.0e+5*self.grad_feat_reg / (mask_sum + 1.0e-5)
             self.optimizer_feat.step()
 
             ########################################
@@ -459,7 +461,7 @@ class Runner:
                 with torch.no_grad():
                     delta_sites[:] = self.sites[:]
 
-            if (iter_step+1) % 2000 == 0 and iter_step < 8000:
+            if False: #(iter_step+1) % 2000 == 0 and iter_step < 8000:
                 self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy())
                 self.sdf = self.sdf.contiguous()
                 self.sdf.requires_grad_(True)
@@ -539,11 +541,17 @@ class Runner:
         img = img.contiguous()
         img[:] = 0
         
+        img_coarse = torch.zeros([3*(self.dataset.H // resolution_level) * (self.dataset.W // resolution_level)], dtype = torch.float32).cuda()
+        img_coarse = img_coarse.contiguous()
+        img_coarse[:] = 0
+        
+        
         img_mask = torch.zeros([(self.dataset.H // resolution_level) * (self.dataset.W // resolution_level)], dtype = torch.float32).cuda()
         img_mask = img_mask.contiguous()
         img_mask[:] = 0
         
         colors_out = torch.zeros([self.batch_size*3]).to(torch.device('cuda')).contiguous()
+        colors_out_coarse = torch.zeros([self.batch_size*3]).to(torch.device('cuda')).contiguous() 
         mask_out = torch.zeros([self.batch_size]).to(torch.device('cuda')).contiguous()
         it = 0
         for rays_o_batch, rays_d_batch in zip(rays_o.split(self.batch_size), rays_d.split(self.batch_size)):
@@ -562,10 +570,12 @@ class Runner:
                                             self.out_z, self.out_sdf, self.out_feat, self.out_weights, self.out_ids, 
                                             self.offsets, self.samples, self.samples_loc, self.samples_rays)
             
-            samples = (self.samples[:nb_samples,:] + self.samples_loc[:nb_samples,:])/2.0
+            #samples = (self.samples[:nb_samples,:] + self.samples_loc[:nb_samples,:])/2.0
+            samples = self.samples[:nb_samples,:]
             samples = samples.contiguous()
 
-            fine_features = (self.out_feat[:nb_samples,:6] + self.out_feat[:nb_samples,:-6])/2.0
+            #fine_features = (self.out_feat[:nb_samples,:6] + self.out_feat[:nb_samples,:-6])/2.0
+            fine_features = self.out_feat[:nb_samples,:6]
             
             self.colors = fine_features[:nb_samples,:3] 
             self.colors = self.colors.contiguous()
@@ -590,25 +600,26 @@ class Runner:
             rgb_feat.retain_grad()
 
             #self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat) + colors_feat.detach())
-            self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat)) + self.colors
+            self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat)) #+ self.colors
             self.colors_fine = self.colors_fine.contiguous()
 
             """ TEST 
             norm = matplotlib.colors.Normalize(vmin=-0.3, vmax=0.3 , clip = False)
             sdf_samp = (self.out_sdf[:nb_samples,0] + self.out_sdf[:nb_samples,1]) / 2.0
-            #self.colors_fine = plt.cm.jet(norm(sdf_samp.cpu())).astype(np.float32)[:,:3]
-            #self.colors_fine = torch.from_numpy(self.colors_fine).float().cuda()           
-            #self.colors_fine = self.colors_fine.contiguous()"""
+            self.colors_fine = plt.cm.jet(norm(sdf_samp.cpu())).astype(np.float32)[:,:3]
+            self.colors_fine = torch.from_numpy(self.colors_fine).float().cuda()           
+            self.colors_fine = self.colors_fine.contiguous()"""
 
             ########################################
             ####### Render the image ###############
             ########################################
             renderer_cuda.render_no_grad(rays_o_batch.shape[0], self.inv_s, self.out_sdf, self.colors_fine, self.offsets, colors_out, mask_out)
-            #renderer_cuda.render_no_grad(rays_o_batch.shape[0], self.inv_s, self.out_sdf, self.colors, self.offsets, colors_out, mask_out)
+            renderer_cuda.render_no_grad(rays_o_batch.shape[0], self.inv_s, self.out_sdf, self.colors, self.offsets, colors_out_coarse, mask_out)
 
             start = 3*it*self.batch_size
             end = min(3*(it+1)*self.batch_size, 3*(self.dataset.H // resolution_level) * (self.dataset.W // resolution_level))
             img[start:end] = colors_out[:(end-start)]
+            img_coarse[start:end] = colors_out_coarse[:(end-start)]
 
             start = it*self.batch_size
             end = min((it+1)*self.batch_size, (self.dataset.H // resolution_level) * (self.dataset.W // resolution_level))           
@@ -632,11 +643,16 @@ class Runner:
         img = img.cpu().numpy()
         cv2.imwrite('Exp/synt.png', 255*img[:,:])
         
+        img_coarse = img_coarse.reshape(self.dataset.H // resolution_level, self.dataset.W // resolution_level, 3)
+        img_coarse = img_coarse.cpu().numpy()
+        cv2.imwrite('Exp/synt_coarse.png', 255*img_coarse[:,:])
+        
         GTimg = true_rgb.reshape(self.dataset.H // resolution_level, self.dataset.W // resolution_level, 3).cpu().numpy()
         cv2.imwrite('Exp/GT.png', 255*GTimg[:,:])
 
         mask = mask.reshape(self.dataset.H // resolution_level, self.dataset.W // resolution_level).cpu().numpy()
         cv2.imwrite('Exp/Mask.png', 255*mask[:])
+        print("rendering done")
         
     def Allocate_data(self, K_NN = 24):        
         self.grad_sites = torch.zeros(self.sites.shape).cuda()       
@@ -710,7 +726,7 @@ class Runner:
         self.out_feat = torch.zeros([self.n_samples * self.batch_size, 12], dtype=torch.float32).cuda()
         self.out_feat = self.out_feat.contiguous()
         
-        self.out_weights = torch.zeros([6*self.n_samples * self.batch_size], dtype=torch.float32).cuda()
+        self.out_weights = torch.zeros([7*self.n_samples * self.batch_size], dtype=torch.float32).cuda()
         self.out_weights = self.out_weights.contiguous()
         
         self.offsets = torch.zeros([self.batch_size, 2], dtype=torch.int32).cuda()

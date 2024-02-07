@@ -42,9 +42,10 @@ __global__ void backprop_feat_kernel(
         if (id_prev < 0 || id < 0)
             return;
         
+        float lamda = cell_weights[7*idx + 6] ;
         for (int k = 0; k < DIM_L_FEAT; k++) {  
-            atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[6*idx + i] * 0.5 * grad_samples[DIM_L_FEAT * idx + k]);              
-            atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[6*idx + 3 + i] * 0.5 * grad_samples[DIM_L_FEAT * idx + k]);
+            atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[7*idx + i] * lamda * grad_samples[DIM_L_FEAT * idx + k]);              
+            atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[7*idx + 3 + i] * (1.0f - lamda) * grad_samples[DIM_L_FEAT * idx + k]);
         }
     }
 
@@ -159,13 +160,13 @@ __global__ void space_reg_kernel(
     int s_id = 0;
     for (int i = start; i < start+end; i++) {
         for (int j = 0; j < 3; j++) {
-            grad_in[j] = grad_space[3*out_ids[6*i] + j]*out_weights[6*i] + 
-                            grad_space[3*out_ids[6*i+1] + j]*out_weights[6*i+1] + 
-                            grad_space[3*out_ids[6*i+2] + j]*out_weights[6*i+2];
+            grad_in[j] = grad_space[3*out_ids[6*i] + j]*out_weights[7*i] + 
+                            grad_space[3*out_ids[6*i+1] + j]*out_weights[7*i+1] + 
+                            grad_space[3*out_ids[6*i+2] + j]*out_weights[7*i+2];
                             
-            grad_exit[j] = grad_space[3*out_ids[6*i + 3] + j]*out_weights[6*i + 3] + 
-                            grad_space[3*out_ids[6*i + 3 + 1] + j]*out_weights[6*i + 3 + 1] + 
-                            grad_space[3*out_ids[6*i + 3 + 2] + j]*out_weights[6*i + 3 + 2];
+            grad_exit[j] = grad_space[3*out_ids[6*i + 3] + j]*out_weights[7*i + 3] + 
+                            grad_space[3*out_ids[6*i + 3 + 1] + j]*out_weights[7*i + 3 + 1] + 
+                            grad_space[3*out_ids[6*i + 3 + 2] + j]*out_weights[7*i + 3 + 2];
             
             grad_curr[j] = (grad_in[j] + grad_exit[j]) / 2.0f;
         }
@@ -183,16 +184,16 @@ __global__ void space_reg_kernel(
 
         err_diff = ((out_sdf[2*i + 1] - out_sdf[2*i]) - diff_sdf) ;
         for (int j = 0; j < 3; j++) {            
-            atomicAdd(&sdf_grad[out_ids[6*i + j]], out_weights[6*i + j] * err_diff);
-            atomicAdd(&sdf_grad[out_ids[6*i + 3 + j]], -out_weights[6*i + 3 + j] * err_diff);
+            atomicAdd(&sdf_grad[out_ids[6*i + j]], out_weights[7*i + j] * err_diff);
+            atomicAdd(&sdf_grad[out_ids[6*i + 3 + j]], -out_weights[7*i + 3 + j] * err_diff);
         }
 
         weight_color = fabs(grad_curr[0]*direction[0] + grad_curr[1]*direction[1] + grad_curr[2]*direction[2]);
     
         for (int j = 0; j < 3; j++) {            
             for (int k = 0; k < 6; k++) {
-                atomicAdd(&feat_grad[6*out_ids[6*i + j] + k], out_weights[6*i + j] * weight_color * (out_feat[12*i + 6 + k] - out_feat[12*i + k]));
-                atomicAdd(&feat_grad[6*out_ids[6*i + 3 + j] + k], -out_weights[6*i + 3 + j] * weight_color * (out_feat[12*i + 6 + k] - out_feat[12*i + k]));
+                atomicAdd(&feat_grad[6*out_ids[6*i + j] + k], out_weights[7*i + j] * weight_color * (out_feat[12*i + 6 + k] - out_feat[12*i + k]));
+                atomicAdd(&feat_grad[6*out_ids[6*i + 3 + j] + k], -out_weights[7*i + 3 + j] * weight_color * (out_feat[12*i + 6 + k] - out_feat[12*i + k]));
             }
         }
     }

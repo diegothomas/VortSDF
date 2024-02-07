@@ -501,7 +501,7 @@ __global__ void tet32_march_cuda_kernel(
 
 			if (prev_prev_tet_id != -1 && curr_dist > prev_dist && prev_sdf > curr_sdf) { //(contrib > 1.0e-10/) && prev_sdf != 20.0f) {
 
-				step_size = 0.01f; // 1.0f/exp(-inv_s*min(fabs(prev_sdf), fabs(curr_sdf)))
+				/*step_size = 0.01f; // 1.0f/exp(-inv_s*min(fabs(prev_sdf), fabs(curr_sdf)))
 				step_size = max(0.0001f, min(fabs(prev_sdf), fabs(curr_sdf)) / 2.0f); //min(fabs(prev_sdf), fabs(curr_sdf)) < 0.2f || prev_sdf * curr_sdf < 0.0f ? 0.01f : 0.1f;
 				length_seg = (curr_dist - prev_dist)/step_size;
 				curr_seg_dist = prev_dist + step_size;
@@ -551,7 +551,7 @@ __global__ void tet32_march_cuda_kernel(
 
 				for (int l = 0; l < 6; l++) {
 					prev_feat[l] = prev_feat[l] + (curr_feat[l]-prev_feat[l]) * (it_seg/length_seg);
-				}
+				}*/
 
 				z_val_ray[2 * s_id] = prev_dist;
 				z_val_ray[2 * s_id + 1] = curr_dist;
@@ -572,13 +572,13 @@ __global__ void tet32_march_cuda_kernel(
 				z_id_ray[6 * s_id + 3 + 1] = ids[1];
 				z_id_ray[6 * s_id + 3 + 2] = ids[2]; 
 				
-				weights_ray[6 * s_id] = prev_weights[0] * (1.0f - it_seg/length_seg)*(2.0f/length_seg); 
-				weights_ray[6 * s_id + 1] = prev_weights[1] * (1.0f - it_seg/length_seg)*(2.0f/length_seg);
-				weights_ray[6 * s_id + 2] = prev_weights[2] * (1.0f - it_seg/length_seg)*(2.0f/length_seg); 
+				weights_ray[6 * s_id] = prev_weights[0];// * (1.0f - it_seg/length_seg)*(2.0f/length_seg); 
+				weights_ray[6 * s_id + 1] = prev_weights[1];// * (1.0f - it_seg/length_seg)*(2.0f/length_seg);
+				weights_ray[6 * s_id + 2] = prev_weights[2];// * (1.0f - it_seg/length_seg)*(2.0f/length_seg); 
 				
-				weights_ray[6 * s_id + 3] = weights[0] * (2.0f/length_seg); 
-				weights_ray[6 * s_id + 3 + 1] = weights[1] * (2.0f/length_seg);
-				weights_ray[6 * s_id + 3 + 2] = weights[2] * (2.0f/length_seg); 
+				weights_ray[6 * s_id + 3] = weights[0];// * (2.0f/length_seg); 
+				weights_ray[6 * s_id + 3 + 1] = weights[1];// * (2.0f/length_seg);
+				weights_ray[6 * s_id + 3 + 2] = weights[2];// * (2.0f/length_seg); 
 
 				s_id++;
 				if (s_id > num_samples - 1) {
@@ -671,11 +671,6 @@ __global__ void fill_samples_kernel(
 
         out_sdf[2*i] = in_sdf_rays[2 * s_id];
         out_sdf[2*i+1] = in_sdf_rays[2 * s_id+1];
-		
-		for (int l = 0; l < 6; l++) {
-			out_feat[12*i+l] = in_feat_rays[12 * s_id+l];
-			out_feat[12*i+6+l] = in_feat_rays[12 * s_id+6+l];
-		}
         
         out_ids[6*i] = in_ids_rays[6 * s_id];
         out_ids[6*i+1] = in_ids_rays[6 * s_id+1];
@@ -685,33 +680,52 @@ __global__ void fill_samples_kernel(
         out_ids[6*i + 3 +1] = in_ids_rays[6 * s_id + 3 +1];
         out_ids[6*i + 3 +2] = in_ids_rays[6 * s_id + 3 +2];
 
-        samples[3 * i] = ray.origin[0] + out_z[2*i]*ray.direction[0];
+        /*samples[3 * i] = ray.origin[0] + out_z[2*i]*ray.direction[0];
         samples[3 * i + 1] = ray.origin[1] + out_z[2*i]*ray.direction[1];
         samples[3 * i + 2] = ray.origin[2] + out_z[2*i]*ray.direction[2];
 
         samples_loc[3 * i] = ray.origin[0] + out_z[2*i+1]*ray.direction[0];
         samples_loc[3 * i + 1] = ray.origin[1] + out_z[2*i+1]*ray.direction[1];
         samples_loc[3 * i + 2] = ray.origin[2] + out_z[2*i+1]*ray.direction[2];
+		
+		
+		for (int l = 0; l < 6; l++) {
+			out_feat[12*i+l] = in_feat_rays[12 * s_id+l];
+			out_feat[12*i+6+l] = in_feat_rays[12 * s_id+6+l];
+		}*/
 
-        /*samples[3 * i] = ray.origin[0] + 0.5*(out_z[2*i] + out_z[2*i+1])*ray.direction[0];
-        samples[3 * i + 1] = ray.origin[1] + 0.5*(out_z[2*i] + out_z[2*i+1])*ray.direction[1];
-        samples[3 * i + 2] = ray.origin[2] + 0.5*(out_z[2*i] + out_z[2*i+1])*ray.direction[2];
+		float lambda = 0.5f;
+		if (out_sdf[2*i]*out_sdf[2*i+1] <= 0.0f) {
+			lambda = fabs(out_sdf[2*i+1])/(fabs(out_sdf[2*i])+fabs(out_sdf[2*i+1]));
+		}
+
+        samples[3 * i] = ray.origin[0] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[0];
+        samples[3 * i + 1] = ray.origin[1] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[1];
+        samples[3 * i + 2] = ray.origin[2] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[2];
         
         samples_loc[3 * i] = samples[3 * i] - sites[3*out_ids[3*i+1]];
         samples_loc[3 * i + 1] = samples[3 * i + 1] - sites[3*out_ids[3*i+1] + 1];
-        samples_loc[3 * i + 2] = samples[3 * i + 2] - sites[3*out_ids[3*i+1] + 2];*/
+        samples_loc[3 * i + 2] = samples[3 * i + 2] - sites[3*out_ids[3*i+1] + 2];
+
+		
+		for (int l = 0; l < 6; l++) {
+			out_feat[12*i+l] = lambda*in_feat_rays[12 * s_id+l] + (1.0f-lambda)*in_feat_rays[12 * s_id+6+l];
+			out_feat[12*i+6+l] = in_feat_rays[12 * s_id+6+l];
+		}
 
         sample_rays[3 * i] = ray.direction[0];
         sample_rays[3 * i + 1] = ray.direction[1];
         sample_rays[3 * i + 2] = ray.direction[2];
         
-        out_weights[6*i] = in_weights_rays[6 * s_id];
-        out_weights[6*i+1] = in_weights_rays[6 * s_id+1];
-        out_weights[6*i+2] = in_weights_rays[6 * s_id+2];
+        out_weights[7*i] = in_weights_rays[6 * s_id];
+        out_weights[7*i+1] = in_weights_rays[6 * s_id+1];
+        out_weights[7*i+2] = in_weights_rays[6 * s_id+2];
 		
-        out_weights[6*i + 3] = in_weights_rays[6 * s_id + 3];
-        out_weights[6*i + 3 +1] = in_weights_rays[6 * s_id + 3 +1];
-        out_weights[6*i + 3 +2] = in_weights_rays[6 * s_id + 3 +2];
+        out_weights[7*i + 3] = in_weights_rays[6 * s_id + 3];
+        out_weights[7*i + 3 +1] = in_weights_rays[6 * s_id + 3 +1];
+        out_weights[7*i + 3 +2] = in_weights_rays[6 * s_id + 3 +2];
+
+        out_weights[7*i + 6] = lambda;
 
         s_id++;
     }

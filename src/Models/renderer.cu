@@ -168,20 +168,20 @@ __device__ void backward_no_sdf(float3 Ctotal, float Wtotal, float3 TrueColor, f
             dc = dc * Wtotal * Wtotal;
         }
 
+        float lamda = weights_seg[7*t + 6] ;
         for (int i = 0; i < 3; i++) {
             id_prev = cell_ids[6 * t + i];
             id = cell_ids[6 * t + 3 + i];
 
             //atomicAdd(&grads_sdf[id_prev], weights_seg[6*t + i] * dalpha * dalpha_dsdf_p);
             //atomicAdd(&grads_sdf[id], weights_seg[6*t + 3 + i] * dalpha * dalpha_dsdf_n);
+            atomicAdd(&grads_color[3 * id_prev], weights_seg[7*t + i] * lamda * dc.x);
+            atomicAdd(&grads_color[3 * id_prev+1], weights_seg[7*t + i] * lamda * dc.y);
+            atomicAdd(&grads_color[3 * id_prev+2], weights_seg[7*t + i] * lamda * dc.z);
             
-            atomicAdd(&grads_color[3 * id_prev], weights_seg[6*t + i] * 0.5 * dc.x);
-            atomicAdd(&grads_color[3 * id_prev+1], weights_seg[6*t + i] * 0.5 * dc.y);
-            atomicAdd(&grads_color[3 * id_prev+2], weights_seg[6*t + i] * 0.5 * dc.z);
-            
-            atomicAdd(&grads_color[3 * id], weights_seg[6*t + 3 + i] * 0.5 * dc.x);
-            atomicAdd(&grads_color[3 * id+1], weights_seg[6*t + 3 + i] * 0.5 * dc.y);
-            atomicAdd(&grads_color[3 * id+2], weights_seg[6*t + 3 + i] * 0.5 * dc.z);
+            atomicAdd(&grads_color[3 * id], weights_seg[7*t + 3 + i] * (1.0f-lamda) * dc.x);
+            atomicAdd(&grads_color[3 * id+1], weights_seg[7*t + 3 + i] * (1.0f-lamda) * dc.y);
+            atomicAdd(&grads_color[3 * id+2], weights_seg[7*t + 3 + i] * (1.0f-lamda) * dc.z);
         }
 
         Tpartial = Tpartial * alpha;
@@ -326,8 +326,8 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
             id_prev = cell_ids[6 * t + i];
             id = cell_ids[6 * t + 3 + i];
 
-            atomicAdd(&grads_sdf[id_prev], weights_seg[6*t + i] * dalpha * dalpha_dsdf_p);
-            atomicAdd(&grads_sdf[id], weights_seg[6*t + 3 + i] * dalpha * dalpha_dsdf_n);
+            atomicAdd(&grads_sdf[id_prev], weights_seg[7*t + i] * dalpha * dalpha_dsdf_p);
+            atomicAdd(&grads_sdf[id], weights_seg[7*t + 3 + i] * dalpha * dalpha_dsdf_n);
 
         }
 
