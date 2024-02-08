@@ -35,7 +35,9 @@ __global__ void backprop_feat_kernel(
     }
 
     int id_prev, id;
-    for (int i = 0; i < 3; i++) {
+    ////////////////////////Linear interpolation//////////////////////////
+    //////////////////////////////////////////////////////////////
+    /*for (int i = 0; i < 3; i++) {
         id_prev = cell_ids[6 * idx + i];
         id = cell_ids[6 * idx + 3 + i];
 
@@ -46,6 +48,16 @@ __global__ void backprop_feat_kernel(
         for (int k = 0; k < DIM_L_FEAT; k++) {  
             atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[7*idx + i] * lamda * grad_samples[DIM_L_FEAT * idx + k]);              
             atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[7*idx + 3 + i] * (1.0f - lamda) * grad_samples[DIM_L_FEAT * idx + k]);
+        }
+    }*/
+    ////////////////////////Network interpolation//////////////////////////
+    //////////////////////////////////////////////////////////////
+    for (int i = 0; i < 3; i++) {
+        id_prev = cell_ids[6 * idx + i];
+        id = cell_ids[6 * idx + 3 + i];
+        for (int k = 0; k < DIM_L_FEAT; k++) {  
+            atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], grad_samples[6*DIM_L_FEAT * idx + DIM_L_FEAT * i  + k]);       
+            atomicAdd(&grad_feat[DIM_L_FEAT * id + k], grad_samples[6*DIM_L_FEAT * idx + 18 + DIM_L_FEAT * i  + k]);       
         }
     }
 

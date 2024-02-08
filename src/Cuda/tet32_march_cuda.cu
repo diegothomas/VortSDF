@@ -231,10 +231,19 @@ __global__ void tet32_march_cuda_kernel(
     float curr_site[3] {vertices[r_id * 3], vertices[r_id * 3 + 1], vertices[r_id * 3 + 2]};
 	
     float *z_val_ray = &z_vals[idx*num_samples*2];
-    float *z_sdf_ray = &z_sdfs[idx*num_samples*2];
-    float *z_feat_ray = &z_feat[idx*num_samples*12];
-    float *weights_ray = &weights_samp[idx*num_samples*6];
     int *z_id_ray = &z_ids[idx*num_samples*6];
+	
+	////////////////////////Linear interpolation//////////////////////////
+	//////////////////////////////////////////////////////////////
+    /*float *z_sdf_ray = &z_sdfs[idx*num_samples*2];
+    float *z_feat_ray = &z_feat[idx*num_samples*12];
+    float *weights_ray = &weights_samp[idx*num_samples*6];*/
+	
+	////////////////////////Network interpolation//////////////////////////
+	//////////////////////////////////////////////////////////////
+    float *z_sdf_ray = &z_sdfs[idx*num_samples*8];
+    float *z_feat_ray = &z_feat[idx*num_samples*36];
+    float *weights_ray = &weights_samp[idx*num_samples*6];
     
     // build base w.r.t ray
 	float u[3]{};
@@ -555,15 +564,14 @@ __global__ void tet32_march_cuda_kernel(
 
 				z_val_ray[2 * s_id] = prev_dist;
 				z_val_ray[2 * s_id + 1] = curr_dist;
-
-				z_sdf_ray[2 * s_id] = prev_sdf;
+				
+				
+				
+				////////////////////////Linear interpolation//////////////////////////
+				//////////////////////////////////////////////////////////////
+				/*z_sdf_ray[2 * s_id] = prev_sdf;
 				z_sdf_ray[2 * s_id + 1] = curr_sdf;
-
-				for (int l = 0; l < 6; l++) {
-					z_feat_ray[12 * s_id + l] = prev_feat[l];
-					z_feat_ray[12 * s_id + 6 + l] = curr_feat[l];
-				}
-
+				
 				z_id_ray[6 * s_id] = prev_ids[0]; 
 				z_id_ray[6 * s_id + 1] = prev_ids[1];
 				z_id_ray[6 * s_id + 2] = prev_ids[2]; 
@@ -571,14 +579,74 @@ __global__ void tet32_march_cuda_kernel(
 				z_id_ray[6 * s_id + 3] = ids[0]; 
 				z_id_ray[6 * s_id + 3 + 1] = ids[1];
 				z_id_ray[6 * s_id + 3 + 2] = ids[2]; 
-				
+
+				for (int l = 0; l < 6; l++) {
+					z_feat_ray[12 * s_id + l] = prev_feat[l];
+					z_feat_ray[12 * s_id + 6 + l] = curr_feat[l];
+				}
+
 				weights_ray[6 * s_id] = prev_weights[0];// * (1.0f - it_seg/length_seg)*(2.0f/length_seg); 
 				weights_ray[6 * s_id + 1] = prev_weights[1];// * (1.0f - it_seg/length_seg)*(2.0f/length_seg);
 				weights_ray[6 * s_id + 2] = prev_weights[2];// * (1.0f - it_seg/length_seg)*(2.0f/length_seg); 
 				
 				weights_ray[6 * s_id + 3] = weights[0];// * (2.0f/length_seg); 
 				weights_ray[6 * s_id + 3 + 1] = weights[1];// * (2.0f/length_seg);
-				weights_ray[6 * s_id + 3 + 2] = weights[2];// * (2.0f/length_seg); 
+				weights_ray[6 * s_id + 3 + 2] = weights[2];// * (2.0f/length_seg); */
+
+				
+				////////////////////////Network interpolation//////////////////////////
+				//////////////////////////////////////////////////////////////
+				z_id_ray[6 * s_id] = prev_ids[0]; 
+				z_id_ray[6 * s_id + 1] = prev_ids[1];
+				z_id_ray[6 * s_id + 2] = prev_ids[2]; 				
+				//z_id_ray[6 * s_id + 3] = prev_ids[3]; 
+
+				z_id_ray[6 * s_id + 3] = ids[0]; 
+				z_id_ray[6 * s_id + 3 + 1] = ids[1];
+				z_id_ray[6 * s_id + 3 + 2] = ids[2]; 
+
+				z_sdf_ray[8 * s_id] = prev_sdf;
+				z_sdf_ray[8 * s_id + 1] = curr_sdf;
+				z_sdf_ray[8 * s_id + 2] = sdf[prev_ids[0]];
+				z_sdf_ray[8 * s_id + 3] = sdf[prev_ids[1]];
+				z_sdf_ray[8 * s_id + 4] = sdf[prev_ids[2]];
+				z_sdf_ray[8 * s_id + 5] = sdf[ids[0]];
+				z_sdf_ray[8 * s_id + 6] = sdf[ids[1]];
+				z_sdf_ray[8 * s_id + 7] = sdf[ids[2]];
+				
+				/*for (int k = 0; k < 4; k++) {
+					for (int l = 0; l < 6; l++) {
+						z_feat_ray[24 * s_id + 6*k + l] = vol_feat[6*prev_ids[k]+l];
+					}
+				}*/
+				for (int k = 0; k < 3; k++) {
+					for (int l = 0; l < 6; l++) {
+						z_feat_ray[36 * s_id + 6*k + l] = vol_feat[6*prev_ids[k]+l];
+						z_feat_ray[36 * s_id + 18 + 6*k + l] = vol_feat[6*ids[k]+l];
+					}
+				}
+
+				weights_ray[6 * s_id] = prev_weights[0];
+				weights_ray[6 * s_id + 1] = prev_weights[1];
+				weights_ray[6 * s_id + 2] = prev_weights[2];
+				//weights_ray[8 * s_id + 3] = 0.0f; 
+
+				weights_ray[6 * s_id + 3] = weights[0];
+				weights_ray[6 * s_id + 4] = weights[1];
+				weights_ray[6 * s_id + 5] = weights[2];
+				//weights_ray[8 * s_id + 7] = 0.0f; 
+				
+				/*weights_ray[8 * s_id + 4] = 0.0f; weights_ray[8 * s_id + 5] = 0.0f; weights_ray[8 * s_id + 6] = 0.0f; weights_ray[8 * s_id + 7] = 0.0f; 
+				for(int l = 0; l < 3; l++) {
+					if (prev_ids[0] == ids[l])
+						weights_ray[8 * s_id + 4] = weights[l];
+					if (prev_ids[1] == ids[l])
+						weights_ray[8 * s_id + 5] = weights[l];
+					if (prev_ids[2] == ids[l])
+						weights_ray[8 * s_id + 6] = weights[l];
+					if (prev_ids[3] == ids[l])
+						weights_ray[8 * s_id + 7] = weights[l];
+				}*/
 
 				s_id++;
 				if (s_id > num_samples - 1) {
@@ -657,10 +725,19 @@ __global__ void fill_samples_kernel(
     int num_knn = 24;
 
     float* in_z_rays = &in_z[2*num_samples * idx];
-    float* in_sdf_rays = &in_sdf[2*num_samples * idx];
-    float* in_feat_rays = &in_feat[12*num_samples * idx];
-    float* in_weights_rays = &in_weights[6*num_samples * idx];
     int* in_ids_rays = &in_ids[6*num_samples * idx];
+
+	////////////////////////Linear interpolation//////////////////////////
+	//////////////////////////////////////////////////////////////
+    /*float* in_sdf_rays = &in_sdf[2*num_samples * idx];
+    float* in_feat_rays = &in_feat[12*num_samples * idx];
+    float* in_weights_rays = &in_weights[6*num_samples * idx];*/
+
+	////////////////////////Network interpolation//////////////////////////
+	//////////////////////////////////////////////////////////////
+    float* in_sdf_rays = &in_sdf[8*num_samples * idx];
+    float* in_feat_rays = &in_feat[36*num_samples * idx];
+    float* in_weights_rays = &in_weights[6*num_samples * idx];
 
     int start = offset[2*idx];
     int end = offset[2*idx+1];
@@ -668,9 +745,6 @@ __global__ void fill_samples_kernel(
     for (int i = start; i < start+end; i++) {
         out_z[2*i] = in_z_rays[2*s_id];
 		out_z[2*i + 1] = in_z_rays[2*s_id+1];
-
-        out_sdf[2*i] = in_sdf_rays[2 * s_id];
-        out_sdf[2*i+1] = in_sdf_rays[2 * s_id+1];
         
         out_ids[6*i] = in_ids_rays[6 * s_id];
         out_ids[6*i+1] = in_ids_rays[6 * s_id+1];
@@ -693,7 +767,19 @@ __global__ void fill_samples_kernel(
 			out_feat[12*i+l] = in_feat_rays[12 * s_id+l];
 			out_feat[12*i+6+l] = in_feat_rays[12 * s_id+6+l];
 		}*/
+        
+        samples_loc[3 * i] = samples[3 * i] - sites[3*out_ids[6*i+1]];
+        samples_loc[3 * i + 1] = samples[3 * i + 1] - sites[3*out_ids[6*i+1] + 1];
+        samples_loc[3 * i + 2] = samples[3 * i + 2] - sites[3*out_ids[6*i+1] + 2];
 
+        sample_rays[3 * i] = ray.direction[0];
+        sample_rays[3 * i + 1] = ray.direction[1];
+        sample_rays[3 * i + 2] = ray.direction[2];		
+
+		//////////////////////Linear interpolation///////////////////////////
+		//////////////////////////////////////////////////////////////
+		
+        /*
 		float lambda = 0.5f;
 		if (out_sdf[2*i]*out_sdf[2*i+1] <= 0.0f) {
 			lambda = fabs(out_sdf[2*i+1])/(fabs(out_sdf[2*i])+fabs(out_sdf[2*i+1]));
@@ -702,20 +788,14 @@ __global__ void fill_samples_kernel(
         samples[3 * i] = ray.origin[0] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[0];
         samples[3 * i + 1] = ray.origin[1] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[1];
         samples[3 * i + 2] = ray.origin[2] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[2];
-        
-        samples_loc[3 * i] = samples[3 * i] - sites[3*out_ids[3*i+1]];
-        samples_loc[3 * i + 1] = samples[3 * i + 1] - sites[3*out_ids[3*i+1] + 1];
-        samples_loc[3 * i + 2] = samples[3 * i + 2] - sites[3*out_ids[3*i+1] + 2];
-
 		
+		out_sdf[2*i] = in_sdf_rays[2 * s_id];
+        out_sdf[2*i+1] = in_sdf_rays[2 * s_id+1];
+
 		for (int l = 0; l < 6; l++) {
 			out_feat[12*i+l] = lambda*in_feat_rays[12 * s_id+l] + (1.0f-lambda)*in_feat_rays[12 * s_id+6+l];
 			out_feat[12*i+6+l] = in_feat_rays[12 * s_id+6+l];
 		}
-
-        sample_rays[3 * i] = ray.direction[0];
-        sample_rays[3 * i + 1] = ray.direction[1];
-        sample_rays[3 * i + 2] = ray.direction[2];
         
         out_weights[7*i] = in_weights_rays[6 * s_id];
         out_weights[7*i+1] = in_weights_rays[6 * s_id+1];
@@ -725,7 +805,38 @@ __global__ void fill_samples_kernel(
         out_weights[7*i + 3 +1] = in_weights_rays[6 * s_id + 3 +1];
         out_weights[7*i + 3 +2] = in_weights_rays[6 * s_id + 3 +2];
 
-        out_weights[7*i + 6] = lambda;
+        out_weights[7*i + 6] = lambda;*/
+
+		////////////////////////Network interpolation//////////////////////////
+		//////////////////////////////////////////////////////////////
+
+		for (int l = 0; l < 8; l++) {
+        	out_sdf[8*i + l] = in_sdf_rays[8 * s_id + l];
+		}
+
+
+		float lambda = 0.5f;
+		if (out_sdf[8*i]*out_sdf[8*i+1] <= 0.0f) {
+			lambda = fabs(out_sdf[8*i+1])/(fabs(out_sdf[8*i])+fabs(out_sdf[8*i+1]));
+			if (lambda < 0.5f) {
+				out_sdf[8*i] = 2.0f*lambda*out_sdf[8*i] + (1.0f-2.0f*lambda)*out_sdf[8*i+1];
+			} else {
+				out_sdf[8*i+1] = (1.0-2.0f*lambda)*out_sdf[8*i] + (1.0f-(1.0-2.0f*lambda))*out_sdf[8*i+1];
+			}
+		}
+
+        samples[3 * i] = ray.origin[0] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[0];
+        samples[3 * i + 1] = ray.origin[1] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[1];
+        samples[3 * i + 2] = ray.origin[2] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[2];
+
+		for (int l = 0; l < 36; l++) {
+			out_feat[36*i+l] = in_feat_rays[36*s_id+l];
+		}
+
+		for (int l = 0; l < 6; l++) {
+        	out_weights[7*i + l] = in_weights_rays[6 * s_id + l];
+		}
+		out_weights[7*i + 6] = lambda;
 
         s_id++;
     }

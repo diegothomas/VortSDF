@@ -64,8 +64,14 @@ __device__ float4 trace_ray(const float* sdf_seg, const float* color_samples, co
     int end = offsets[2 * n + 1];
     for (int t = start; t < start + end; t++) {
 
-        previous_sdf = sdf_seg[2*t];
-        sdf = sdf_seg[2*t+1];
+        ////////////////////////Linear interpolation//////////////////////////
+        //////////////////////////////////////////////////////////////
+        //previous_sdf = sdf_seg[2*t];
+        //sdf = sdf_seg[2*t+1];
+        ////////////////////////Network interpolation//////////////////////////
+        //////////////////////////////////////////////////////////////
+        previous_sdf = sdf_seg[8*t];
+        sdf = sdf_seg[8*t+1];
 
         color.x = color_samples[3 * t];
         color.y = color_samples[3 * t + 1];
@@ -268,8 +274,15 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
     int end = offsets[2 * n + 1];
     for (int t = start; t < start + end; t++) {        
         
-        sdf_prev = sdf_seg[2*t];
-        sdf = sdf_seg[2*t+1];
+        ////////////////////////Linear interpolation//////////////////////////
+        //////////////////////////////////////////////////////////////
+        //sdf_prev = sdf_seg[2*t];
+        //sdf = sdf_seg[2*t+1];
+        
+        ////////////////////////Network interpolation//////////////////////////
+        //////////////////////////////////////////////////////////////
+        sdf_prev = sdf_seg[8*t];
+        sdf = sdf_seg[8*t+1];
 
         color.x = color_samples[3 * t];
         color.y = color_samples[3 * t + 1];
@@ -322,13 +335,33 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
             dc = dc * Wtotal * Wtotal;
         }
 
+        ////////////////////////Linear interpolation//////////////////////////
+        //////////////////////////////////////////////////////////////
+        //for (int i = 0; i < 3; i++) {
+            //id_prev = cell_ids[6 * t + i];
+            //id = cell_ids[6 * t + 3 + i];
+            //atomicAdd(&grads_sdf[id_prev], weights_seg[7*t + i] * dalpha * dalpha_dsdf_p);
+            //atomicAdd(&grads_sdf[id], weights_seg[7*t + 3 + i] * dalpha * dalpha_dsdf_n);           
+        //}
+
+        ////////////////////////Network interpolation//////////////////////////
+        //////////////////////////////////////////////////////////////
+        float lambda = weights_seg[7*t + 6] ;
         for (int i = 0; i < 3; i++) {
             id_prev = cell_ids[6 * t + i];
             id = cell_ids[6 * t + 3 + i];
-
-            atomicAdd(&grads_sdf[id_prev], weights_seg[7*t + i] * dalpha * dalpha_dsdf_p);
-            atomicAdd(&grads_sdf[id], weights_seg[7*t + 3 + i] * dalpha * dalpha_dsdf_n);
-
+            
+			if (lambda < 0.5f) {
+                atomicAdd(&grads_sdf[id_prev], weights_seg[7*t + i] * 2.0f*lambda * dalpha * dalpha_dsdf_p);
+                atomicAdd(&grads_sdf[id], weights_seg[7*t + 3 + i] * 
+                                ((1.0f-2.0f*lambda) * dalpha * dalpha_dsdf_p + dalpha * dalpha_dsdf_n));
+			} else {
+                atomicAdd(&grads_sdf[id_prev], weights_seg[7*t + i] * 
+                                    (2.0f*lambda * dalpha * dalpha_dsdf_p + (1.0-2.0f*lambda)*dalpha * dalpha_dsdf_n));
+                atomicAdd(&grads_sdf[id], weights_seg[7*t + 3 + i] * (1.0f-(1.0-2.0f*lambda)) * dalpha * dalpha_dsdf_n);
+			}
+            //atomicAdd(&grads_sdf[id_prev], weights_seg[7*t + i] * lambda * dalpha * dalpha_dsdf_p);
+            //atomicAdd(&grads_sdf[id], weights_seg[7*t + 3 + i] * (1.0f - lambda) * dalpha * dalpha_dsdf_n);
         }
 
         grads_color[3 * t] = dc.x;
