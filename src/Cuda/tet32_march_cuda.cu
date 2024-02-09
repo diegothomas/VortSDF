@@ -830,7 +830,17 @@ __global__ void fill_samples_kernel(
         samples[3 * i + 2] = ray.origin[2] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[2];
 
 		for (int l = 0; l < 36; l++) {
-			out_feat[36*i+l] = in_feat_rays[36*s_id+l];
+			out_feat[39*i+l] = in_feat_rays[36*s_id+l];
+		}
+		
+		for (int l = 0; l < 3; l++) {
+			float in_feat_val = in_feat_rays[36*s_id + l]*in_weights_rays[6 * s_id + 0] + 
+								in_feat_rays[36*s_id + 6 + l]*in_weights_rays[6 * s_id + 1] + 
+								in_feat_rays[36*s_id + 12 + l]*in_weights_rays[6 * s_id + 2];
+			float out_feat_val = in_feat_rays[36*s_id + 18+l]*in_weights_rays[6 * s_id + 3] + 
+									in_feat_rays[36*s_id + 24 + l]*in_weights_rays[6 * s_id + 4] + 
+									in_feat_rays[36*s_id + 30 + l]*in_weights_rays[6 * s_id + 5];
+			out_feat[39*i+36+l] = (lambda*in_feat_val + (1.0f-lambda)*out_feat_val);
 		}
 
 		for (int l = 0; l < 6; l++) {

@@ -70,6 +70,8 @@ class Runner:
         self.learning_rate_alpha = self.conf.get_float('train.learning_rate_alpha')
         lr=self.learning_rate_cvt = self.conf.get_float('train.learning_rate_cvt')
 
+        self.end_iter_loc = 3000
+
         self.report_freq = self.conf.get_int('train.report_freq')
         self.val_freq = self.conf.get_int('train.val_freq')
         self.CVT_freq = self.conf.get_int('train.CVT_freq')
@@ -133,12 +135,16 @@ class Runner:
             outside_flag[sites[:,0] > visual_hull[3] - (visual_hull[3]-visual_hull[0])/(2*res)] = 1
             outside_flag[sites[:,1] > visual_hull[4] - (visual_hull[4]-visual_hull[1])/(2*res)] = 1
             outside_flag[sites[:,2] > visual_hull[5] - (visual_hull[5]-visual_hull[2])/(2*res)] = 1
+
+
+
+
         #else:
         #    sites, _ = ply.load_ply(base_exp_dir + "/sites_init_" + data_name +"_32.ply")
 
         self.sites = torch.from_numpy(sites.astype(np.float32)).cuda()
         self.sites = self.sites.contiguous()
-        self.sites.requires_grad_(True)
+        #self.sites.requires_grad_(True)
         
         print(self.sites.shape)
 
@@ -152,7 +158,8 @@ class Runner:
                 norm_sites = torch.linalg.norm(self.sites, ord=2, axis=-1, keepdims=True)
             self.sdf = norm_sites[:,0] - 0.5
             self.sdf = self.sdf.contiguous()
-            self.sdf.requires_grad_(True)
+            self.sdf.requires_grad_(True)      
+
                     
         self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri.ply")
         #self.tet32.marching_tets(self.sdf.detach(), "Exp/bmvs_man/test_MT.ply")
@@ -163,6 +170,35 @@ class Runner:
             self.fine_features = 0.5*torch.ones([self.sdf.shape[0], 6]).cuda()       
             self.fine_features = self.fine_features.contiguous()
             self.fine_features.requires_grad_(True)
+
+        ############# CVT optimization #############################
+        ############# CVT optimization #############################
+        ############# CVT optimization #############################
+        self.tet32.CVT(outside_flag, cam_ids, self.sdf.detach(), self.fine_features.detach())
+        self.tet32.run()
+        self.tet32.load_cuda()
+        self.tet32.save("Exp/bmvs_man/test_CVT.ply")  
+        sites = np.asarray(self.tet32.vertices)  
+        cam_ids = np.stack([np.where((sites == cam_sites[i,:]).all(axis = 1))[0] for i in range(cam_sites.shape[0])]).reshape(-1)
+        self.tet32.make_adjacencies(cam_ids)
+
+        cam_ids = torch.from_numpy(cam_ids).int().cuda()
+        
+        outside_flag = np.zeros(sites.shape[0], np.int32)
+        outside_flag[sites[:,0] < visual_hull[0] + (visual_hull[3]-visual_hull[0])/(2*res)] = 1
+        outside_flag[sites[:,1] < visual_hull[1] + (visual_hull[4]-visual_hull[1])/(2*res)] = 1
+        outside_flag[sites[:,2] < visual_hull[2] + (visual_hull[5]-visual_hull[2])/(2*res)] = 1
+        outside_flag[sites[:,0] > visual_hull[3] - (visual_hull[3]-visual_hull[0])/(2*res)] = 1
+        outside_flag[sites[:,1] > visual_hull[4] - (visual_hull[4]-visual_hull[1])/(2*res)] = 1
+        outside_flag[sites[:,2] > visual_hull[5] - (visual_hull[5]-visual_hull[2])/(2*res)] = 1
+
+        self.sites = torch.from_numpy(sites.astype(np.float32)).cuda()
+        self.sites = self.sites.contiguous()
+
+        with torch.no_grad():
+            norm_sites = torch.linalg.norm(self.sites, ord=2, axis=-1, keepdims=True)
+            self.sdf[:] = norm_sites[:,0] - 0.5
+        #input()  
         
         self.Allocate_data()
             
@@ -172,7 +208,7 @@ class Runner:
         if not hasattr(self, 'optimizer_sdf'):
             self.optimizer_sdf = torch.optim.Adam([self.sdf], lr=self.learning_rate_sdf)        
             self.optimizer_feat = torch.optim.Adam([self.fine_features], lr=self.learning_rate_feat) 
-            self.optimizer_cvt = torch.optim.Adam([self.sites], lr=self.learning_rate_cvt) 
+            #self.optimizer_cvt = torch.optim.Adam([self.sites], lr=self.learning_rate_cvt) 
 
         self.vortSDF_renderer_coarse.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
         self.vortSDF_renderer_coarse_net.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
@@ -187,6 +223,7 @@ class Runner:
         self.s_start = 10.0
         self.inv_s = 0.1
         self.sigma = 0.03
+        self.loc_iter = 0
         image_perm = self.get_image_perm()
         num_rays = self.batch_size
         for iter_step in tqdm(range(self.end_iter)):
@@ -260,8 +297,8 @@ class Runner:
             ##### ##### ##### ##### ##### ##### ##### 
             # Build fine features
             #fine_features = (self.out_feat[:nb_samples,:6] + self.out_feat[:nb_samples,:-6])/2.0#self.fine_features[self.out_ids[:nb_samples, 1]]
-            fine_features = self.out_feat[:nb_samples,:6]
-            self.colors = fine_features[:,:3] 
+            #fine_features = self.out_feat[:nb_samples,:6]
+            self.colors = self.out_feat[:nb_samples,36:39] 
             self.colors = self.colors.contiguous()
 
             
@@ -284,7 +321,9 @@ class Runner:
             rgb_feat = torch.cat([xyz_emb, viewdirs_emb, colors_feat.detach(), fine_features], -1)"""
             
             # network interpolation
-            rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:-6], self.out_weights[:nb_samples,:6], self.out_feat[:nb_samples,:]], -1)
+            #print(xyz_emb.shape)
+            #print(viewdirs_emb.shape)
+            rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,2:8], self.out_weights[:nb_samples,:6], self.out_feat[:nb_samples,:36]], -1)
 
             # linear interpolation
             #rgb_feat = torch.cat([xyz_emb, viewdirs_emb, fine_features], -1)
@@ -303,7 +342,7 @@ class Runner:
             mask = (mask > 0.5).float()
 
             start = timer()       
-            #self.vortSDF_renderer_coarse.render_gpu(rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors, true_rgb, mask, self.out_ids, self.offsets)
+            self.vortSDF_renderer_coarse.render_gpu(rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors, true_rgb, mask, self.out_ids, self.offsets)
             #color_coarse_loss = VortSDFRenderingFunction.apply(self.vortSDF_renderer_coarse_net, rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors, true_rgb, mask, self.out_ids, self.offsets)
             
             color_fine_loss = VortSDFRenderingFunction.apply(self.vortSDF_renderer_fine, rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors_fine, true_rgb, mask, self.out_ids, self.offsets)
@@ -322,11 +361,11 @@ class Runner:
             # Backprop feature gradients to gradients on sites
             # step optimize color features
             start = timer()   
-            fine_features_grad = rgb_feat.grad[:,:-36]
+            fine_features_grad = rgb_feat.grad[:,54:90]
             fine_features_grad = fine_features_grad.contiguous()
             self.grad_features[:] = 0.0
             backprop_cuda.backprop_feat(nb_samples, self.grad_features, fine_features_grad, self.out_ids, self.out_weights)
-            self.grad_features[:, :3] = self.grad_features[:, :3] #+ 0.5*self.vortSDF_renderer_coarse.grads_color[:,:] / (mask_sum + 1.0e-5)
+            self.grad_features[:, :3] = 0.9*self.grad_features[:, :3] + 0.1*self.vortSDF_renderer_coarse.grads_color[:,:] / (mask_sum + 1.0e-5)
             #self.grad_features[:, :3] = self.vortSDF_renderer_coarse.grads_color[:,:] / (mask_sum + 1.0e-5)
             self.grad_features[outside_flag[:] == 1.0] = 0.0   
             if verbose:
@@ -368,7 +407,7 @@ class Runner:
             ########################################
             
             self.optimizer_feat.zero_grad()
-            self.fine_features.grad = self.grad_features # + 0.00001*self.grad_feat_smooth #+ 1.0e+5*self.grad_feat_reg / (mask_sum + 1.0e-5)
+            self.fine_features.grad = self.grad_features + 0.00001*self.grad_feat_smooth #+ 1.0e+5*self.grad_feat_reg / (mask_sum + 1.0e-5)
             self.optimizer_feat.step()
 
             ########################################
@@ -467,8 +506,8 @@ class Runner:
                 with torch.no_grad():
                     delta_sites[:] = self.sites[:]
 
-            if False: #(iter_step+1) % 10000 == 0 and iter_step < 20000:
-                self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy())
+            if (iter_step+1) % 3000 == 0 and iter_step < 15000:
+                self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt)
                 self.sdf = self.sdf.contiguous()
                 self.sdf.requires_grad_(True)
                 self.fine_features = self.fine_features.contiguous()
@@ -502,18 +541,25 @@ class Runner:
                 
                 self.optimizer_sdf = torch.optim.Adam([self.sdf], lr=self.learning_rate_sdf)        
                 self.optimizer_feat = torch.optim.Adam([self.fine_features], lr=self.learning_rate_feat) 
-                self.optimizer_cvt = torch.optim.Adam([self.sites], lr=self.learning_rate_cvt) 
+                #self.optimizer_cvt = torch.optim.Adam([self.sites], lr=self.learning_rate_cvt) 
                 
                 self.vortSDF_renderer_coarse.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
                 self.vortSDF_renderer_fine.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
 
                 self.sigma = self.sigma /2.0
+                self.learning_rate_cvt = self.learning_rate_cvt / 2.0
+
+                if (iter_step+1) == 15000:
+                    self.end_iter_loc = 15000
+                
+                self.loc_iter = 0
+
                 #verbose = True
                 self.tet32.save("Exp/bmvs_man/test_up.ply")    
             
             if iter_step % self.report_freq == 0:
                 print('iter:{:8>d} loss = {}, scale={}, lr={}'.format(iter_step, loss, self.inv_s, self.optimizer_sdf.param_groups[0]['lr']))
-                print('iter:{:8>d} loss CVT = {} lr={}'.format(iter_step, loss_cvt, self.optimizer_cvt.param_groups[0]['lr']))
+                #print('iter:{:8>d} loss CVT = {} lr={}'.format(iter_step, loss_cvt, self.optimizer_cvt.param_groups[0]['lr']))
 
             if iter_step % self.val_freq == 0:
                 self.render_image(cam_ids, img_idx)
@@ -523,7 +569,8 @@ class Runner:
                 #    self.tet32.save("Exp/bmvs_man/test.ply")                         
                 torch.cuda.empty_cache()
 
-            self.update_learning_rate(iter_step)
+            self.update_learning_rate(self.loc_iter)
+            self.loc_iter = self.loc_iter + 1
 
         self.render_image(cam_ids, 0)
 
@@ -581,9 +628,9 @@ class Runner:
             samples = samples.contiguous()
 
             #fine_features = (self.out_feat[:nb_samples,:6] + self.out_feat[:nb_samples,:-6])/2.0
-            fine_features = self.out_feat[:nb_samples,:6]
-            
-            self.colors = fine_features[:nb_samples,:3] 
+            #fine_features = self.out_feat[:nb_samples,:6]
+
+            self.colors = self.out_feat[:nb_samples,36:39] 
             self.colors = self.colors.contiguous()
             
             ##### ##### ##### ##### ##### ##### 
@@ -600,7 +647,7 @@ class Runner:
             self.colors = self.colors.contiguous()
             rgb_feat = torch.cat([xyz_emb, viewdirs_emb, colors_feat.detach(), self.out_feat[:nb_samples]], -1)"""
 
-            rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples, :-6], self.out_weights[:nb_samples,:6], self.out_feat[:nb_samples,:]], -1)
+            rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples, 2:8], self.out_weights[:nb_samples,:6], self.out_feat[:nb_samples,:36]], -1)
             #rgb_feat = torch.cat([xyz_emb, viewdirs_emb, fine_features[:nb_samples]], -1)
             #rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_feat[:nb_samples]], -1)
             rgb_feat.requires_grad_(True)
@@ -734,7 +781,7 @@ class Runner:
         #self.out_sdf = torch.zeros([self.n_samples * self.batch_size, 2], dtype=torch.float32).cuda()
         self.out_sdf = self.out_sdf.contiguous()
         
-        self.out_feat = torch.zeros([self.n_samples * self.batch_size, 36], dtype=torch.float32).cuda()
+        self.out_feat = torch.zeros([self.n_samples * self.batch_size, 39], dtype=torch.float32).cuda()
         #self.out_feat = torch.zeros([self.n_samples * self.batch_size, 12], dtype=torch.float32).cuda()
         self.out_feat = self.out_feat.contiguous()
         
@@ -750,7 +797,7 @@ class Runner:
     
     def update_learning_rate(self, it = 0):
         alpha = self.learning_rate_alpha
-        progress = it / self.end_iter
+        progress = it / self.end_iter_loc
         learning_factor = (np.cos(np.pi * progress) + 1.0) * 0.5 * (1 - alpha) + alpha
 
         for g in self.optimizer.param_groups:
@@ -762,8 +809,8 @@ class Runner:
         for g in self.optimizer_sdf.param_groups:
             g['lr'] = self.learning_rate_sdf * learning_factor
             
-        for g in self.optimizer_cvt.param_groups:
-            g['lr'] = self.learning_rate_cvt * learning_factor
+        #for g in self.optimizer_cvt.param_groups:
+        #    g['lr'] = self.learning_rate_cvt * learning_factor
 
 if __name__=='__main__':
     print("Code by Diego Thomas")

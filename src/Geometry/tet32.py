@@ -18,6 +18,8 @@ tet32_march_cuda = load(
 mt_cuda_kernel = load(
     'mt_cuda_kernel', ['src/Geometry/mt_cuda_kernel.cpp', 'src/Geometry/mt_cuda_kernel.cu'], verbose=True)
 
+cvt_grad_cuda = load(
+    'cvt_grad_cuda', ['src/Geometry/CVT_gradients.cpp', 'src/Geometry/CVT_gradients.cu'], verbose=True)
 
 def get_faces_list_from_tetrahedron(tetrahedron):
     """
@@ -150,7 +152,7 @@ class Tet32(Process):
         _, idx = self.KDtree.query(self.sites.cpu().numpy(), k=self.KNN+1)
         self.knn_sites[:,:] = np.asarray(idx[:,1:])  
         self.knn_sites = torch.from_numpy(self.knn_sites).int().cuda().contiguous()
-        print('KDTreeFlann time:', timer() - start)    
+        #print('KDTreeFlann time:', timer() - start)    
         
     ## Make adjacencies for cameras
     def make_adjacencies(self, cam_ids):
@@ -184,7 +186,87 @@ class Tet32(Process):
         self.offsets_cam = torch.from_numpy(self.offsets_cam).int().cuda()
         self.cam_tets = torch.from_numpy(self.cam_tets).int().cuda()
 
-    def upsample(self, sdf, feat):        
+
+    def CVT(self, outside_flag, cam_ids, sdf, fine_features, nb_iter = 1000, sdf_weight = 0.0, lr = 1.0e-4):
+        grad_sdf_space = torch.zeros([self.sites.shape[0], 3]).float().cuda().contiguous()
+        grad_feat_space = torch.zeros([self.sites.shape[0], 3, 6]).float().cuda().contiguous()
+        weights_grad = torch.zeros([3*self.KNN*self.sites.shape[0]]).float().cuda().contiguous()
+
+        grad_sites = torch.zeros(self.sites.shape).cuda()       
+        grad_sites = grad_sites.contiguous()
+
+        grad_sites_sdf = torch.zeros(self.sites.shape).cuda()       
+        grad_sites_sdf = grad_sites_sdf.contiguous()
+
+        mask_grad = torch.zeros(self.sites.shape).cuda()       
+        mask_grad = mask_grad.contiguous()
+
+        delta_sites = torch.zeros(self.sites.shape).float().cuda()
+        with torch.no_grad():  
+            delta_sites[:] = self.sites[:]
+            
+        self.sites.requires_grad_(True)
+        learning_rate_cvt = lr
+        learning_rate_alpha = 1.0e-4
+        optimizer_cvt = torch.optim.Adam([self.sites], lr=learning_rate_cvt) 
+
+        for iter_step in tqdm(range(nb_iter)):
+            thetas = torch.from_numpy(np.random.rand(self.sites.shape[0])).float().cuda()
+            phis = torch.from_numpy(np.random.rand(self.sites.shape[0])).float().cuda()
+            gammas = torch.from_numpy(np.random.rand(self.sites.shape[0])).float().cuda()
+
+            ############ Compute spatial SDF gradients
+            cvt_grad_cuda.sdf_space_grad(self.sites.shape[0], self.KNN, self.knn_sites, self.sites, sdf, fine_features, weights_grad, grad_sdf_space, grad_feat_space)
+            
+            ############ Compute approximated CVT gradients at sites
+            grad_sites[:] = 0.0
+            loss_cvt = cvt_grad_cuda.cvt_grad(self.sites.shape[0], self.KNN, thetas, phis, gammas, self.knn_sites, self.sites, grad_sites)
+            grad_sites = grad_sites / self.sites.shape[0]
+            
+            grad_sites_sdf[:] = 0.0
+            cvt_grad_cuda.sdf_grad(self.sites.shape[0], self.KNN, self.knn_sites, self.sites, sdf, grad_sites_sdf)
+            
+            mask_grad[:,:] = 1.0
+            if sdf_weight > 0.0:
+                mask_grad[(torch.linalg.norm(grad_sites_sdf, ord=2, axis=-1, keepdims=True) > 0.0).reshape(-1),:] = 1.0e-3
+
+            grad_sites[outside_flag == 1.0, :] = 0.0
+            grad_sites[cam_ids, :] = 0.0
+            grad_sites_sdf[outside_flag == 1.0] = 0.0
+            optimizer_cvt.zero_grad()
+            self.sites.grad = grad_sites*mask_grad + sdf_weight*grad_sites_sdf
+            optimizer_cvt.step()
+
+            with torch.no_grad():
+                self.sites[cam_ids] = delta_sites[cam_ids]
+                delta_sites[:] = self.sites[:] - delta_sites[:] 
+                if iter_step % 100 == 0:
+                    #print(delta_sites.mean())
+                    print('iter:{:8>d} loss CVT = {} lr={}'.format(iter_step, loss_cvt, optimizer_cvt.param_groups[0]['lr']))
+
+            with torch.no_grad():
+                sdf[:] = sdf[:] + (delta_sites*grad_sdf_space).sum(dim = 1)[:] #  + self.sdf_diff
+                for i in range(6):
+                    fine_features[:, i] = fine_features[:, i] + (delta_sites*grad_feat_space[:, :, i]).sum(dim = 1)[:] # self.feat_diff[:]
+
+            if iter_step % 100 == 0:
+                with torch.no_grad():
+                    self.make_knn()
+
+            with torch.no_grad():
+                delta_sites[:] = self.sites[:]
+
+                
+            alpha = learning_rate_alpha
+            progress = iter_step / nb_iter
+            learning_factor = (np.cos(np.pi * progress) + 1.0) * 0.5 * (1 - alpha) + alpha
+
+            for g in optimizer_cvt.param_groups:
+                g['lr'] = learning_rate_cvt * learning_factor
+
+        self.sites = self.sites.detach().cpu().numpy()
+
+    def upsample(self, sdf, feat, visual_hull, res, cam_sites, lr):        
         sites = self.sites.cpu().numpy()
         in_sdf = sdf
         in_feat = feat
@@ -194,7 +276,7 @@ class Tet32(Process):
         new_feat = []
         for _, edge in enumerate(self.o3d_edges.lines):
             edge_length = np.linalg.norm(sites[edge[0]] - sites[edge[1]], ord=2, axis=-1, keepdims=True)
-            if sdf[edge[0]]*sdf[edge[1]] <= 0.0: # or min(abs(sdf[edge[0]]), abs(sdf[edge[0]])) < edge_length:
+            if sdf[edge[0]]*sdf[edge[1]] <= 0.0: # or min(abs(sdf[edge[0]]), abs(sdf[edge[1]])) < edge_length:
                 new_sites.append((sites[edge[0]] + sites[edge[1]])/2.0)
                 new_sdf.append((sdf[edge[0]] + sdf[edge[1]])/2.0)
                 new_feat.append((feat[edge[0]] + feat[edge[1]])/2.0)
@@ -208,15 +290,31 @@ class Tet32(Process):
         in_feat = np.concatenate((feat, new_feat))
         new_sites = self.sites
 
-        #prev_kdtree = self.KDtree
-        self.run()
-        _, idx = self.KDtree.query(new_sites, k=1)
+        outside_flag = np.zeros(self.sites.shape[0], np.int32)
+        outside_flag[self.sites[:,0] < visual_hull[0] + (visual_hull[3]-visual_hull[0])/(2*res)] = 1
+        outside_flag[self.sites[:,1] < visual_hull[1] + (visual_hull[4]-visual_hull[1])/(2*res)] = 1
+        outside_flag[self.sites[:,2] < visual_hull[2] + (visual_hull[5]-visual_hull[2])/(2*res)] = 1
+        outside_flag[self.sites[:,0] > visual_hull[3] - (visual_hull[3]-visual_hull[0])/(2*res)] = 1
+        outside_flag[self.sites[:,1] > visual_hull[4] - (visual_hull[4]-visual_hull[1])/(2*res)] = 1
+        outside_flag[self.sites[:,2] > visual_hull[5] - (visual_hull[5]-visual_hull[2])/(2*res)] = 1
 
-        out_sdf = np.zeros(in_sdf.shape)
-        out_sdf[idx] = in_sdf[:]
+        cam_ids = np.stack([np.where((self.sites == cam_sites[i,:]).all(axis = 1))[0] for i in range(cam_sites.shape[0])]).reshape(-1)
+        cam_ids = torch.from_numpy(cam_ids).int().cuda()
+                
+        self.sites = torch.from_numpy(self.sites).float().cuda()
+        self.make_knn()
+        self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 1000, 1.0, lr)
+
+        prev_kdtree = scipy.spatial.KDTree(new_sites)
+        self.run()
+        new_sites = np.asarray(self.vertices)  
+
+        _, idx = prev_kdtree.query(new_sites, k=1)
+        out_sdf = np.zeros(new_sites.shape[0])
+        out_sdf[:] = in_sdf[idx[:]]
         
-        out_feat = np.zeros(in_feat.shape)
-        out_feat[idx] = in_feat[:]
+        out_feat = np.zeros([new_sites.shape[0],6])
+        out_feat[:] = in_feat[idx[:]]
 
         return torch.from_numpy(out_sdf).float().cuda(), torch.from_numpy(out_feat).float().cuda()
 

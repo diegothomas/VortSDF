@@ -120,8 +120,8 @@ __device__ void backward_no_sdf(float3 Ctotal, float Wtotal, float3 TrueColor, f
     int end = offsets[2 * n + 1];
     for (int t = start; t < start + end; t++) {        
         
-        sdf_prev = sdf_seg[2*t];
-        sdf = sdf_seg[2*t+1];
+        sdf_prev = sdf_seg[8*t];
+        sdf = sdf_seg[8*t+1];
 
         color.x = color_samples[3 * t];
         color.y = color_samples[3 * t + 1];
