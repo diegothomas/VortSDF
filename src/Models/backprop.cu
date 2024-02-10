@@ -23,6 +23,8 @@
 
 __global__ void backprop_feat_kernel(
     const size_t num_samples,
+    float *__restrict__ grad_sdf,
+    const float *__restrict__ grad_sdf_samples,
     float *__restrict__ grad_feat,
     const float *__restrict__ grad_samples,
     const int *__restrict__ cell_ids,
@@ -37,29 +39,28 @@ __global__ void backprop_feat_kernel(
     int id_prev, id;
     ////////////////////////Linear interpolation//////////////////////////
     //////////////////////////////////////////////////////////////
+    float lamda = cell_weights[13*idx + 12] ;
+    for (int i = 0; i < 6; i++) {
+        id_prev = cell_ids[12 * idx + i];
+        id = cell_ids[12 * idx + 6 + i];
+
+        for (int k = 0; k < DIM_L_FEAT; k++) {  
+            atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[13*idx + i] * lamda * grad_samples[DIM_L_FEAT * idx + k]);              
+            atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[13*idx + 6 + i] * (1.0f - lamda) * grad_samples[DIM_L_FEAT * idx + k]);
+        }
+    }
+    ////////////////////////Network interpolation//////////////////////////
+    //////////////////////////////////////////////////////////////
     /*for (int i = 0; i < 3; i++) {
         id_prev = cell_ids[6 * idx + i];
         id = cell_ids[6 * idx + 3 + i];
-
-        if (id_prev < 0 || id < 0)
-            return;
-        
-        float lamda = cell_weights[7*idx + 6] ;
-        for (int k = 0; k < DIM_L_FEAT; k++) {  
-            atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[7*idx + i] * lamda * grad_samples[DIM_L_FEAT * idx + k]);              
-            atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[7*idx + 3 + i] * (1.0f - lamda) * grad_samples[DIM_L_FEAT * idx + k]);
-        }
-    }*/
-    ////////////////////////Network interpolation//////////////////////////
-    //////////////////////////////////////////////////////////////
-    for (int i = 0; i < 3; i++) {
-        id_prev = cell_ids[6 * idx + i];
-        id = cell_ids[6 * idx + 3 + i];
+        //atomicAdd(&grad_sdf[id_prev], grad_sdf_samples[6*idx + i]);       
+        //atomicAdd(&grad_sdf[id], grad_sdf_samples[6*idx + 3 + i]);  
         for (int k = 0; k < DIM_L_FEAT; k++) {  
             atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], grad_samples[6*DIM_L_FEAT * idx + DIM_L_FEAT * i  + k]);       
             atomicAdd(&grad_feat[DIM_L_FEAT * id + k], grad_samples[6*DIM_L_FEAT * idx + 18 + DIM_L_FEAT * i  + k]);       
         }
-    }
+    }*/
 
     return;
 }
@@ -223,6 +224,8 @@ __global__ void space_reg_kernel(
 // *************************
 void backprop_feat_cuda(
     size_t num_samples,
+    torch::Tensor grad_sdf,
+    torch::Tensor grad_sdf_samples,
     torch::Tensor grad_feat,
     torch::Tensor grad_samples,
     torch::Tensor cell_ids,
@@ -234,6 +237,8 @@ void backprop_feat_cuda(
     AT_DISPATCH_FLOATING_TYPES( grad_feat.type(),"render_cuda", ([&] {  
         backprop_feat_kernel CUDA_KERNEL(blocks,threads) (
             num_samples,
+            grad_sdf.data_ptr<float>(),
+            grad_sdf_samples.data_ptr<float>(),
             grad_feat.data_ptr<float>(),
             grad_samples.data_ptr<float>(),
             cell_ids.data_ptr<int>(),

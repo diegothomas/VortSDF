@@ -16,6 +16,7 @@ void render_cuda(
     torch::Tensor offsets,
     torch::Tensor grads_sdf,
     torch::Tensor grads_color,
+    torch::Tensor grads_sdf_net,
     torch::Tensor color_loss,
     torch::Tensor mask_loss
 ); 
@@ -68,6 +69,7 @@ void render(
     torch::Tensor offsets,
     torch::Tensor grads_sdf,
     torch::Tensor grads_color,
+    torch::Tensor grads_sdf_net,
     torch::Tensor color_loss,
     torch::Tensor mask_loss        //***************
 ) {
@@ -85,6 +87,7 @@ void render(
     offsets,
     grads_sdf,
     grads_color,
+    grads_sdf_net,
     color_loss,
     mask_loss  );
 }

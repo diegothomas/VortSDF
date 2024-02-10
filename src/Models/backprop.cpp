@@ -4,6 +4,8 @@
 // *************************
 void backprop_feat_cuda(
     size_t num_samples,
+    torch::Tensor grad_sdf,
+    torch::Tensor grad_sdf_samples,
     torch::Tensor grad_feat,
     torch::Tensor grad_samples,
     torch::Tensor cell_ids,
@@ -55,6 +57,8 @@ void space_reg_cuda(
 // ***************************
 void backprop_feat(
     size_t num_samples,
+    torch::Tensor grad_sdf,
+    torch::Tensor grad_sdf_samples,
     torch::Tensor grad_feat,
     torch::Tensor grad_samples,
     torch::Tensor cell_ids,
@@ -62,6 +66,8 @@ void backprop_feat(
 ) {
     //std::cout << "Backprop feature gradients" << std::endl; 
     backprop_feat_cuda(num_samples,
+    grad_sdf,
+    grad_sdf_samples,
     grad_feat,
     grad_samples,
     cell_ids,
