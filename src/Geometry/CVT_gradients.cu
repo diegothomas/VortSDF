@@ -23,6 +23,24 @@
 /** Device functions **/
 /** Device functions **/
 
+
+inline __device__ double dot3D_gpu_d(double a[3], double b[3]) {
+	return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+__device__ double volume_tetrahedron_32(float a[3], float b[3], float c[3], float d[3]) {
+	double ad[3] = { a[0] - d[0], a[1] - d[1], a[2] - d[2] };
+	double bd[3] = { b[0] - d[0], b[1] - d[1], b[2] - d[2] };
+	double cd[3] = { c[0] - d[0], c[1] - d[1], c[2] - d[2] };
+
+	double n[3] = { bd[1] * cd[2] - bd[2] * cd[1],
+					-(bd[0] * cd[2] - bd[2] * cd[0]),
+					bd[0] * cd[1] - bd[1] * cd[0] };
+
+	double res = abs(dot3D_gpu_d(ad, n)) / 6.0;
+	return res;
+}
+
 //---------------------------------------------------
 //	calculate minor of matrix OR build new matrix : k-had = minor
 __device__ void Minor(float* minorMatrix, int colMatrix,  float* newMinorMatrix, int sizeMatrix){
@@ -739,6 +757,181 @@ __global__ void update_sdf_cuda_kernel(
     }
 }
 
+
+
+__global__ void eikonal_grad_kernel(
+    const size_t num_tets,                // number of rays
+    const int *__restrict__ tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    float *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ grad_sdf_o,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ feat,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ grad_eik,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices)
+    float *__restrict__ grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ Loss
+    )
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_tets)
+    {
+        return;
+    }
+
+    int ids[4] = {0, 0, 0, 0,};
+    ids[0] = tets[4*idx];  ids[1] = tets[4*idx + 1];  ids[2] = tets[4*idx + 2];
+    ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[4*idx + 3];
+
+    if (grad_sdf_o[ids[0]] == 0.0f && grad_sdf_o[ids[1]] == 0.0f && grad_sdf_o[ids[2]] == 0.0f && grad_sdf_o[ids[3]] == 0.0f)
+        return;
+
+    float center_point[3] {0.0, 0.0, 0.0};
+    for (int i = 0; i < 3; i++) {
+        center_point[i] = (sites[3*ids[0] + i] + sites[3*ids[1] + i] + sites[3*ids[2] + i] + sites[3*ids[3] + i])/4.0f;
+    }
+    float center_sdf = (sdf[ids[0]] + sdf[ids[1]] + sdf[ids[2]] + sdf[ids[3]])/4.0f;
+    /*float center_feat[6] {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    for (int i = 0; i < 6; i++) {
+        center_feat[i] = (feat[6*ids[0] + i] + feat[6*ids[1] + i] + feat[6*ids[2] + i] + feat[6*ids[3] + i])/4.0f;
+    }*/
+
+    float volume_tet = volume_tetrahedron_32(&sites[3*ids[0]], &sites[3*ids[1]], &sites[3*ids[2]], &sites[3*ids[3]]);
+    
+    float curr_n[3] {0.0, 0.0, 0.0};
+    float dX[12];
+    float G[9] {0.0, 0.0, 0.0, 
+                0.0, 0.0, 0.0, 
+                0.0, 0.0, 0.0}; //dXT dX
+    float G_inv[9] {0.0, 0.0, 0.0, 
+                0.0, 0.0, 0.0, 
+                0.0, 0.0, 0.0};
+
+    float Weights_curr[12] {0.0, 0.0, 0.0, 0.0,
+                            0.0, 0.0, 0.0, 0.0,
+                            0.0, 0.0, 0.0, 0.0};   
+
+    for (int r_id = 0; r_id < 4; r_id++) {
+        curr_n[0] = sites[3*ids[r_id]];
+        curr_n[1] = sites[3*ids[r_id] + 1];
+        curr_n[2] = sites[3*ids[r_id] + 2];
+
+        // Calculate coefficients
+        dX[3*r_id] = curr_n[0] - center_point[0];
+        dX[3*r_id + 1] = curr_n[1] - center_point[1];
+        dX[3*r_id + 2] = curr_n[2] - center_point[2];
+        
+        G[0] = G[0] + dX[3*r_id]*dX[3*r_id]; G[1] = G[1] + dX[3*r_id]*dX[3*r_id+1];  G[2] = G[2] + dX[3*r_id]*dX[3*r_id+2];
+        G[3] = G[3] + dX[3*r_id+1]*dX[3*r_id]; G[4] = G[4] + dX[3*r_id+1]*dX[3*r_id + 1]; G[5] = G[5] + dX[3*r_id+1]*dX[3*r_id + 2];
+        G[6] = G[6] + dX[3*r_id+2]*dX[3*r_id]; G[7] = G[7] + dX[3*r_id+2]*dX[3*r_id + 1]; G[8] = G[8] + dX[3*r_id+2]*dX[3*r_id + 2];
+    }
+
+    // Compute inverse of G
+    // det = a11 (a22 a33 – a23 a32) – a12 (a21 a33 – a23 a31) + a13 (a21 a32 – a22 a31)
+    float det = G[0] * (G[4]*G[8] - G[5]*G[7]) - G[1]*(G[3]*G[8] - G[5]*G[6]) + G[2] * (G[3]*G[7] - G[4] * G[6]);
+    if (det == 0.0f) { 
+        return;
+    }
+    
+    G_inv[0] = (G[4]*G[8] - G[5]*G[7])/det; 
+    G_inv[3] = -(G[3]*G[8] - G[5]*G[6])/det; 
+    G_inv[6] = (G[3]*G[7] - G[4]*G[6])/det;
+    G_inv[1] = -(G[1]*G[8] - G[2]*G[7])/det; 
+    G_inv[4] = (G[0]*G[8] - G[2]*G[6])/det; 
+    G_inv[7] = -(G[0]*G[7] - G[1]*G[6])/det; 
+    G_inv[2] = (G[1]*G[5] - G[2]*G[4])/det; 
+    G_inv[5] = -(G[0]*G[5] - G[2]*G[3])/det; 
+    G_inv[8] = (G[0]*G[4] - G[1]*G[3])/det; 
+
+    // Matrix multiplication
+    for (int i = 0; i < 4; i++) {
+        Weights_curr[3*i] = G_inv[0] * dX[3*i] + G_inv[1] * dX[3*i + 1] + G_inv[2] * dX[3*i + 2];
+        Weights_curr[3*i + 1] = G_inv[3] * dX[3*i] + G_inv[4] * dX[3*i + 1] + G_inv[5] * dX[3*i + 2];
+        Weights_curr[3*i + 2] = G_inv[6] * dX[3*i] + G_inv[7] * dX[3*i + 1] + G_inv[8] * dX[3*i + 2];
+    }
+    
+    // Matrix multiplication
+    float elem_0 = 0.0f;
+    float elem_1 = 0.0f;
+    float elem_2 = 0.0f;
+    /*float feat_0[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    float feat_1[6] ={0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    float feat_2[6] ={0.0, 0.0, 0.0, 0.0, 0.0, 0.0};*/
+    for (int i = 0; i < 4; i++) {
+        elem_0 += (sdf[ids[i]] - center_sdf) * Weights_curr[3*i];
+        elem_1 += (sdf[ids[i]] - center_sdf) * Weights_curr[3*i + 1];
+        elem_2 += (sdf[ids[i]] - center_sdf) * Weights_curr[3*i + 2];
+        /*for (int f_id = 0; f_id < 6; f_id++) {
+            feat_0[f_id] = feat_0[f_id] + (feat[6*ids[i] + f_id] - center_feat[f_id]) * Weights_curr[3*i];
+            feat_1[f_id] = feat_1[f_id] + (feat[6*ids[i] + f_id] - center_feat[f_id]) * Weights_curr[3*i + 1];
+            feat_2[f_id] = feat_2[f_id] + (feat[6*ids[i] + f_id] - center_feat[f_id]) * Weights_curr[3*i + 2];
+        }*/
+    }
+    
+    float norm_grad = elem_0*elem_0 + elem_1*elem_1 + elem_2*elem_2;
+
+    float diff_loss[3]  {2.0*elem_0, 2.0*elem_1, 2.0*elem_2};
+    if (norm_grad < 1.0f) {
+        diff_loss[0] = -diff_loss[0];
+        diff_loss[1] = -diff_loss[1];
+        diff_loss[2] = -diff_loss[2];
+    }
+
+    for (int i = 0; i < 4; i++) {
+        if (grad_sdf_o[ids[i]] != 0.0f) {
+            atomicAdd(&grad_eik[ids[i]], (diff_loss[0] * Weights_curr[3*i] + 
+                                            diff_loss[1] * Weights_curr[3*i + 1] + 
+                                            diff_loss[2] * Weights_curr[3*i + 2])*volume_tet);
+
+            atomicAdd(&grad_sdf[3*ids[i]], elem_0*volume_tet);
+            atomicAdd(&grad_sdf[3*ids[i] + 1], elem_1*volume_tet);
+            atomicAdd(&grad_sdf[3*ids[i] + 2], elem_2*volume_tet);
+            
+            /*for (int f_id = 0; f_id < 6; f_id++) {
+                atomicAdd(&grad_feat[18*ids[i] + f_id], feat_0[f_id]*volume_tet);
+                atomicAdd(&grad_feat[18*ids[i] + 6 + f_id], feat_1[f_id]*volume_tet);
+                atomicAdd(&grad_feat[18*ids[i] + 12 + f_id], feat_2[f_id]*volume_tet);
+            }*/
+
+            atomicAdd(&weights_tot[ids[i]], volume_tet);
+            atomicAdd(&Loss[ids[i]], abs(sqrt(norm_grad)-1)*volume_tet);
+        }
+    }
+
+
+    return;
+}
+
+__global__ void normalize_grad_kernel(
+    const size_t num_sites,                // number of rays
+    float *__restrict__ grad_eik,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices)
+    float *__restrict__ grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ Loss
+    )
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_sites)
+    {
+        return;
+    }
+
+    if (weights_tot[idx] == 0.0f)
+        return;
+
+    grad_eik[idx] = grad_eik[idx]/weights_tot[idx];
+
+    for (int i = 0; i < 3; i++)
+        grad_sdf[3*idx + i] = grad_sdf[3*idx + i]/weights_tot[idx];
+
+    for (int i = 0; i < 6; i++)
+        grad_feat[6*idx + i] = grad_feat[6*idx + i]/weights_tot[idx];
+
+    Loss[idx] = Loss[idx]/weights_tot[idx];
+}
+
+
 /** CPU functions **/
 /** CPU functions **/
 /** CPU functions **/
@@ -881,3 +1074,48 @@ void update_sdf_cuda(
     }));
 }
 
+// 
+void eikonal_grad_cuda(
+    size_t num_tets,                // number of rays
+    size_t num_sites,                // number of rays
+    torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  grad_sdf_o,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  feat,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  grad_eik,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices)
+    torch::Tensor  grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  eik_loss     // [N_voxels, 4] for each voxel => it's vertices
+)   {
+        const int threads = 256;
+        const int blocks = (num_tets + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+        AT_DISPATCH_FLOATING_TYPES( sites.type(),"eikonal_grad_kernel", ([&] {  
+            eikonal_grad_kernel CUDA_KERNEL(blocks,threads) (
+                num_tets,
+                tets.data_ptr<int>(),
+                sites.data_ptr<float>(),
+                grad_sdf_o.data_ptr<float>(),
+                sdf.data_ptr<float>(),
+                feat.data_ptr<float>(),
+                grad_eik.data_ptr<float>(),
+                grad_sdf.data_ptr<float>(),
+                grad_feat.data_ptr<float>(),
+                weights_tot.data_ptr<float>(),
+                eik_loss.data_ptr<float>()); 
+        }));
+
+        const int threads2 = 1024;
+        const int blocks2 = (num_sites + threads2 - 1) / threads2; // ceil for example 8192 + 255 / 256 = 32
+        AT_DISPATCH_FLOATING_TYPES( sites.type(),"normalize_grad_kernel", ([&] {  
+            normalize_grad_kernel CUDA_KERNEL(blocks2,threads2) (
+                num_sites,
+                grad_eik.data_ptr<float>(),
+                grad_sdf.data_ptr<float>(),
+                grad_feat.data_ptr<float>(),
+                weights_tot.data_ptr<float>(),
+                eik_loss.data_ptr<float>()); 
+        }));
+    
+}

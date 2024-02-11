@@ -276,7 +276,7 @@ class Tet32(Process):
         new_feat = []
         for _, edge in enumerate(self.o3d_edges.lines):
             edge_length = np.linalg.norm(sites[edge[0]] - sites[edge[1]], ord=2, axis=-1, keepdims=True)
-            if sdf[edge[0]]*sdf[edge[1]] <= 0.0: # or min(abs(sdf[edge[0]]), abs(sdf[edge[1]])) < edge_length:
+            if sdf[edge[0]]*sdf[edge[1]] <= 0.0 or min(abs(sdf[edge[0]]), abs(sdf[edge[1]])) < edge_length:
                 new_sites.append((sites[edge[0]] + sites[edge[1]])/2.0)
                 new_sdf.append((sdf[edge[0]] + sdf[edge[1]])/2.0)
                 new_feat.append((feat[edge[0]] + feat[edge[1]])/2.0)
@@ -301,9 +301,9 @@ class Tet32(Process):
         cam_ids = np.stack([np.where((self.sites == cam_sites[i,:]).all(axis = 1))[0] for i in range(cam_sites.shape[0])]).reshape(-1)
         cam_ids = torch.from_numpy(cam_ids).int().cuda()
                 
-        self.sites = torch.from_numpy(self.sites).float().cuda()
-        self.make_knn()
-        self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 1000, 1.0, lr)
+        #self.sites = torch.from_numpy(self.sites).float().cuda()
+        #self.make_knn()
+        #self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 1000, 1.0, lr)
 
         prev_kdtree = scipy.spatial.KDTree(new_sites)
         self.run()
@@ -355,6 +355,9 @@ class Tet32(Process):
     def surface_from_sdf(self, values, filename = ""):
         #print(values.shape)
         tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(values.astype(np.float64)),0.0)
+
+        """filter_smooth_laplacian(self, number_of_iterations=1, lambda_filter=0.5, filter_scope=<FilterScope.All: 0>)"""
+        
         #print(tri_mesh)
         self.tri_vertices = np.asarray(tri_mesh.vertices)
         self.tri_faces = np.asarray(tri_mesh.triangles)

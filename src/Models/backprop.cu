@@ -102,7 +102,7 @@ __global__ void eikonal_loss_kernel(
     return;
 }
 
-__global__ void smooth_kernel(
+__global__ void smooth_grad_kernel(
     const size_t num_edges,                // number of rays
     float sigma,
     float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
@@ -137,6 +137,65 @@ __global__ void smooth_kernel(
 
     return;
 }
+
+
+__global__ void smooth_kernel(
+    const size_t num_edges,                // number of rays
+    float sigma,
+    const size_t dim_sdf,
+    float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ edges,     // [N_voxels, 4] for each voxel => it's vertices)
+    float *__restrict__ sdf_smooth,    // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ counter     // [N_voxels, 4] for each voxel => it's vertices
+    )
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_edges)
+    {
+        return;
+    }
+    
+    float length_edge = (vertices[3*edges[2*idx]] - vertices[3*edges[2*idx+1]])*(vertices[3*edges[2*idx]] - vertices[3*edges[2*idx+1]]) +
+                            (vertices[3*edges[2*idx] + 1] - vertices[3*edges[2*idx+1] + 1])*(vertices[3*edges[2*idx] + 1] - vertices[3*edges[2*idx+1] + 1]) +
+                            (vertices[3*edges[2*idx] + 2] - vertices[3*edges[2*idx+1] + 2])*(vertices[3*edges[2*idx] + 2] - vertices[3*edges[2*idx+1] + 2]);
+              
+    for (int i = 0; i < dim_sdf; i++) {
+        if (sdf[dim_sdf*edges[2*idx + 1] + i] != 0.0f)
+            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx] + i], exp(-length_edge/(sigma*sigma)) * sdf[dim_sdf*edges[2*idx + 1] + i]);          
+        
+        if (sdf[dim_sdf*edges[2*idx] + i] != 0.0f)
+            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx + 1] + i], exp(-length_edge/(sigma*sigma)) * sdf[dim_sdf*edges[2*idx] + i]);
+    }
+
+    if (sdf[dim_sdf*edges[2*idx + 1]] != 0.0f)
+        atomicAdd(&counter[edges[2*idx]], exp(-length_edge/(sigma*sigma)));
+    if (sdf[dim_sdf*edges[2*idx]] != 0.0f)
+        atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/(sigma*sigma)));
+
+    return;
+}
+
+__global__ void normalize_kernel(
+    const size_t num_sites,                // number of rays
+    const size_t dim_sdf,
+    float *__restrict__ sdf_smooth,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ weights     // [N_voxels, 4] for each voxel => it's vertices
+    ) 
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_sites)
+    {
+        return;
+    }
+
+    if (weights[idx] == 0.0f)
+        return;
+
+    for (int i = 0; i < dim_sdf; i++) 
+        sdf_smooth[dim_sdf*idx + i] = sdf_smooth[dim_sdf*idx + i]/weights[idx];
+}
+
 
 __global__ void space_reg_kernel(
     const size_t num_rays,                // number of rays
@@ -296,8 +355,8 @@ void smooth_cuda(
 {
     const int threads = 1024;
     const int blocks = (num_edges + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
-    AT_DISPATCH_FLOATING_TYPES( sdf.type(),"smooth_kernel", ([&] {  
-        smooth_kernel CUDA_KERNEL(blocks,threads) (
+    AT_DISPATCH_FLOATING_TYPES( sdf.type(),"smooth_grad_kernel", ([&] {  
+        smooth_grad_kernel CUDA_KERNEL(blocks,threads) (
             num_edges,
             sigma,
             vertices.data_ptr<float>(),
@@ -341,6 +400,45 @@ void space_reg_cuda(
             offset.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)
             sdf_grad.data_ptr<float>(),    // [N_voxels, 4] for each voxel => it's vertices
             feat_grad.data_ptr<float>());
+    }));
+    
+}
+
+// *************************
+void smooth_sdf_cuda(
+    size_t num_edges,
+    size_t num_sites,
+    float sigma,
+    size_t dim_sdf,
+    torch::Tensor vertices,
+    torch::Tensor sdf,
+    torch::Tensor edges,
+    torch::Tensor sdf_smooth,
+    torch::Tensor counter 
+)
+{
+    const int threads = 1024;
+    const int blocks = (num_edges + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+    AT_DISPATCH_FLOATING_TYPES( sdf.type(),"smooth_kernel", ([&] {  
+        smooth_kernel CUDA_KERNEL(blocks,threads) (
+            num_edges,                // number of rays
+            sigma,
+            dim_sdf,
+            vertices.data_ptr<float>(),       // [N_rays, 6]
+            sdf.data_ptr<float>(),       // [N_rays, 6]
+            edges.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)
+            sdf_smooth.data_ptr<float>(),     // [N_voxels, 4] for each voxel => it's vertices)
+            counter.data_ptr<float>());
+    }));
+
+    const int threads2 = 1024;
+    const int blocks2 = (num_sites + threads2 - 1) / threads2; // ceil for example 8192 + 255 / 256 = 32
+    AT_DISPATCH_FLOATING_TYPES( sdf.type(),"normalize_kernel", ([&] {  
+        normalize_kernel CUDA_KERNEL(blocks2,threads2) (
+            num_sites,                
+            dim_sdf,
+            sdf_smooth.data_ptr<float>(), 
+            counter.data_ptr<float>());
     }));
     
 }

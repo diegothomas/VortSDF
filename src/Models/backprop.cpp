@@ -47,6 +47,18 @@ void space_reg_cuda(
     torch::Tensor feat_grad 
 );
 
+void smooth_sdf_cuda(
+    size_t num_edges,
+    size_t num_sites,
+    float sigma,
+    size_t dim_sdf,
+    torch::Tensor vertices,
+    torch::Tensor sdf,
+    torch::Tensor edges,
+    torch::Tensor sdf_smooth,
+    torch::Tensor counter 
+);
+
 
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
@@ -141,9 +153,34 @@ void space_reg(
     feat_grad );
 }
 
+void smooth(
+    size_t num_edges,
+    size_t num_sites,
+    float sigma,
+    size_t dim_sdf,
+    torch::Tensor vertices,
+    torch::Tensor sdf,
+    torch::Tensor edges,
+    torch::Tensor sdf_smooth,
+    torch::Tensor counter 
+){
+    //std::cout << "Backprop feature gradients" << std::endl; 
+    smooth_sdf_cuda(
+    num_edges,
+    num_sites,
+    sigma,
+    dim_sdf,
+    vertices,
+    sdf,
+    edges,
+    sdf_smooth,
+    counter);
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("eikonal_loss", &eikonal_loss, "eikonal_loss (CPP)");
     m.def("smooth_sdf", &smooth_sdf, "smooth_sdf (CPP)");
     m.def("backprop_feat", &backprop_feat, "backprop_feat (CPP)");
     m.def("space_reg", &space_reg, "space_reg (CPP)");
+    m.def("smooth", &smooth, "smooth (CPP)");
 }

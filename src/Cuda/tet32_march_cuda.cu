@@ -939,6 +939,7 @@ __global__ void tet32_march_cuda_kernel(
     float sdf_tot, weights_tot, dist;
 	int knn_id;
 	int prev_closest_id = 0;
+	float STEP = STEP_IN;
 	while (tet_id >= 0 && iter_max < 10000) {
 		ids_s[0] = ids[0]; ids_s[1] = ids[1]; ids_s[2] = ids[2]; 
 		ids[id_exit_face] = ids[3];
@@ -964,8 +965,24 @@ __global__ void tet32_march_cuda_kernel(
 		get_feat_triangle32(next_feat, next_weights, curr_p, vertices, vol_feat, tets, ids[0], ids[1], ids[2]);
 		ids_s[3] = ids[0]; ids_s[4] = ids[1]; ids_s[5] = ids[2]; 
 
-		float STEP = STEP_IN;
-		if (prev_prev_tet_id != -1 && prev_dist_tet < curr_dist) {
+		float STEP_CURR = STEP_IN;
+		if (prev_tet_id == -1) {
+			curr_z = curr_dist;
+			prev_dist_tet = curr_dist;
+			prev_sdf_tet = next_sdf;
+			for (int l = 0; l < 6; l++)
+				prev_feat_tet[l] = next_feat[l];
+			for (int l = 0; l < 4; l++)
+				prev_weights_tet[l] = next_weights[l];
+		}
+
+		float alpha_tet = sdf2Alpha(next_sdf, prev_sdf_tet, inv_s);
+		float contrib_tet = Tpartial * (1.0f - alpha_tet);
+		int fact_s = int(contrib_tet * 4.0f);
+		for (int l = 0; l < fact_s; l++)
+			STEP_CURR = STEP_CURR/ 2.0f;
+
+		/*if (prev_prev_tet_id != -1 && prev_dist_tet < curr_dist) {
 			if (STEP > (curr_dist - prev_dist_tet) / 2.0f)
 				STEP = STEP/ 2.0f;
 			if (STEP > (curr_dist - prev_dist_tet) / 2.0f)
@@ -977,21 +994,85 @@ __global__ void tet32_march_cuda_kernel(
 			//while (STEP > (curr_dist - prev_dist_tet) / 2.0f)
 			//	STEP = STEP/ 2.0f;
 			//min(STEP_IN, (curr_dist - prev_dist_tet) / 2.0f);
-		}
+		}*/
 
 		//float min_sdf = min(fabs(next_sdf), fabs(prev_sdf_tet)); && prev_sdf_tet > next_sdf
-		lambda = (curr_dist - prev_dist_tet) < 1.0e-6f ? 0.0f : STEP / (curr_dist - prev_dist_tet);
-		float contrib_in = (1.0f - sdf2Alpha((1.0f-lambda)*prev_sdf_tet + lambda * next_sdf, prev_sdf_tet, inv_s));
-		float contrib_out = (1.0f - sdf2Alpha(next_sdf, (1.0f-lambda)*next_sdf + lambda * prev_sdf_tet, inv_s));
-        if (prev_prev_tet_id != -1 && prev_tet_id != -1 && lambda > 0.0f && (contrib_in > 0.0f || contrib_out > 0.0f || next_sdf*prev_sdf_tet < 0.0f)) {
-			while (curr_z + STEP <= curr_dist) {
-				/* Get sdf value */
+		//lambda = (curr_dist - prev_dist_tet) < 1.0e-6f ? 0.0f : STEP / (curr_dist - prev_dist_tet);
+		//float contrib_in = (1.0f - sdf2Alpha((1.0f-lambda)*prev_sdf_tet + lambda * next_sdf, prev_sdf_tet, inv_s));
+		//float contrib_out = (1.0f - sdf2Alpha(next_sdf, (1.0f-lambda)*next_sdf + lambda * prev_sdf_tet, inv_s));
+        if (prev_tet_id != -1) { //})  && lambda > 0.0f && (contrib_in > 0.0f || contrib_out > 0.0f || next_sdf*prev_sdf_tet < 0.0f)) {
+			if (true) { //(curr_z + STEP > curr_dist) {
+				//if (prev_sdf_tet > next_sdf) {
+				if (prev_sdf_tet*next_sdf <= 0.0f || 
+					(prev_sdf_tet > next_sdf && fmin(fabs(next_sdf), fabs(prev_sdf_tet))*inv_s < 3.0*CLIP_ALPHA)) {
+					z_val_ray[2 * s_id] = prev_dist_tet;
+					z_val_ray[2 * s_id + 1] = curr_dist;
+
+					z_id_ray[12 * s_id] = prev_ids_s[0]; 
+					z_id_ray[12 * s_id + 1] = prev_ids_s[1];
+					z_id_ray[12 * s_id + 2] = prev_ids_s[2]; 
+					z_id_ray[12 * s_id + 3] = prev_ids_s[3]; 
+					z_id_ray[12 * s_id + 4] = prev_ids_s[4];
+					z_id_ray[12 * s_id + 5] = prev_ids_s[5]; 
+					
+					z_id_ray[12 * s_id + 6] = ids_s[0]; 
+					z_id_ray[12 * s_id + 7] = ids_s[1];
+					z_id_ray[12 * s_id + 8] = ids_s[2]; 
+					z_id_ray[12 * s_id + 9] = ids_s[3]; 
+					z_id_ray[12 * s_id + 10] = ids_s[4];
+					z_id_ray[12 * s_id + 11] = ids_s[5]; 
+
+					z_sdf_ray[2 * s_id] = prev_sdf_tet;
+					z_sdf_ray[2 * s_id + 1] = next_sdf;
+					
+					for (int l = 0; l < 6; l++) {
+						z_feat_ray[12 * s_id + l] = prev_feat_tet[l];
+						z_feat_ray[12 * s_id + 6 + l] = next_feat[l];
+					}
+
+					weights_ray[12 * s_id] = prev_weights_tet[0];
+					weights_ray[12 * s_id + 1] = prev_weights_tet[1];
+					weights_ray[12 * s_id + 2] = prev_weights_tet[2];
+					weights_ray[12 * s_id + 3] = prev_weights_tet[3]; 
+					weights_ray[12 * s_id + 4] = prev_weights_tet[4]; 
+					weights_ray[12 * s_id + 5] = prev_weights_tet[5]; 
+
+					weights_ray[12 * s_id + 6] = next_weights[0];
+					weights_ray[12 * s_id + 7] = next_weights[1];
+					weights_ray[12 * s_id + 8] = next_weights[2];
+					weights_ray[12 * s_id + 9] = next_weights[3];
+					weights_ray[12 * s_id + 10] = next_weights[4];
+					weights_ray[12 * s_id + 11] = next_weights[5];
+
+					s_id++;
+					if (s_id > num_samples - 1) {
+						break;
+					}
+				}
+
+				prev_dist = curr_dist;
+				prev_sdf = next_sdf;
+				for (int l = 0; l < 6; l++)
+					prev_feat[l] = next_feat[l];
+				for (int l = 0; l < 6; l++) {
+					prev_weights[l] = next_weights[l];
+					prev_ids_s[l] = ids_s[l];
+				}
+			}
+
+			if (s_id > num_samples - 1) {
+				break;
+			}
+			
+			/*while (curr_z + STEP <= curr_dist) {
+				/// Get sdf value
 				curr_z += STEP; 
+				//STEP = STEP_CURR;
 				curr_p[0] = ray_o[0] + ray_d[0] * curr_z;
 				curr_p[1] = ray_o[1] + ray_d[1] * curr_z;
 				curr_p[2] = ray_o[2] + ray_d[2] * curr_z;
 
-				lambda = (curr_dist - prev_dist_tet) < 1.0e-6f ? 0.0f : (curr_z-prev_dist_tet) / (curr_dist - prev_dist_tet);
+				lambda = (curr_dist - prev_dist_tet) < 1.0e-10f ? 0.0f : (curr_z-prev_dist_tet) / (curr_dist - prev_dist_tet);
 				curr_sdf = (1.0f-lambda)*prev_sdf_tet + lambda * next_sdf;
 				for (int l = 0; l < 6; l++) {
 					curr_feat[l] = (1.0f-lambda)*prev_feat_tet[l] + lambda * next_feat[l];
@@ -1001,9 +1082,19 @@ __global__ void tet32_march_cuda_kernel(
 					weights[l] = (1.0f-lambda)*prev_weights_tet[l];
 					weights[3+l] = lambda * next_weights[l];
 				}
-
-				contrib_in = (1.0f - sdf2Alpha(curr_sdf, prev_sdf, inv_s));
-				if (contrib_in > 0.0f) { //(contrib > 1.0e-10/) && prev_sdf != 20.0f) {
+				
+				//double sdf_prev_clamp = fmin(CLIP_ALPHA, fmax(double(prev_sdf * inv_s), -CLIP_ALPHA));
+				//double sdf_clamp = fmin(CLIP_ALPHA, fmax(double(curr_sdf * inv_s), -CLIP_ALPHA));
+				//double inv_clipped_p = (fabs(prev_sdf) < CLIP_ALPHA / inv_s) ? double(inv_s) : sdf_prev_clamp / double(prev_sdf);
+				//double inv_clipped = (fabs(curr_sdf) < CLIP_ALPHA / inv_s) ? double(inv_s) : sdf_clamp / double(curr_sdf);
+				//alpha = min(1.0f, __double2float_rn((1.0 + exp(-sdf_prev_clamp)) / (1.0 + exp(-sdf_clamp))));
+				//float dalpha_dsdf_p = __double2float_rn(-inv_clipped_p * exp(-sdf_prev_clamp) / (1.0 + exp(-sdf_clamp)));
+				//float dalpha_dsdf_n = __double2float_rn((1.0 + exp(-sdf_prev_clamp)) * ((inv_clipped * exp(-sdf_clamp)) / ((1.0 + exp(-sdf_clamp)) * (1.0 + exp(-sdf_clamp)))));
+		
+				//float alpha = sdf2Alpha(curr_sdf, prev_sdf, inv_s);
+				//if ((alpha < 1.0f) && (prev_sdf > curr_sdf)) {
+				if (prev_sdf*curr_sdf <= 0.0f || 
+					(prev_sdf > curr_sdf && (fabs(curr_sdf)*inv_s < CLIP_ALPHA || fabs(prev_sdf)*inv_s < CLIP_ALPHA))) {
 
 					z_val_ray[2 * s_id] = prev_dist;
 					z_val_ray[2 * s_id + 1] = curr_z;
@@ -1066,25 +1157,10 @@ __global__ void tet32_march_cuda_kernel(
 			
 			if (s_id > num_samples - 1) {
 				break;
-			}
-		} else {
-			/* Get sdf value */
-			curr_z = curr_dist; 
-			curr_p[0] = ray_o[0] + ray_d[0] * curr_z;
-			curr_p[1] = ray_o[1] + ray_d[1] * curr_z;
-			curr_p[2] = ray_o[2] + ray_d[2] * curr_z;
-
-			prev_sdf = next_sdf;
-			for (int l = 0; l < 6; l++)
-				prev_feat[l] = next_feat[l];
-			for (int l = 0; l < 6; l++) {
-				prev_weights[l] = weights[l];
-				prev_ids_s[l] = ids_s[l];
-			}
-
-			prev_prev_ids[0] = prev_ids[0]; prev_prev_ids[1] = prev_ids[1]; prev_prev_ids[2] = prev_ids[2]; prev_prev_ids[3] = prev_ids[3];
-			prev_dist = curr_z;
+			}*/
 		}
+		
+		Tpartial = Tpartial * alpha_tet;
 
 		prev_dist_tet = curr_dist;
 		prev_sdf_tet = next_sdf;
@@ -1335,11 +1411,11 @@ __global__ void fill_samples_kernel(
 		float lambda = 0.5f;
 		if (out_sdf[2*i]*out_sdf[2*i+1] <= 0.0f) {
 			lambda = fabs(out_sdf[2*i+1])/(fabs(out_sdf[2*i])+fabs(out_sdf[2*i+1]));
-			/*if (lambda < 0.5f) {
+			if (lambda < 0.5f) {
 				out_sdf[2*i] = 2.0f*lambda*out_sdf[2*i] + (1.0f-2.0f*lambda)*out_sdf[2*i+1];
 			} else {
 				out_sdf[2*i+1] = (1.0-2.0f*lambda)*out_sdf[2*i] + (1.0f-(1.0-2.0f*lambda))*out_sdf[2*i+1];
-			}*/
+			}
 		}
 
 		for (int l = 0; l < 12; l++) {
