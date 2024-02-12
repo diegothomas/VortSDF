@@ -979,8 +979,8 @@ __global__ void tet32_march_cuda_kernel(
 		float alpha_tet = sdf2Alpha(next_sdf, prev_sdf_tet, inv_s);
 		float contrib_tet = Tpartial * (1.0f - alpha_tet);
 		int fact_s = int(contrib_tet * 4.0f);
-		for (int l = 0; l < fact_s; l++)
-			STEP_CURR = STEP_CURR/ 2.0f;
+		/*for (int l = 0; l < fact_s; l++)
+			STEP_CURR = STEP_CURR/ 2.0f;*/
 
 		/*if (prev_prev_tet_id != -1 && prev_dist_tet < curr_dist) {
 			if (STEP > (curr_dist - prev_dist_tet) / 2.0f)
@@ -1094,7 +1094,7 @@ __global__ void tet32_march_cuda_kernel(
 				//float alpha = sdf2Alpha(curr_sdf, prev_sdf, inv_s);
 				//if ((alpha < 1.0f) && (prev_sdf > curr_sdf)) {
 				if (prev_sdf*curr_sdf <= 0.0f || 
-					(prev_sdf > curr_sdf && (fabs(curr_sdf)*inv_s < CLIP_ALPHA || fabs(prev_sdf)*inv_s < CLIP_ALPHA))) {
+					(prev_sdf > curr_sdf && (fabs(curr_sdf)*inv_s < 3.0*CLIP_ALPHA || fabs(prev_sdf)*inv_s < 3.0*CLIP_ALPHA))) {
 
 					z_val_ray[2 * s_id] = prev_dist;
 					z_val_ray[2 * s_id + 1] = curr_z;

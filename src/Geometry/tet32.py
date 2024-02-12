@@ -9,6 +9,7 @@ import scipy.spatial
 from tqdm import tqdm
 from multiprocessing import Process, Value, Array, Manager
 import time 
+from pysdf import SDF
 
 from torch.utils.cpp_extension import load
 tet32_march_cuda = load(
@@ -216,8 +217,11 @@ class Tet32(Process):
             gammas = torch.from_numpy(np.random.rand(self.sites.shape[0])).float().cuda()
 
             ############ Compute spatial SDF gradients
-            cvt_grad_cuda.sdf_space_grad(self.sites.shape[0], self.KNN, self.knn_sites, self.sites, sdf, fine_features, weights_grad, grad_sdf_space, grad_feat_space)
-            
+            grad_sdf_space[:] = 0.0
+            grad_feat_space[:] = 0.0
+            weights_grad[:] = 0.0
+            cvt_grad_cuda.sdf_space_grad(self.nb_tets, self.sites.shape[0], self.summits, self.sites, sdf, fine_features, grad_sdf_space, grad_feat_space, weights_grad)
+  
             ############ Compute approximated CVT gradients at sites
             grad_sites[:] = 0.0
             loss_cvt = cvt_grad_cuda.cvt_grad(self.sites.shape[0], self.KNN, thetas, phis, gammas, self.knn_sites, self.sites, grad_sites)
@@ -266,7 +270,13 @@ class Tet32(Process):
 
         self.sites = self.sites.detach().cpu().numpy()
 
-    def upsample(self, sdf, feat, visual_hull, res, cam_sites, lr):        
+    def upsample(self, sdf, feat, visual_hull, res, cam_sites, lr):       
+        ## Smooth current mesh and build sdf        
+        tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(sdf.astype(np.float64)),0.0)
+        tri_mesh.filter_smooth_laplacian(number_of_iterations=3)
+
+        f = SDF(np.asarray(self.tri_vertices), np.asarray(self.tri_faces))
+
         sites = self.sites.cpu().numpy()
         in_sdf = sdf
         in_feat = feat
@@ -301,17 +311,19 @@ class Tet32(Process):
         cam_ids = np.stack([np.where((self.sites == cam_sites[i,:]).all(axis = 1))[0] for i in range(cam_sites.shape[0])]).reshape(-1)
         cam_ids = torch.from_numpy(cam_ids).int().cuda()
                 
-        #self.sites = torch.from_numpy(self.sites).float().cuda()
-        #self.make_knn()
-        #self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 1000, 1.0, lr)
+        self.sites = torch.from_numpy(self.sites).float().cuda()
+        self.make_knn()
+        self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, 1.0, lr)
 
         prev_kdtree = scipy.spatial.KDTree(new_sites)
         self.run()
         new_sites = np.asarray(self.vertices)  
 
         _, idx = prev_kdtree.query(new_sites, k=1)
-        out_sdf = np.zeros(new_sites.shape[0])
-        out_sdf[:] = in_sdf[idx[:]]
+        #out_sdf = np.zeros(new_sites.shape[0])
+        #out_sdf[:] = in_sdf[idx[:]]
+        
+        out_sdf = -f(new_sites)
         
         out_feat = np.zeros([new_sites.shape[0],6])
         out_feat[:] = in_feat[idx[:]]

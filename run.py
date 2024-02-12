@@ -114,7 +114,9 @@ class Runner:
             import src.Geometry.sampling as sampler
             res = 32
             sites = sampler.sample_Bbox(visual_hull[0:3], visual_hull[3:6], res, perturb_f =  (visual_hull[3] - visual_hull[0])*0.05)
-            
+            #sites, _ = ply.load_ply("Data/bmvs_man/bmvs_man_colmap_aligned.ply")
+
+
             #### Add cameras as sites 
             cam_sites = np.stack([self.dataset.pose_all[id, :3,3].cpu().numpy() for id in range(self.dataset.n_images)])
             sites = np.concatenate((sites, cam_sites))
@@ -252,6 +254,7 @@ class Runner:
         self.inv_s = 0.1
         self.sigma = 0.03
         step_size = 0.01
+        #step_size = 0.003
         self.loc_iter = 0
         image_perm = self.get_image_perm()
         num_rays = self.batch_size
@@ -612,7 +615,7 @@ class Runner:
                 self.vortSDF_renderer_fine.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
 
                 self.sigma = self.sigma / 1.5
-                #step_size = step_size / 1.5
+                step_size = step_size / 1.5
                 self.learning_rate_cvt = self.learning_rate_cvt / 2.0
                 self.e_w = self.e_w / 10.0
 

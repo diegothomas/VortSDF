@@ -12,15 +12,15 @@ void test_inverse_cuda(
 
 
 void sdf_space_grad_cuda(
-    size_t num_sites,
-    size_t num_knn,
-    torch::Tensor neighbors,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor feat,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor Weights,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor grad_sites,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor grad_feat_sites    // [N_sites, 3] for each voxel => it's vertices
+    size_t num_tets,                // number of rays
+    size_t num_sites,                // number of rays
+    torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  feat,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights_tot
 );
 
 
@@ -91,15 +91,15 @@ void test_inverse(
 }
 
 void sdf_space_grad(
-    size_t num_sites,
-    size_t num_knn,
-    torch::Tensor neighbors,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor feat,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor Weights,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor grad_sites,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor grad_feat_sites    // [N_sites, 3] for each voxel => it's vertices
+    size_t num_tets,                // number of rays
+    size_t num_sites,                // number of rays
+    torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  feat,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights_tot
 )  {
     //std::cout << "March through implicit cvt" << std::endl; 
     /*CHECK_INPUT(rays);
@@ -108,15 +108,16 @@ void sdf_space_grad(
     CHECK_INPUT(samples);*/
 
     sdf_space_grad_cuda(
-        num_sites,
-        num_knn,
-        neighbors,   
-        sites, 
-        sdf,
-        feat,
-        Weights,
-        grad_sites,
-        grad_feat_sites );
+        num_tets,                // number of rays
+        num_sites,                // number of rays
+        tets,  // [N_voxels, 4] for each voxel => it's neighbors
+        sites,  // [N_voxels, 4] for each voxel => it's neighbors
+        sdf,  // [N_voxels, 4] for each voxel => it's neighbors
+        feat,  // [N_voxels, 4] for each voxel => it's neighbors
+        grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices
+        grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+        weights_tot
+    );
 
 }
 
