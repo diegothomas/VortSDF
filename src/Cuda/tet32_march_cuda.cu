@@ -16,7 +16,7 @@
 #define FAKEINIT
 #endif
 
-#define DIM_L_FEAT 6
+#define DIM_L_FEAT 12
 #define CLIP_ALPHA 30.0
 
 /** Device functions **/
@@ -758,7 +758,7 @@ __global__ void tet32_march_cuda_kernel(
     float *z_val_ray = &z_vals[idx*num_samples*2];
     int *z_id_ray = &z_ids[idx*num_samples*12];	
     float *z_sdf_ray = &z_sdfs[idx*num_samples*2];
-    float *z_feat_ray = &z_feat[idx*num_samples*12];
+    float *z_feat_ray = &z_feat[idx*num_samples*2*DIM_L_FEAT];
     float *weights_ray = &weights_samp[idx*num_samples*12];
 
 	//float STEP = 0.01f;
@@ -919,10 +919,10 @@ __global__ void tet32_march_cuda_kernel(
 	float prev_weights_tet[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 	float next_weights[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 
-	float next_feat[6] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
-	float prev_feat_tet[6] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
-	float prev_feat[6] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
-	float curr_feat[6] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+	float next_feat[DIM_L_FEAT] = { };
+	float prev_feat_tet[DIM_L_FEAT] = { };
+	float prev_feat[DIM_L_FEAT] = { };
+	float curr_feat[DIM_L_FEAT] = { };
 	
 	int ids_s[6] = { 0, 0, 0, 0, 0, 0 };
 	int prev_ids_s[6] = { 0, 0, 0, 0, 0, 0 };
@@ -970,7 +970,7 @@ __global__ void tet32_march_cuda_kernel(
 			curr_z = curr_dist;
 			prev_dist_tet = curr_dist;
 			prev_sdf_tet = next_sdf;
-			for (int l = 0; l < 6; l++)
+			for (int l = 0; l < DIM_L_FEAT; l++)
 				prev_feat_tet[l] = next_feat[l];
 			for (int l = 0; l < 4; l++)
 				prev_weights_tet[l] = next_weights[l];
@@ -1025,9 +1025,9 @@ __global__ void tet32_march_cuda_kernel(
 					z_sdf_ray[2 * s_id] = prev_sdf_tet;
 					z_sdf_ray[2 * s_id + 1] = next_sdf;
 					
-					for (int l = 0; l < 6; l++) {
-						z_feat_ray[12 * s_id + l] = prev_feat_tet[l];
-						z_feat_ray[12 * s_id + 6 + l] = next_feat[l];
+					for (int l = 0; l < DIM_L_FEAT; l++) {
+						z_feat_ray[2*DIM_L_FEAT * s_id + l] = prev_feat_tet[l];
+						z_feat_ray[2*DIM_L_FEAT * s_id + DIM_L_FEAT + l] = next_feat[l];
 					}
 
 					weights_ray[12 * s_id] = prev_weights_tet[0];
@@ -1052,7 +1052,7 @@ __global__ void tet32_march_cuda_kernel(
 
 				prev_dist = curr_dist;
 				prev_sdf = next_sdf;
-				for (int l = 0; l < 6; l++)
+				for (int l = 0; l < DIM_L_FEAT; l++)
 					prev_feat[l] = next_feat[l];
 				for (int l = 0; l < 6; l++) {
 					prev_weights[l] = next_weights[l];
@@ -1164,7 +1164,7 @@ __global__ void tet32_march_cuda_kernel(
 
 		prev_dist_tet = curr_dist;
 		prev_sdf_tet = next_sdf;
-		for (int l = 0; l < 6; l++)
+		for (int l = 0; l < DIM_L_FEAT; l++)
 			prev_feat_tet[l] = next_feat[l];
 		for (int l = 0; l < 4; l++)
 			prev_weights_tet[l] = next_weights[l];
@@ -1395,7 +1395,7 @@ __global__ void fill_samples_kernel(
     float* in_z_rays = &in_z[2*num_samples * idx];
     int* in_ids_rays = &in_ids[12*num_samples * idx];
     float* in_sdf_rays = &in_sdf[2*num_samples * idx];
-    float* in_feat_rays = &in_feat[12*num_samples * idx];
+    float* in_feat_rays = &in_feat[2*DIM_L_FEAT*num_samples * idx];
     float* in_weights_rays = &in_weights[12*num_samples * idx];
 
     int start = offset[2*idx];
@@ -1422,8 +1422,13 @@ __global__ void fill_samples_kernel(
         	out_ids[12*i + l] = in_ids_rays[12 * s_id + l];
 		}
 
-		for (int l = 0; l < 12; l++) {
-			out_feat[6*i+l] = (lambda*in_feat_rays[12*s_id + l] + (1.0f-lambda)*in_feat_rays[12*s_id + 6 + l]);
+		/*for (int l = 0; l < DIM_L_FEAT; l++) {
+			out_feat[DIM_L_FEAT*i+l] = (lambda*in_feat_rays[2*DIM_L_FEAT*s_id + l] + (1.0f-lambda)*in_feat_rays[2*DIM_L_FEAT*s_id + DIM_L_FEAT + l]);
+		}*/
+
+		for (int l = 0; l < DIM_L_FEAT; l++) {
+			out_feat[2*DIM_L_FEAT*i+l] = in_feat_rays[2*DIM_L_FEAT*s_id + l];
+			out_feat[2*DIM_L_FEAT*i+ DIM_L_FEAT + l] = in_feat_rays[2*DIM_L_FEAT*s_id + DIM_L_FEAT + l];
 		}
 
         samples_loc[3 * i] = ray.origin[0]; //samples[3 * i] - sites[3*out_ids[6*i+1]];

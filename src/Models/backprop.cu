@@ -15,7 +15,7 @@
 #define FAKEINIT
 #endif
 
-#define DIM_L_FEAT 6
+#define DIM_L_FEAT 12
 
 /** Device functions **/
 /** Device functions **/
@@ -44,9 +44,11 @@ __global__ void backprop_feat_kernel(
         id_prev = cell_ids[12 * idx + i];
         id = cell_ids[12 * idx + 6 + i];
 
-        for (int k = 0; k < DIM_L_FEAT; k++) {  
-            atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[13*idx + i] * lamda * grad_samples[DIM_L_FEAT * idx + k]);              
-            atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[13*idx + 6 + i] * (1.0f - lamda) * grad_samples[DIM_L_FEAT * idx + k]);
+        for (int k = 0; k < DIM_L_FEAT; k++) { 
+            atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[13*idx + i] * grad_samples[2*DIM_L_FEAT * idx + k]);       
+            atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[13*idx + 6 + i] *grad_samples[2*DIM_L_FEAT * idx + DIM_L_FEAT + k]);     
+            //atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[13*idx + i] * lamda * grad_samples[DIM_L_FEAT * idx + k]);              
+            //atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[13*idx + 6 + i] * (1.0f - lamda) * grad_samples[DIM_L_FEAT * idx + k]);
         }
     }
     ////////////////////////Network interpolation//////////////////////////
@@ -57,8 +59,8 @@ __global__ void backprop_feat_kernel(
         //atomicAdd(&grad_sdf[id_prev], grad_sdf_samples[6*idx + i]);       
         //atomicAdd(&grad_sdf[id], grad_sdf_samples[6*idx + 3 + i]);  
         for (int k = 0; k < DIM_L_FEAT; k++) {  
-            atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], grad_samples[6*DIM_L_FEAT * idx + DIM_L_FEAT * i  + k]);       
-            atomicAdd(&grad_feat[DIM_L_FEAT * id + k], grad_samples[6*DIM_L_FEAT * idx + 18 + DIM_L_FEAT * i  + k]);       
+            atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], grad_samples[2*DIM_L_FEAT * idx + k]);       
+            atomicAdd(&grad_feat[DIM_L_FEAT * id + k], grad_samples[2*DIM_L_FEAT * idx + 6 + k]);       
         }
     }*/
 
@@ -291,7 +293,7 @@ void backprop_feat_cuda(
     torch::Tensor cell_weights 
 )
 {
-    const int threads = 1024;
+    const int threads = 512;
     const int blocks = (num_samples + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
     AT_DISPATCH_FLOATING_TYPES( grad_feat.type(),"render_cuda", ([&] {  
         backprop_feat_kernel CUDA_KERNEL(blocks,threads) (

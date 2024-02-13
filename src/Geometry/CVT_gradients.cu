@@ -18,6 +18,7 @@
 #define PI 3.141592653589793238462643383279502884197
 #define _MAX_K_NN 8
 #define _BUFF_SIZE 2048
+#define DIM_L_FEAT 12
 
 /** Device functions **/
 /** Device functions **/
@@ -298,9 +299,9 @@ __global__ void sdf_space_grad_cuda_kernel(
         center_point[i] = (sites[3*ids[0] + i] + sites[3*ids[1] + i] + sites[3*ids[2] + i] + sites[3*ids[3] + i])/4.0f;
     }
     float center_sdf = (sdf[ids[0]] + sdf[ids[1]] + sdf[ids[2]] + sdf[ids[3]])/4.0f;
-    float center_feat[6] {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-    for (int i = 0; i < 6; i++) {
-        center_feat[i] = (feat[6*ids[0] + i] + feat[6*ids[1] + i] + feat[6*ids[2] + i] + feat[6*ids[3] + i])/4.0f;
+    float center_feat[DIM_L_FEAT] = { };
+    for (int i = 0; i < DIM_L_FEAT; i++) {
+        center_feat[i] = (feat[DIM_L_FEAT*ids[0] + i] + feat[DIM_L_FEAT*ids[1] + i] + feat[DIM_L_FEAT*ids[2] + i] + feat[DIM_L_FEAT*ids[3] + i])/4.0f;
     }
 
     float volume_tet = volume_tetrahedron_32(&sites[3*ids[0]], &sites[3*ids[1]], &sites[3*ids[2]], &sites[3*ids[3]]);
@@ -361,17 +362,17 @@ __global__ void sdf_space_grad_cuda_kernel(
     float elem_0 = 0.0f;
     float elem_1 = 0.0f;
     float elem_2 = 0.0f;
-    float feat_0[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-    float feat_1[6] ={0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-    float feat_2[6] ={0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    float feat_0[DIM_L_FEAT] = { };
+    float feat_1[DIM_L_FEAT] = { };
+    float feat_2[DIM_L_FEAT] = { };
     for (int i = 0; i < 4; i++) {
         elem_0 += (sdf[ids[i]] - center_sdf) * Weights_curr[3*i];
         elem_1 += (sdf[ids[i]] - center_sdf) * Weights_curr[3*i + 1];
         elem_2 += (sdf[ids[i]] - center_sdf) * Weights_curr[3*i + 2];
-        for (int f_id = 0; f_id < 6; f_id++) {
-            feat_0[f_id] = feat_0[f_id] + (feat[6*ids[i] + f_id] - center_feat[f_id]) * Weights_curr[3*i];
-            feat_1[f_id] = feat_1[f_id] + (feat[6*ids[i] + f_id] - center_feat[f_id]) * Weights_curr[3*i + 1];
-            feat_2[f_id] = feat_2[f_id] + (feat[6*ids[i] + f_id] - center_feat[f_id]) * Weights_curr[3*i + 2];
+        for (int f_id = 0; f_id < DIM_L_FEAT; f_id++) {
+            feat_0[f_id] = feat_0[f_id] + (feat[DIM_L_FEAT*ids[i] + f_id] - center_feat[f_id]) * Weights_curr[3*i];
+            feat_1[f_id] = feat_1[f_id] + (feat[DIM_L_FEAT*ids[i] + f_id] - center_feat[f_id]) * Weights_curr[3*i + 1];
+            feat_2[f_id] = feat_2[f_id] + (feat[DIM_L_FEAT*ids[i] + f_id] - center_feat[f_id]) * Weights_curr[3*i + 2];
         }
     }
     
@@ -389,10 +390,10 @@ __global__ void sdf_space_grad_cuda_kernel(
         atomicAdd(&grad_sdf[3*ids[i] + 1], elem_1*volume_tet);
         atomicAdd(&grad_sdf[3*ids[i] + 2], elem_2*volume_tet);
         
-        for (int f_id = 0; f_id < 6; f_id++) {
-            atomicAdd(&grad_feat[18*ids[i] + f_id], feat_0[f_id]*volume_tet);
-            atomicAdd(&grad_feat[18*ids[i] + 6 + f_id], feat_1[f_id]*volume_tet);
-            atomicAdd(&grad_feat[18*ids[i] + 12 + f_id], feat_2[f_id]*volume_tet);
+        for (int f_id = 0; f_id < DIM_L_FEAT; f_id++) {
+            atomicAdd(&grad_feat[3*DIM_L_FEAT*ids[i] + f_id], feat_0[f_id]*volume_tet);
+            atomicAdd(&grad_feat[3*DIM_L_FEAT*ids[i] + DIM_L_FEAT + f_id], feat_1[f_id]*volume_tet);
+            atomicAdd(&grad_feat[3*DIM_L_FEAT*ids[i] + 2*DIM_L_FEAT + f_id], feat_2[f_id]*volume_tet);
         }
 
         atomicAdd(&weights_tot[ids[i]], volume_tet);
@@ -421,8 +422,8 @@ __global__ void normalize_grad_sdf_feat_kernel(
     for (int i = 0; i < 3; i++)
         grad_sdf[3*idx + i] = grad_sdf[3*idx + i]/weights_tot[idx];
 
-    for (int i = 0; i < 6; i++)
-        grad_feat[6*idx + i] = grad_feat[6*idx + i]/weights_tot[idx];
+    for (int i = 0; i < DIM_L_FEAT; i++)
+        grad_feat[DIM_L_FEAT*idx + i] = grad_feat[DIM_L_FEAT*idx + i]/weights_tot[idx];
 }
 
 

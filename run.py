@@ -70,6 +70,8 @@ class Runner:
         self.learning_rate_alpha = self.conf.get_float('train.learning_rate_alpha')
         lr=self.learning_rate_cvt = self.conf.get_float('train.learning_rate_cvt')
 
+        self.dim_feats = self.conf.get_int('train.dim_feats')
+
         self.end_iter_loc = 3000
         self.e_w = 1.0e-5
         self.tv_w = 1.0e-4
@@ -96,7 +98,7 @@ class Runner:
         self.optimizer = torch.optim.Adam(params_to_train, lr=self.learning_rate)
         
         posbase_pe=5
-        viewbase_pe= 1#4
+        viewbase_pe= 4
         self.posfreq = torch.FloatTensor([(2**i) for i in range(posbase_pe)]).cuda()
         self.viewfreq = torch.FloatTensor([(2**i) for i in range(viewbase_pe)]).cuda()
 
@@ -127,7 +129,7 @@ class Runner:
             #self.tet32.join()
             self.tet32.run() 
             self.tet32.load_cuda()
-            self.tet32.save("Exp/bmvs_man/test.ply")    
+            #self.tet32.save("Exp/bmvs_man/test.ply")    
             
             sites = np.asarray(self.tet32.vertices)  
             cam_ids = np.stack([np.where((sites == cam_sites[i,:]).all(axis = 1))[0] for i in range(cam_sites.shape[0])]).reshape(-1)
@@ -171,7 +173,7 @@ class Runner:
         
         ##### 2. Initialize feature field    
         if not hasattr(self, 'fine_features'):
-            self.fine_features = 0.5*torch.ones([self.sdf.shape[0], 6]).cuda()       
+            self.fine_features = 0.5*torch.ones([self.sdf.shape[0], self.dim_feats]).cuda()       
             self.fine_features = self.fine_features.contiguous()
             self.fine_features.requires_grad_(True)
 
@@ -181,7 +183,7 @@ class Runner:
         self.tet32.CVT(outside_flag, cam_ids, self.sdf.detach(), self.fine_features.detach())
         self.tet32.run()
         self.tet32.load_cuda()
-        self.tet32.save("Exp/bmvs_man/test_CVT.ply")  
+        #self.tet32.save("Exp/bmvs_man/test_CVT.ply")  
         sites = np.asarray(self.tet32.vertices)  
         cam_ids = np.stack([np.where((sites == cam_sites[i,:]).all(axis = 1))[0] for i in range(cam_sites.shape[0])]).reshape(-1)
         self.tet32.make_adjacencies(cam_ids)
@@ -282,6 +284,9 @@ class Runner:
             nb_samples = self.tet32.sample_rays_cuda(step_size, self.inv_s, img_idx, rays_d, self.sdf, self.fine_features, cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_feat, self.in_ids, self.offsets, self.n_samples)    
             if verbose:
                 print('CVT_Sample time:', timer() - start)   
+            
+            if nb_samples == 0:
+                continue
 
             """if self.offsets[self.offsets[:,1] == -1].sum() != 0:
                 print("no good topologie", self.offsets[self.offsets[:,1] == -1, 1].sum())
@@ -368,7 +373,9 @@ class Runner:
             # network interpolation
             #print(xyz_emb.shape)
             #print(viewdirs_emb.shape)
-            rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
+            rgb_feat = torch.cat([viewdirs_emb, self.out_sdf[:nb_samples,:], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
+
+            #rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
 
             # linear interpolation
             #rgb_feat = torch.cat([xyz_emb, viewdirs_emb, fine_features], -1)
@@ -387,7 +394,7 @@ class Runner:
             mask = (mask > 0.5).float()
 
             start = timer()       
-            self.vortSDF_renderer_coarse.render_gpu(rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors, true_rgb, mask, self.out_ids, self.offsets)
+            #self.vortSDF_renderer_coarse.render_gpu(rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors, true_rgb, mask, self.out_ids, self.offsets)
             #color_coarse_loss = VortSDFRenderingFunction.apply(self.vortSDF_renderer_coarse_net, rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors, true_rgb, mask, self.out_ids, self.offsets)
             
             color_fine_loss = VortSDFRenderingFunction.apply(self.vortSDF_renderer_fine, rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors_fine, true_rgb, mask, self.out_ids, self.offsets)
@@ -408,13 +415,13 @@ class Runner:
             start = timer()   
             #sdf_features_grad = torch.cat([sdf_feat_entry.grad[:,3:6], sdf_feat_exit.grad[:,3:6]], -1).contiguous()
 
-            fine_features_grad = rgb_feat.grad[:,44:50]
+            fine_features_grad = rgb_feat.grad[:,29:]
             fine_features_grad = fine_features_grad.contiguous()
 
             self.grad_sdf_net[:] = 0.0
             self.grad_features[:] = 0.0
             backprop_cuda.backprop_feat(nb_samples, self.grad_sdf_net, self.grad_sdf_net, self.grad_features, fine_features_grad, self.out_ids, self.out_weights)
-            self.grad_features[:, :3] = 1.0*self.grad_features[:, :3] #+ 0.2*self.vortSDF_renderer_coarse.grads_color[:,:] / (mask_sum + 1.0e-5)
+            #self.grad_features[:, :3] = 1.0*self.grad_features[:, :3] #+ 0.2*self.vortSDF_renderer_coarse.grads_color[:,:] / (mask_sum + 1.0e-5)
             #self.grad_features[:, :3] = self.vortSDF_renderer_coarse.grads_color[:,:] / (mask_sum + 1.0e-5)
 
             self.grad_features[outside_flag[:] == 1.0] = 0.0   
@@ -729,7 +736,10 @@ class Runner:
             self.colors = self.colors.contiguous()
             rgb_feat = torch.cat([xyz_emb, viewdirs_emb, colors_feat.detach(), self.out_feat[:nb_samples]], -1)"""
 
-            rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples, :], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
+
+            rgb_feat = torch.cat([viewdirs_emb, self.out_sdf[:nb_samples, :], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
+            
+            #rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples, :], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
             
             #rgb_feat = torch.cat([xyz_emb, viewdirs_emb, fine_features[:nb_samples]], -1)
             #rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_feat[:nb_samples]], -1)
@@ -805,7 +815,7 @@ class Runner:
         self.weight_sdf_smooth = torch.zeros([self.sdf.shape[0]]).cuda()       
         self.weight_sdf_smooth = self.weight_sdf_smooth.contiguous()
         
-        self.grad_features = torch.zeros([self.sdf.shape[0], 6]).cuda()       
+        self.grad_features = torch.zeros([self.sdf.shape[0], self.dim_feats]).cuda()       
         self.grad_features = self.grad_features.contiguous()
 
         self.grad_sdf_smooth = torch.zeros([self.sdf.shape[0]]).cuda()       
@@ -816,15 +826,15 @@ class Runner:
         self.grad_sdf_net = torch.zeros([self.sdf.shape[0]]).cuda()       
         self.grad_sdf_net = self.grad_sdf_net.contiguous()
         
-        self.grad_feat_smooth = torch.zeros([self.sdf.shape[0], 6]).cuda()       
+        self.grad_feat_smooth = torch.zeros([self.sdf.shape[0], self.dim_feats]).cuda()       
         self.grad_feat_smooth = self.grad_feat_smooth.contiguous()
 
         self.grad_sdf_space = torch.zeros([self.sites.shape[0], 3]).float().cuda().contiguous()
-        self.grad_feat_space = torch.zeros([self.sites.shape[0], 3, 6]).float().cuda().contiguous()
+        self.grad_feat_space = torch.zeros([self.sites.shape[0], 3, self.dim_feats]).float().cuda().contiguous()
         self.weights_grad = torch.zeros([self.sites.shape[0], 1]).float().cuda().contiguous()
         self.eik_loss = torch.zeros([self.sites.shape[0], 1]).float().cuda().contiguous()
         
-        self.grad_feat_reg = torch.zeros([self.sdf.shape[0], 6]).cuda()       
+        self.grad_feat_reg = torch.zeros([self.sdf.shape[0], self.dim_feats]).cuda()       
         self.grad_feat_reg = self.grad_feat_reg.contiguous()
         
         self.grad_sdf_reg = torch.zeros([self.sdf.shape[0]]).cuda()       
@@ -859,7 +869,7 @@ class Runner:
         #self.in_sdf = torch.zeros([2*self.n_samples * self.batch_size], dtype=torch.float32).cuda()
         self.in_sdf = self.in_sdf.contiguous()
         
-        self.in_feat = torch.zeros([12*self.n_samples * self.batch_size], dtype=torch.float32).cuda()
+        self.in_feat = torch.zeros([2*self.dim_feats*self.n_samples * self.batch_size], dtype=torch.float32).cuda()
         #self.in_feat = torch.zeros([12*self.n_samples * self.batch_size], dtype=torch.float32).cuda()
         self.in_feat = self.in_feat.contiguous()
         
@@ -873,7 +883,7 @@ class Runner:
         #self.out_sdf = torch.zeros([self.n_samples * self.batch_size, 2], dtype=torch.float32).cuda()
         self.out_sdf = self.out_sdf.contiguous()
         
-        self.out_feat = torch.zeros([self.n_samples * self.batch_size, 6], dtype=torch.float32).cuda()
+        self.out_feat = torch.zeros([self.n_samples * self.batch_size, 2*self.dim_feats], dtype=torch.float32).cuda()
         #self.out_feat = torch.zeros([self.n_samples * self.batch_size, 12], dtype=torch.float32).cuda()
         self.out_feat = self.out_feat.contiguous()
         

@@ -22,6 +22,9 @@ mt_cuda_kernel = load(
 cvt_grad_cuda = load(
     'cvt_grad_cuda', ['src/Geometry/CVT_gradients.cpp', 'src/Geometry/CVT_gradients.cu'], verbose=True)
 
+tet_utils = load(
+    'tet_utils', ['src/Geometry/tet_utils.cpp'], verbose=True)
+
 def get_faces_list_from_tetrahedron(tetrahedron):
     """
     Gets the faces from the given tetrahedron.
@@ -87,11 +90,22 @@ class Tet32(Process):
         self.nb_tets = np.asarray(self.tetras).shape[0]
         self.summits = np.zeros([self.nb_tets, 4], dtype = np.int32)
         self.summits[:,] = np.asarray(self.tetras)[:,:]
+        self.neighbors = -np.ones([self.nb_tets, 4], dtype = np.int32)
 
         print("nb tets: ", self.nb_tets)
+        
+
+        start = timer()
+        self.summits = torch.from_numpy(self.summits).contiguous()
+        self.neighbors = torch.from_numpy(self.neighbors).contiguous()
+        tet_utils.compute_neighbors(self.nb_tets, torch.from_numpy(np.asarray(self.tetras)).contiguous(), self.summits, self.neighbors)
+        self.summits = self.summits.numpy()
+        self.neighbors = self.neighbors.numpy()
+        print('C++ time:', timer() - start)  
 
         ## 4 values for indices of neighbors
-
+        
+        """start = timer()
         # first iterate over all tetrahedron and compute adjacencies for each face
         faces_to_tetrahedron = {}
         for i, tetrahedron in enumerate(self.tetras):
@@ -105,7 +119,6 @@ class Tet32(Process):
         print("Faces adjacencies computed")
 
         # second iterate over all tetrahedron and get neighbors from faces
-        self.neighbors = -np.ones([self.nb_tets, 4], dtype = np.int32)
 
         for i, tetrahedron in tqdm(enumerate(self.tetras)):
             faces = get_faces_from_tetrahedron(tetrahedron)
@@ -120,9 +133,12 @@ class Tet32(Process):
             # make last summit index as xor 
             self.summits[i,3] = self.summits[i,0] ^ self.summits[i,1] ^ self.summits[i,2] ^ self.summits[i,3] 
 
-        self.sites = np.asarray(self.vertices)
         print("Neighboors computed")
-        
+        print('Python time:', timer() - start)   
+        """
+
+        self.sites = np.asarray(self.vertices)
+
         start = timer()
         self.KDtree = scipy.spatial.KDTree(self.sites)
         self.knn_sites = -1 * np.ones((self.sites.shape[0], self.KNN))
@@ -190,7 +206,7 @@ class Tet32(Process):
 
     def CVT(self, outside_flag, cam_ids, sdf, fine_features, nb_iter = 1000, sdf_weight = 0.0, lr = 1.0e-4):
         grad_sdf_space = torch.zeros([self.sites.shape[0], 3]).float().cuda().contiguous()
-        grad_feat_space = torch.zeros([self.sites.shape[0], 3, 6]).float().cuda().contiguous()
+        grad_feat_space = torch.zeros([self.sites.shape[0], 3, fine_features.shape[1]]).float().cuda().contiguous()
         weights_grad = torch.zeros([3*self.KNN*self.sites.shape[0]]).float().cuda().contiguous()
 
         grad_sites = torch.zeros(self.sites.shape).cuda()       
@@ -250,7 +266,7 @@ class Tet32(Process):
 
             with torch.no_grad():
                 sdf[:] = sdf[:] + (delta_sites*grad_sdf_space).sum(dim = 1)[:] #  + self.sdf_diff
-                for i in range(6):
+                for i in range(fine_features.shape[1]):
                     fine_features[:, i] = fine_features[:, i] + (delta_sites*grad_feat_space[:, :, i]).sum(dim = 1)[:] # self.feat_diff[:]
 
             if iter_step % 100 == 0:
@@ -325,7 +341,7 @@ class Tet32(Process):
         
         out_sdf = -f(new_sites)
         
-        out_feat = np.zeros([new_sites.shape[0],6])
+        out_feat = np.zeros([new_sites.shape[0],feat.shape[1]])
         out_feat[:] = in_feat[idx[:]]
 
         return torch.from_numpy(out_sdf).float().cuda(), torch.from_numpy(out_feat).float().cuda()
