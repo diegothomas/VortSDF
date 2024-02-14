@@ -424,7 +424,6 @@ class Runner:
             #self.grad_features[:, :3] = 1.0*self.grad_features[:, :3] #+ 0.2*self.vortSDF_renderer_coarse.grads_color[:,:] / (mask_sum + 1.0e-5)
             #self.grad_features[:, :3] = self.vortSDF_renderer_coarse.grads_color[:,:] / (mask_sum + 1.0e-5)
 
-            self.grad_features[outside_flag[:] == 1.0] = 0.0   
             #self.grad_sdf_net[outside_flag[:] == 1.0] = 0.0   
             if verbose:
                 print('backprop_feat time:', timer() - start)
@@ -436,6 +435,7 @@ class Runner:
             ####### Regularization terms ###########
             ########################################
 
+            ### SMOOTH SDF GRADIENT
             grad_sdf = self.vortSDF_renderer_fine.grads_sdf / (mask_sum + 1.0e-5)
             self.grad_sdf_smooth[:] = grad_sdf[:]
             self.counter_smooth[:] = 1.0
@@ -443,6 +443,15 @@ class Runner:
                                  self.tet32.edges, self.grad_sdf_smooth, self.counter_smooth)
             grad_sdf[:] = self.grad_sdf_smooth[:]
             grad_sdf[outside_flag[:] == 1.0] = 0.0   
+
+            
+            #### SMOOTH FEATURE GRADIENT
+            self.grad_feat_smooth[:] = self.grad_features[:]
+            self.counter_smooth[:] = 1.0
+            backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, self.dim_feats, self.sites, self.grad_features, 
+                                 self.tet32.edges, self.grad_feat_smooth, self.counter_smooth)
+            self.grad_features[:] = self.grad_feat_smooth[:]
+            self.grad_features[outside_flag[:] == 1.0] = 0.0   
             
             ############ Compute spatial SDF gradients
             start = timer()   
@@ -581,7 +590,7 @@ class Runner:
                 with torch.no_grad():
                     delta_sites[:] = self.sites[:]
 
-            if (iter_step+1) % 3000 == 0 and iter_step < 6000:
+            if (iter_step+1) % 3000 == 0 and iter_step < 12000:
                 self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt)
                 self.sdf = self.sdf.contiguous()
                 self.sdf.requires_grad_(True)
@@ -626,14 +635,21 @@ class Runner:
                 self.learning_rate_cvt = self.learning_rate_cvt / 2.0
                 self.e_w = self.e_w / 10.0
 
+                self.e_w = 1.0e-8
                 if (iter_step+1) == 6000:
                     self.e_w = 1.0e-8
-                    self.end_iter_loc = 4000
+                    
+                if (iter_step+1) == 9000:
+                    self.e_w = 1.0e-9
+
+                if (iter_step+1) == 12000:
+                    self.e_w = 1.0e-10
+                    self.end_iter_loc = 8000
                 
                 self.loc_iter = 0
 
                 #verbose = True
-                self.tet32.save("Exp/bmvs_man/test_up.ply")    
+                #self.tet32.save("Exp/bmvs_man/test_up.ply")    
             
             if iter_step % self.report_freq == 0:
                 print('iter:{:8>d} loss = {}, scale={}, lr={}'.format(iter_step, loss, self.inv_s, self.optimizer.param_groups[0]['lr']))
@@ -641,6 +657,7 @@ class Runner:
                 #print('iter:{:8>d} loss CVT = {} lr={}'.format(iter_step, loss_cvt, self.optimizer_cvt.param_groups[0]['lr']))
 
             if iter_step % self.val_freq == 0:
+                #self.inv_s = 1000
                 self.render_image(cam_ids, img_idx)
                 self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri.ply")
                 #self.tet32.marching_tets(self.sdf.detach(), "Exp/bmvs_man/test_MT.ply")
@@ -815,8 +832,8 @@ class Runner:
         self.weight_sdf_smooth = torch.zeros([self.sdf.shape[0]]).cuda()       
         self.weight_sdf_smooth = self.weight_sdf_smooth.contiguous()
         
-        self.grad_features = torch.zeros([self.sdf.shape[0], self.dim_feats]).cuda()       
-        self.grad_features = self.grad_features.contiguous()
+        self.grad_features = torch.zeros([self.sdf.shape[0], self.dim_feats]).cuda().contiguous()  
+        self.grad_feat_smooth = torch.zeros([self.sdf.shape[0], self.dim_feats]).cuda().contiguous()
 
         self.grad_sdf_smooth = torch.zeros([self.sdf.shape[0]]).cuda()       
         self.grad_sdf_smooth = self.grad_sdf_smooth.contiguous()

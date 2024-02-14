@@ -188,7 +188,10 @@ __device__ float get_sdf_triangle32(float weights[3], float p[3], float* sites, 
 	weights[2] = tot_area == 0.0f ? 0.33f : float(Triangle_Area_3D(ps, s0, s1) / tot_area);
 
 	float w_tot = weights[0] + weights[1] + weights[2];
-	if (!((weights[0] >= 0.0f && weights[0] <= 1.0f) &&
+	weights[0] = weights[0] / w_tot;
+	weights[1] = weights[1] / w_tot;
+	weights[2] = weights[2] / w_tot;
+	/*if (!((weights[0] >= 0.0f && weights[0] <= 1.0f) &&
 		(weights[1] >= 0.0f && weights[1] <= 1.0f) &&
 		(weights[2] >= 0.0f && weights[2] <= 1.0f) &&
 		fabs((weights[0] + weights[1] + weights[2]) - 1.0f) < 1.0e-4f)) {
@@ -198,15 +201,16 @@ __device__ float get_sdf_triangle32(float weights[3], float p[3], float* sites, 
 		weights[0] = weights[0] / w_tot;
 		weights[1] = weights[1] / w_tot;
 		weights[2] = weights[2] / w_tot;
-	}
+	}*/
 
 	return sdf[id0] * weights[0] + sdf[id1] * weights[1] + sdf[id2] * weights[2];
 }
 
 __device__ void get_feat_triangle32(float *feat, float weights[3], float p[3], float* sites, float* vol_feat, int* tets, int id0, int id1, int id2) {
 	for (int i = 0; i < DIM_L_FEAT; i++) {
-		feat[i] = vol_feat[DIM_L_FEAT * id0 + i] * weights[0] + vol_feat[DIM_L_FEAT * id1 + i] * weights[1] +
-			vol_feat[DIM_L_FEAT * id2 + i] * weights[2];
+		feat[i] = vol_feat[DIM_L_FEAT * id0 + i] * weights[0] + 
+					vol_feat[DIM_L_FEAT * id1 + i] * weights[1] +
+					vol_feat[DIM_L_FEAT * id2 + i] * weights[2];
 	}
 	return;
 }
@@ -1411,11 +1415,11 @@ __global__ void fill_samples_kernel(
 		float lambda = 0.5f;
 		if (out_sdf[2*i]*out_sdf[2*i+1] <= 0.0f) {
 			lambda = fabs(out_sdf[2*i+1])/(fabs(out_sdf[2*i])+fabs(out_sdf[2*i+1]));
-			if (lambda < 0.5f) {
+			/*if (lambda < 0.5f) {
 				out_sdf[2*i] = 2.0f*lambda*out_sdf[2*i] + (1.0f-2.0f*lambda)*out_sdf[2*i+1];
 			} else {
 				out_sdf[2*i+1] = (1.0-2.0f*lambda)*out_sdf[2*i] + (1.0f-(1.0-2.0f*lambda))*out_sdf[2*i+1];
-			}
+			}*/
 		}
 
 		for (int l = 0; l < 12; l++) {

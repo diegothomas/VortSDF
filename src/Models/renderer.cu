@@ -253,6 +253,7 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
     float Wpartial = 0.0f;
     float3 Cpartial = make_float3(0.0f, 0.0f, 0.0f);
     float3 color = make_float3(0.0f, 0.0f, 0.0f);
+    float3 color_prev = make_float3(0.0f, 0.0f, 0.0f);
     float3 dc = make_float3(0.0f, 0.0f, 0.0f);
     float3 dCtotal_dalpha = make_float3(0.0f, 0.0f, 0.0f);
     float3 sample_color_diff = make_float3(0.0f, 0.0f, 0.0f);
@@ -344,7 +345,7 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
             id_prev = cell_ids[12 * t + i];
             id = cell_ids[12 * t + 6 + i];
             
-			if (lambda < 0.5f) {
+			/*if (lambda < 0.5f) {
                 atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + i] * 2.0f*lambda * dalpha * dalpha_dsdf_p);
                 atomicAdd(&grads_sdf[id], weights_seg[13*t + 6 + i] * 
                                 ((1.0f-2.0f*lambda) * dalpha * dalpha_dsdf_p + dalpha * dalpha_dsdf_n));
@@ -352,17 +353,34 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
                 atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + i] * 
                                     (2.0f*lambda * dalpha * dalpha_dsdf_p + (1.0-2.0f*lambda)*dalpha * dalpha_dsdf_n));
                 atomicAdd(&grads_sdf[id], weights_seg[13*t + 6 + i] * (1.0f-(1.0-2.0f*lambda)) * dalpha * dalpha_dsdf_n);
-			}
-            //atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + i] * lambda * dalpha * dalpha_dsdf_p);
-            //atomicAdd(&grads_sdf[id], weights_seg[13*t + 6 + i] * (1.0f - lambda) * dalpha * dalpha_dsdf_n);
+			}*/
+            atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + i] * lambda * dalpha * dalpha_dsdf_p);
+            atomicAdd(&grads_sdf[id], weights_seg[13*t + 6 + i] * (1.0f - lambda) * dalpha * dalpha_dsdf_n);
         }
 
         grads_sdf_net[2 * t] = dalpha * dalpha_dsdf_p;
         grads_sdf_net[2 * t + 1] = dalpha * dalpha_dsdf_n;
 
-        grads_color[3 * t] = dc.x;
-        grads_color[3 * t + 1] = dc.y;
-        grads_color[3 * t + 2] = dc.z;
+        // add total variation loss along the ray for color
+        // float err_tv = 0.5 (color - color_prec)**2
+
+        if (Mask > 0.0f) {
+            grads_color[3 * t] = dc.x;
+            grads_color[3 * t + 1] = dc.y;
+            grads_color[3 * t + 2] = dc.z;
+
+            /*grads_color[3 * t] = t > start ? 0.001f*(color.x - color_prev.x) + dc.x : dc.x;
+            grads_color[3 * t + 1] = t > start ? 0.001f*(color.y - color_prev.y) + dc.y : dc.y;
+            grads_color[3 * t + 2] = t > start ? 0.001f*(color.z - color_prev.z) + dc.z : dc.z;
+
+            if (t > start) {
+                grads_color[3 * (t-1)] = grads_color[3 * (t-1)] - 0.001f*(color.x - color_prev.x) ;
+                grads_color[3 * (t-1) + 1] = grads_color[3 * (t-1) + 1] - 0.001f*(color.y - color_prev.y);
+                grads_color[3 * (t-1) + 2] = grads_color[3 * (t-1) + 2] - 0.001f*(color.z - color_prev.z);
+            }*/
+        }
+
+        //color_prev.x = color.x; color_prev.y = color.y; color_prev.z = color.z;
 
         Tpartial = Tpartial * alpha;
 

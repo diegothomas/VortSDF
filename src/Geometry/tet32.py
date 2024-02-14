@@ -23,7 +23,7 @@ cvt_grad_cuda = load(
     'cvt_grad_cuda', ['src/Geometry/CVT_gradients.cpp', 'src/Geometry/CVT_gradients.cu'], verbose=True)
 
 tet_utils = load(
-    'tet_utils', ['src/Geometry/tet_utils.cpp'], verbose=True)
+    'tet_utils', ['src/Geometry/tet_utils.cpp', 'src/Geometry/tet_utils.cu'], verbose=True)
 
 def get_faces_list_from_tetrahedron(tetrahedron):
     """
@@ -291,13 +291,28 @@ class Tet32(Process):
         tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(sdf.astype(np.float64)),0.0)
         tri_mesh.filter_smooth_laplacian(number_of_iterations=3)
 
+        self.tri_vertices = np.asarray(tri_mesh.vertices)
+        self.tri_faces = np.asarray(tri_mesh.triangles)
         f = SDF(np.asarray(self.tri_vertices), np.asarray(self.tri_faces))
+        
+        nb_new_sites = tet_utils.upsample_counter(self.edges.shape[0], self.edges, self.sites, torch.from_numpy(sdf).float().cuda())
+                
+        new_sites = torch.zeros([nb_new_sites,3]).float().cuda()
+        new_sdf = torch.zeros([nb_new_sites]).float().cuda()
+        new_feat = torch.zeros([nb_new_sites,feat.shape[1]]).float().cuda()
+
+        tet_utils.upsample(self.edges.shape[0], self.edges, self.sites, torch.from_numpy(sdf).float().cuda(), torch.from_numpy(feat).float().cuda(),
+                           new_sites, new_sdf, new_feat)
+        
+        new_sites = new_sites.cpu().numpy()
+        new_sdf = new_sdf.cpu().numpy()
+        new_feat = new_feat.cpu().numpy()
 
         sites = self.sites.cpu().numpy()
         in_sdf = sdf
         in_feat = feat
 
-        new_sites = []
+        """new_sites = []
         new_sdf = []
         new_feat = []
         for _, edge in enumerate(self.o3d_edges.lines):
@@ -309,7 +324,8 @@ class Tet32(Process):
 
         new_sites = np.stack(new_sites)
         new_sdf = np.stack(new_sdf)
-        new_feat = np.stack(new_feat)
+        new_feat = np.stack(new_feat)"""
+
         print("nb new sites: ", new_sites.shape)
         self.sites = np.concatenate((sites, new_sites))
         in_sdf = np.concatenate((sdf, new_sdf))
