@@ -25,6 +25,22 @@ void upsample_cuda(
     torch::Tensor new_feats
 );
 
+
+void vertex_adjacencies_cuda(
+    size_t nb_tets,
+    torch::Tensor tetras,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor summits,
+    torch::Tensor adjacencies
+);
+    
+
+void make_adjacencies_cuda(
+    size_t nb_tets,
+    torch::Tensor tetras,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor adjacencies,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor neighbors
+);
+
 #define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
@@ -67,6 +83,36 @@ void upsample(
         new_feats);
 }
 
+void vertex_adjacencies(
+    size_t nb_tets,
+    torch::Tensor tetras,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor summits,
+    torch::Tensor adjacencies
+)
+{
+    vertex_adjacencies_cuda(
+    nb_tets,
+    tetras,    // [N_sites, 3] for each voxel => it's vertices
+    summits,
+    adjacencies);
+}
+    
+
+void make_adjacencies(
+    size_t nb_tets,
+    torch::Tensor tetras,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor adjacencies,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor neighbors
+)
+{
+    make_adjacencies_cuda(
+    nb_tets,
+    tetras,    // [N_sites, 3] for each voxel => it's vertices
+    adjacencies,    // [N_sites, 3] for each voxel => it's vertices
+    neighbors
+    );
+}
+
 vector<tuple<int, int, int>> get_faces_from_tetrahedron(const int* tetrahedron) {
     return {
         make_tuple(tetrahedron[1], tetrahedron[2], tetrahedron[3]),
@@ -76,9 +122,15 @@ vector<tuple<int, int, int>> get_faces_from_tetrahedron(const int* tetrahedron) 
     };
 }
 
-void compute_neighbors(size_t nb_tets, torch::Tensor tetras_t, torch::Tensor summits_t, torch::Tensor neighbors_t) {
+void compute_neighbors(size_t nb_tets, torch::Tensor tetras_t, torch::Tensor adj_t, torch::Tensor summits_t, torch::Tensor neighbors_t) {
 
-    int* tetras = tetras_t.data_ptr<int>();
+    vertex_adjacencies_cuda(nb_tets, tetras_t, summits_t, adj_t);
+    cout << "Faces adjacencies computed" << endl;
+    
+    make_adjacencies_cuda(nb_tets, tetras_t, adj_t, neighbors_t);
+    cout << "Neighboors computed" << endl;
+
+    /*int* tetras = tetras_t.data_ptr<int>();
     int* summits = summits_t.data_ptr<int>();
     int* neighbors = neighbors_t.data_ptr<int>();
 
@@ -114,9 +166,9 @@ void compute_neighbors(size_t nb_tets, torch::Tensor tetras_t, torch::Tensor sum
         // make last summit index as xor
         summits[4*i] = tetras[4*i]; summits[4*i+1] = tetras[4*i+1]; summits[4*i+2] = tetras[4*i+2]; 
         summits[4*i+3] = tetras[4*i] ^ tetras[4*i+1] ^ tetras[4*i+2] ^ tetras[4*i+3];
-    }
+    }*/
     
-    cout << "Neighboors computed" << endl;
+    //cout << "Neighboors computed" << endl;
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {

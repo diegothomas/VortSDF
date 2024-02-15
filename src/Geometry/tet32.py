@@ -96,12 +96,17 @@ class Tet32(Process):
         
 
         start = timer()
-        self.summits = torch.from_numpy(self.summits).contiguous()
-        self.neighbors = torch.from_numpy(self.neighbors).contiguous()
-        tet_utils.compute_neighbors(self.nb_tets, torch.from_numpy(np.asarray(self.tetras)).contiguous(), self.summits, self.neighbors)
-        self.summits = self.summits.numpy()
-        self.neighbors = self.neighbors.numpy()
+        self.summits = torch.from_numpy(self.summits).cuda().contiguous()
+        self.neighbors = torch.from_numpy(self.neighbors).cuda().contiguous()
+        adj = torch.zeros((self.sites.shape[0], 64)).int().cuda().contiguous()
+        tet_utils.compute_neighbors(self.nb_tets, torch.from_numpy(np.asarray(self.tetras)).cuda().contiguous(), adj,
+                                    self.summits, self.neighbors)
+        self.summits = self.summits.cpu().numpy()
+        self.neighbors = self.neighbors.cpu().numpy()
         print('C++ time:', timer() - start)  
+
+        print(adj[:2,:])
+        input()
 
         ## 4 values for indices of neighbors
         
