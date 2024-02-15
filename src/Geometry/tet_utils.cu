@@ -78,6 +78,28 @@ __global__ void upsample_kernel(
 }
 
 
+/*__global__ void face_adjacencies_kernel(
+    const size_t nb_tets,
+    const int *__restrict__ tetras,
+    const int *__restrict__ adjacencies,
+    const float *__restrict__ sdf,
+    int *__restrict__ counter)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= nb_tets)
+    {
+        return;
+    }
+
+    // face 1 
+    int id0 = tetras[4*idx + 1]; int id1 = tetras[4*idx + 2]; int id2 = tetras[4*idx + 3];
+    int id_a = atomicAdd(&adjacencies[3*()], 1);
+    adjacencies[3*() + id_a + 1] = idx;
+
+
+}*/
+
+
 /** CPU functions **/
 /** CPU functions **/
 /** CPU functions **/

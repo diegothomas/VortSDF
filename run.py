@@ -254,7 +254,7 @@ class Runner:
         self.R = 40
         self.s_start = 10.0
         self.inv_s = 0.1
-        self.sigma = 0.03
+        self.sigma = 0.1
         step_size = 0.01
         #step_size = 0.003
         self.loc_iter = 0
@@ -446,12 +446,12 @@ class Runner:
 
             
             #### SMOOTH FEATURE GRADIENT
-            self.grad_feat_smooth[:] = self.grad_features[:]
+            """self.grad_feat_smooth[:] = self.grad_features[:]
             self.counter_smooth[:] = 1.0
             backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, self.dim_feats, self.sites, self.grad_features, 
                                  self.tet32.edges, self.grad_feat_smooth, self.counter_smooth)
             self.grad_features[:] = self.grad_feat_smooth[:]
-            self.grad_features[outside_flag[:] == 1.0] = 0.0   
+            self.grad_features[outside_flag[:] == 1.0] = 0.0   """
             
             ############ Compute spatial SDF gradients
             start = timer()   
@@ -638,13 +638,24 @@ class Runner:
                 self.e_w = 1.0e-8
                 if (iter_step+1) == 6000:
                     self.e_w = 1.0e-8
+                    self.learning_rate = 5e-4
+                    self.learning_rate_sdf = 1.0e-3
+                    self.learning_rate_feat = 5.0e-4
                     
                 if (iter_step+1) == 9000:
+                    self.sigma = 0.03
                     self.e_w = 1.0e-9
+                    self.learning_rate = 1e-4
+                    self.learning_rate_sdf = 5.0e-4
+                    self.learning_rate_feat = 1.0e-4
 
                 if (iter_step+1) == 12000:
+                    self.sigma = 0.01
                     self.e_w = 1.0e-10
                     self.end_iter_loc = 8000
+                    self.learning_rate = 1e-4
+                    self.learning_rate_sdf = 1.0e-4
+                    self.learning_rate_feat = 1.0e-4
                 
                 self.loc_iter = 0
 
