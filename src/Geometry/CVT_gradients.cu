@@ -760,8 +760,10 @@ __global__ void eikonal_grad_kernel(
     float *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ grad_sdf_o,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ sdf_smooth,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ feat,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ grad_eik,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ grad_smooth,     // [N_voxels, 4] for each voxel => it's vertices)
     float *__restrict__ grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices)
     float *__restrict__ grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
@@ -778,14 +780,15 @@ __global__ void eikonal_grad_kernel(
     ids[0] = tets[4*idx];  ids[1] = tets[4*idx + 1];  ids[2] = tets[4*idx + 2];
     ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[4*idx + 3];
 
-    if (grad_sdf_o[ids[0]] == 0.0f && grad_sdf_o[ids[1]] == 0.0f && grad_sdf_o[ids[2]] == 0.0f && grad_sdf_o[ids[3]] == 0.0f)
-        return;
+    //if (grad_sdf_o[ids[0]] == 0.0f && grad_sdf_o[ids[1]] == 0.0f && grad_sdf_o[ids[2]] == 0.0f && grad_sdf_o[ids[3]] == 0.0f)
+    //    return;
 
     float center_point[3] {0.0, 0.0, 0.0};
     for (int i = 0; i < 3; i++) {
         center_point[i] = (sites[3*ids[0] + i] + sites[3*ids[1] + i] + sites[3*ids[2] + i] + sites[3*ids[3] + i])/4.0f;
     }
     float center_sdf = (sdf[ids[0]] + sdf[ids[1]] + sdf[ids[2]] + sdf[ids[3]])/4.0f;
+    float center_sdf_smooth = (sdf_smooth[ids[0]] + sdf_smooth[ids[1]] + sdf_smooth[ids[2]] + sdf_smooth[ids[3]])/4.0f;
     /*float center_feat[6] {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     for (int i = 0; i < 6; i++) {
         center_feat[i] = (feat[6*ids[0] + i] + feat[6*ids[1] + i] + feat[6*ids[2] + i] + feat[6*ids[3] + i])/4.0f;
@@ -849,6 +852,9 @@ __global__ void eikonal_grad_kernel(
     float elem_0 = 0.0f;
     float elem_1 = 0.0f;
     float elem_2 = 0.0f;
+    float elem_smooth_0 = 0.0f;
+    float elem_smooth_1 = 0.0f;
+    float elem_smooth_2 = 0.0f;
     /*float feat_0[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     float feat_1[6] ={0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     float feat_2[6] ={0.0, 0.0, 0.0, 0.0, 0.0, 0.0};*/
@@ -856,6 +862,10 @@ __global__ void eikonal_grad_kernel(
         elem_0 += (sdf[ids[i]] - center_sdf) * Weights_curr[3*i];
         elem_1 += (sdf[ids[i]] - center_sdf) * Weights_curr[3*i + 1];
         elem_2 += (sdf[ids[i]] - center_sdf) * Weights_curr[3*i + 2];
+        
+        elem_smooth_0 += (sdf_smooth[ids[i]] - center_sdf_smooth) * Weights_curr[3*i];
+        elem_smooth_1 += (sdf_smooth[ids[i]] - center_sdf_smooth) * Weights_curr[3*i + 1];
+        elem_smooth_2 += (sdf_smooth[ids[i]] - center_sdf_smooth) * Weights_curr[3*i + 2];
         /*for (int f_id = 0; f_id < 6; f_id++) {
             feat_0[f_id] = feat_0[f_id] + (feat[6*ids[i] + f_id] - center_feat[f_id]) * Weights_curr[3*i];
             feat_1[f_id] = feat_1[f_id] + (feat[6*ids[i] + f_id] - center_feat[f_id]) * Weights_curr[3*i + 1];
@@ -864,6 +874,7 @@ __global__ void eikonal_grad_kernel(
     }
     
     float norm_grad = elem_0*elem_0 + elem_1*elem_1 + elem_2*elem_2;
+    //float norm_grad_smooth = elem_smooth_0*elem_smooth_0 + elem_smooth_1*elem_smooth_1 + elem_smooth_2*elem_smooth_2;
 
     float diff_loss[3]  {2.0*elem_0, 2.0*elem_1, 2.0*elem_2};
     if (norm_grad < 1.0f) {
@@ -877,6 +888,10 @@ __global__ void eikonal_grad_kernel(
             atomicAdd(&grad_eik[ids[i]], (diff_loss[0] * Weights_curr[3*i] + 
                                             diff_loss[1] * Weights_curr[3*i + 1] + 
                                             diff_loss[2] * Weights_curr[3*i + 2])*volume_tet);
+                                            
+            atomicAdd(&grad_smooth[ids[i]], ((elem_0 - elem_smooth_0) * Weights_curr[3*i] + 
+                                            (elem_1 - elem_smooth_1) * Weights_curr[3*i + 1] + 
+                                            (elem_2 - elem_smooth_2) * Weights_curr[3*i + 2])*volume_tet);
 
             atomicAdd(&grad_sdf[3*ids[i]], elem_0*volume_tet);
             atomicAdd(&grad_sdf[3*ids[i] + 1], elem_1*volume_tet);
@@ -900,6 +915,7 @@ __global__ void eikonal_grad_kernel(
 __global__ void normalize_grad_kernel(
     const size_t num_sites,                // number of rays
     float *__restrict__ grad_eik,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ grad_smooth,     // [N_voxels, 4] for each voxel => it's vertices)
     float *__restrict__ grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices)
     float *__restrict__ grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
@@ -916,6 +932,8 @@ __global__ void normalize_grad_kernel(
         return;
 
     grad_eik[idx] = grad_eik[idx]/weights_tot[idx];
+    grad_smooth[idx] = grad_smooth[idx]/weights_tot[idx];
+
 
     for (int i = 0; i < 3; i++)
         grad_sdf[3*idx + i] = grad_sdf[3*idx + i]/weights_tot[idx];
@@ -1086,8 +1104,10 @@ void eikonal_grad_cuda(
     torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  grad_sdf_o,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sdf_smooth,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  feat,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  grad_eik,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  grad_smooth,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices)
     torch::Tensor  grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
@@ -1102,8 +1122,10 @@ void eikonal_grad_cuda(
                 sites.data_ptr<float>(),
                 grad_sdf_o.data_ptr<float>(),
                 sdf.data_ptr<float>(),
+                sdf_smooth.data_ptr<float>(),
                 feat.data_ptr<float>(),
                 grad_eik.data_ptr<float>(),
+                grad_smooth.data_ptr<float>(),
                 grad_sdf.data_ptr<float>(),
                 grad_feat.data_ptr<float>(),
                 weights_tot.data_ptr<float>(),
@@ -1116,6 +1138,7 @@ void eikonal_grad_cuda(
             normalize_grad_kernel CUDA_KERNEL(blocks2,threads2) (
                 num_sites,
                 grad_eik.data_ptr<float>(),
+                grad_smooth.data_ptr<float>(),
                 grad_sdf.data_ptr<float>(),
                 grad_feat.data_ptr<float>(),
                 weights_tot.data_ptr<float>(),

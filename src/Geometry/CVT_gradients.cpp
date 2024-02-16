@@ -64,8 +64,10 @@ float eikonal_grad_cuda(
     torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  grad_sdf_o,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sdf_smooth,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  feat,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  grad_eik,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  grad_smooth,     // [N_voxels, 4] for each voxel => it's vertices)
     torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices)
     torch::Tensor  grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
@@ -204,8 +206,10 @@ void eikonal_grad(
     torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  grad_sdf_o,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sdf_smooth,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  feat,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  grad_eik,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  grad_smooth,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices)
     torch::Tensor  grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
@@ -218,8 +222,10 @@ void eikonal_grad(
         sites, 
         grad_sdf_o,
         sdf, 
+        sdf_smooth, 
         feat, 
         grad_eik,   
+        grad_smooth,   
         grad_sdf, 
         grad_feat,
         weights_tot,

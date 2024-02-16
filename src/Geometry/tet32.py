@@ -380,7 +380,7 @@ class Tet32(Process):
                 
         self.sites = torch.from_numpy(self.sites).float().cuda()
         self.make_knn()
-        self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, 1.0, lr)
+        self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 500, 0.5, lr)
 
         prev_kdtree = scipy.spatial.KDTree(new_sites)
         self.run()
