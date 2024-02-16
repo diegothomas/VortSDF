@@ -780,8 +780,8 @@ __global__ void eikonal_grad_kernel(
     ids[0] = tets[4*idx];  ids[1] = tets[4*idx + 1];  ids[2] = tets[4*idx + 2];
     ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[4*idx + 3];
 
-    //if (grad_sdf_o[ids[0]] == 0.0f && grad_sdf_o[ids[1]] == 0.0f && grad_sdf_o[ids[2]] == 0.0f && grad_sdf_o[ids[3]] == 0.0f)
-    //    return;
+    if (grad_sdf_o[ids[0]] == 0.0f && grad_sdf_o[ids[1]] == 0.0f && grad_sdf_o[ids[2]] == 0.0f && grad_sdf_o[ids[3]] == 0.0f)
+        return;
 
     float center_point[3] {0.0, 0.0, 0.0};
     for (int i = 0; i < 3; i++) {

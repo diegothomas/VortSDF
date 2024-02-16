@@ -473,7 +473,7 @@ class Runner:
                                               self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.weights_grad, self.eik_loss)
                 
                 self.grad_eik[outside_flag[:] == 1.0] = 0.0
-                #self.grad_norm_smooth[outside_flag[:] == 1.0] = 0.0
+                self.grad_norm_smooth[outside_flag[:] == 1.0] = 0.0
             eik_loss = 0.0 #self.eik_loss.sum()
             if verbose:
                 print('eikonal_grad time:', timer() - start)
@@ -514,7 +514,7 @@ class Runner:
            
 
             self.optimizer_sdf.zero_grad()
-            self.sdf.grad = grad_sdf + self.s_w**self.grad_norm_smooth + self.e_w*self.grad_eik + self.tv_w*self.grad_sdf_smooth #+ 1.0e-3*self.grad_sdf_reg / (mask_sum + 1.0e-5) #self.grad_sdf_net #
+            self.sdf.grad = grad_sdf + self.s_w*self.grad_norm_smooth + self.e_w*self.grad_eik + self.tv_w*self.grad_sdf_smooth #+ 1.0e-3*self.grad_sdf_reg / (mask_sum + 1.0e-5) #self.grad_sdf_net #
             self.optimizer_sdf.step()
 
             ########################################
