@@ -246,9 +246,9 @@ class Runner:
         self.vortSDF_renderer_coarse.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
         self.vortSDF_renderer_fine.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
         
-        #self.inv_s = 1000
-        #self.render_image(cam_ids, 0)
-        #input()
+        """self.inv_s = 1000
+        self.render_image(cam_ids, 0)
+        input()"""
         
         self.s_max = 1000
         self.R = 40

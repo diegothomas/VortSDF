@@ -98,19 +98,17 @@ class Tet32(Process):
         start = timer()
         self.summits = torch.from_numpy(self.summits).cuda().contiguous()
         self.neighbors = torch.from_numpy(self.neighbors).cuda().contiguous()
-        adj = torch.zeros((self.sites.shape[0], 64)).int().cuda().contiguous()
-        tet_utils.compute_neighbors(self.nb_tets, torch.from_numpy(np.asarray(self.tetras)).cuda().contiguous(), adj,
+        #adj = torch.zeros((self.sites.shape[0], 128)).int().cuda().contiguous()
+        tet_utils.compute_neighbors(self.nb_tets, self.sites.shape[0], torch.from_numpy(np.asarray(self.tetras)).cuda().contiguous(),
                                     self.summits, self.neighbors)
         self.summits = self.summits.cpu().numpy()
         self.neighbors = self.neighbors.cpu().numpy()
         print('C++ time:', timer() - start)  
 
-        print(adj[:2,:])
-        input()
-
         ## 4 values for indices of neighbors
+        """self.neighbors = -np.ones([self.nb_tets, 4], dtype = np.int32)
         
-        """start = timer()
+        start = timer()
         # first iterate over all tetrahedron and compute adjacencies for each face
         faces_to_tetrahedron = {}
         for i, tetrahedron in enumerate(self.tetras):
@@ -140,7 +138,10 @@ class Tet32(Process):
 
         print("Neighboors computed")
         print('Python time:', timer() - start)   
-        """
+
+        print(self.neighbors[:10,:])
+
+        input()"""
 
         self.sites = np.asarray(self.vertices)
 
@@ -178,6 +179,28 @@ class Tet32(Process):
         
     ## Make adjacencies for cameras
     def make_adjacencies(self, cam_ids):
+        self.offsets_cam = torch.zeros(cam_ids.shape[0]).int().cuda()
+
+        tot_vol = tet_utils.count_cam_neighbors(self.nb_tets, cam_ids.shape[0], 
+                                      torch.from_numpy(np.asarray(self.tetras)).cuda().contiguous(), 
+                                      torch.from_numpy(cam_ids).int().cuda(), self.offsets_cam)
+    
+        self.cam_tets = torch.zeros(tot_vol).int().cuda()
+
+        tet_utils.compute_cam_neighbors(self.nb_tets, cam_ids.shape[0], 
+                                        torch.from_numpy(np.asarray(self.tetras)).cuda().contiguous(), 
+                                        torch.from_numpy(cam_ids).int().cuda(), 
+                                        self.cam_tets, self.offsets_cam)
+        
+        """tmp_offsets = torch.zeros(cam_ids.shape[0]).int().cuda()
+        tmp_offsets[:] =  self.offsets_cam[:]
+ 
+        print(self.cam_tets[0])
+        to_print = self.cam_tets[1:self.cam_tets[0]].sort().values
+        print(to_print[:10])
+        print(self.offsets_cam[:])
+        input()
+
         cam_tets = [[] for _ in range(cam_ids.shape[0])]
 
         summ_cpu = self.summits.cpu().numpy()
@@ -207,6 +230,13 @@ class Tet32(Process):
 
         self.offsets_cam = torch.from_numpy(self.offsets_cam).int().cuda()
         self.cam_tets = torch.from_numpy(self.cam_tets).int().cuda()
+
+        print(abs(tmp_offsets - self.offsets_cam).sum())
+        input()
+
+        print(self.offsets_cam[:])
+        print(self.cam_tets[:10])
+        input()"""
 
 
     def CVT(self, outside_flag, cam_ids, sdf, fine_features, nb_iter = 1000, sdf_weight = 0.0, lr = 1.0e-4):
@@ -302,11 +332,11 @@ class Tet32(Process):
         
         nb_new_sites = tet_utils.upsample_counter(self.edges.shape[0], self.edges, self.sites, torch.from_numpy(sdf).float().cuda())
                 
-        new_sites = torch.zeros([nb_new_sites,3]).float().cuda()
-        new_sdf = torch.zeros([nb_new_sites]).float().cuda()
-        new_feat = torch.zeros([nb_new_sites,feat.shape[1]]).float().cuda()
+        new_sites = torch.zeros([nb_new_sites,3]).float().cuda().contiguous()
+        new_sdf = torch.zeros([nb_new_sites]).float().cuda().contiguous()
+        new_feat = torch.zeros([nb_new_sites,feat.shape[1]]).float().cuda().contiguous()
 
-        tet_utils.upsample(self.edges.shape[0], self.edges, self.sites, torch.from_numpy(sdf).float().cuda(), torch.from_numpy(feat).float().cuda(),
+        tet_utils.upsample(self.edges.shape[0], self.edges, self.sites, torch.from_numpy(sdf).float().cuda().contiguous(), torch.from_numpy(feat).float().cuda().contiguous(),
                            new_sites, new_sdf, new_feat)
         
         new_sites = new_sites.cpu().numpy()

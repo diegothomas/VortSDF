@@ -356,7 +356,7 @@ __global__ void tet32_march_cuda_adapt_kernel(
     int start_cam_tet = cam_id == 0 ? 0 : offsets_cam[cam_id-1];
     int cam_adj_count = cam_id == 0 ? offsets_cam[cam_id] : offsets_cam[cam_id] - offsets_cam[cam_id-1];  
 
-    for (int i = 0; i < cam_adj_count; i++) {
+    for (int i = 1; i < cam_adj_count; i++) {
 		tet_id = cam_tets[start_cam_tet + i];
 		prev_tet_id = tet_id;
 		ids[0] = tets[4 * tet_id];
@@ -850,7 +850,7 @@ __global__ void tet32_march_cuda_kernel(
     int start_cam_tet = cam_id == 0 ? 0 : offsets_cam[cam_id-1];
     int cam_adj_count = cam_id == 0 ? offsets_cam[cam_id] : offsets_cam[cam_id] - offsets_cam[cam_id-1];  
 
-    for (int i = 0; i < cam_adj_count; i++) {
+    for (int i = 1; i < cam_adj_count; i++) {
 		tet_id = cam_tets[start_cam_tet + i];
 		prev_tet_id = tet_id;
 		ids[0] = tets[4 * tet_id];

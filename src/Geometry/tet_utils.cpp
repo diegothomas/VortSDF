@@ -28,17 +28,37 @@ void upsample_cuda(
 
 void vertex_adjacencies_cuda(
     size_t nb_tets,
+    size_t nb_sites,
     torch::Tensor tetras,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor summits,
-    torch::Tensor adjacencies
+    int ** adjacencies,
+    int ** offset
 );
     
 
 void make_adjacencies_cuda(
     size_t nb_tets,
     torch::Tensor tetras,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor adjacencies,    // [N_sites, 3] for each voxel => it's vertices
+    int * offset,
+    int * adjacencies,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor neighbors
+);
+
+void cameras_adjacencies_cuda(
+    size_t nb_tets,
+    size_t nb_cams,
+    torch::Tensor tetras,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor cam_ids,
+    torch::Tensor adjacencies,
+    torch::Tensor offset
+);
+
+int count_cam_neighbors_cuda(
+    size_t nb_tets,
+    size_t nb_cams,
+    torch::Tensor tetras,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor cam_ids,
+    torch::Tensor offset
 );
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
@@ -83,35 +103,41 @@ void upsample(
         new_feats);
 }
 
-void vertex_adjacencies(
+/*void vertex_adjacencies(
     size_t nb_tets,
+    size_t nb_sites,
     torch::Tensor tetras,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor summits,
-    torch::Tensor adjacencies
+    torch::Tensor adjacencies,
+    int * offset,
 )
 {
     vertex_adjacencies_cuda(
     nb_tets,
+    nb_sites,
     tetras,    // [N_sites, 3] for each voxel => it's vertices
     summits,
-    adjacencies);
+    adjacencies,
+    offset);
 }
     
 
 void make_adjacencies(
     size_t nb_tets,
     torch::Tensor tetras,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor adjacencies,    // [N_sites, 3] for each voxel => it's vertices
+    int * offset,
+    int * adjacencies,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor neighbors
 )
 {
     make_adjacencies_cuda(
     nb_tets,
     tetras,    // [N_sites, 3] for each voxel => it's vertices
+    offset,
     adjacencies,    // [N_sites, 3] for each voxel => it's vertices
     neighbors
     );
-}
+}*/
 
 vector<tuple<int, int, int>> get_faces_from_tetrahedron(const int* tetrahedron) {
     return {
@@ -122,13 +148,16 @@ vector<tuple<int, int, int>> get_faces_from_tetrahedron(const int* tetrahedron) 
     };
 }
 
-void compute_neighbors(size_t nb_tets, torch::Tensor tetras_t, torch::Tensor adj_t, torch::Tensor summits_t, torch::Tensor neighbors_t) {
+void compute_neighbors(size_t nb_tets, size_t nb_sites, torch::Tensor tetras_t, torch::Tensor summits_t, torch::Tensor neighbors_t) {
 
-    vertex_adjacencies_cuda(nb_tets, tetras_t, summits_t, adj_t);
+    int *adj_t;
+    int *offset;
+    vertex_adjacencies_cuda(nb_tets, nb_sites, tetras_t, summits_t, &adj_t, &offset);
     cout << "Faces adjacencies computed" << endl;
     
-    make_adjacencies_cuda(nb_tets, tetras_t, adj_t, neighbors_t);
+    make_adjacencies_cuda(nb_tets, tetras_t, offset, adj_t, neighbors_t);
     cout << "Neighboors computed" << endl;
+
 
     /*int* tetras = tetras_t.data_ptr<int>();
     int* summits = summits_t.data_ptr<int>();
@@ -171,8 +200,20 @@ void compute_neighbors(size_t nb_tets, torch::Tensor tetras_t, torch::Tensor adj
     //cout << "Neighboors computed" << endl;
 }
 
+
+int count_cam_neighbors(size_t nb_tets, size_t nb_cams, torch::Tensor tetras_t, torch::Tensor cam_ids_t, torch::Tensor offset) {
+    return count_cam_neighbors_cuda(nb_tets, nb_cams, tetras_t, cam_ids_t, offset);
+}
+
+void compute_cam_neighbors(size_t nb_tets, size_t nb_cams, torch::Tensor tetras_t, torch::Tensor cam_ids_t, torch::Tensor adj_t, torch::Tensor offset) {
+    cameras_adjacencies_cuda(nb_tets, nb_cams, tetras_t, cam_ids_t, adj_t, offset);
+    cout << "Cam adjacencies computed" << endl;
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("compute_neighbors", &compute_neighbors, "compute_neighbors (CPP)");
     m.def("upsample_counter", &upsample_counter, "upsample_counter (CPP)");
     m.def("upsample", &upsample, "upsample (CPP)");
+    m.def("count_cam_neighbors", &count_cam_neighbors, "count_cam_neighbors (CPP)");
+    m.def("compute_cam_neighbors", &compute_cam_neighbors, "compute_cam_neighbors (CPP)");
 }

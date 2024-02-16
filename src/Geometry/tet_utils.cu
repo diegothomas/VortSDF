@@ -14,7 +14,7 @@
 #define FAKEINIT
 #endif
 
-#define DIM_ADJ 64
+#define DIM_ADJ 128
 #define DIM_L_FEAT 12
 
 /** Device functions **/
@@ -78,9 +78,25 @@ __global__ void upsample_kernel(
     }
 }
 
+__global__ void count_adjacencies_kernel(
+    const size_t nb_tets,
+    const int *__restrict__ tetras,
+    int *__restrict__ counter)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= nb_tets)
+    {
+        return;
+    }
+    
+    for (int i = 0; i < 4; i++)
+        atomicAdd(&counter[tetras[4*idx + i]], 1);
+
+}
 
 __global__ void vertex_adjacencies_kernel(
     const size_t nb_tets,
+    int * offset,
     const int *__restrict__ tetras,
     int *__restrict__ summits,
     int *__restrict__ adjacencies)
@@ -96,26 +112,23 @@ __global__ void vertex_adjacencies_kernel(
     summits[4*idx+3] = tetras[4*idx] ^ tetras[4*idx+1] ^ tetras[4*idx+2] ^ tetras[4*idx+3];
 
     int id0 = tetras[4*idx]; int id1 = tetras[4*idx + 1]; int id2 = tetras[4*idx + 2]; int id3 = tetras[4*idx + 3];
-    int id_a = atomicAdd(&adjacencies[DIM_ADJ*id0], 1);
-    if (id_a < DIM_ADJ-1)
-        adjacencies[DIM_ADJ*id0 + id_a + 1] = idx;
+    int id_a = atomicAdd(&adjacencies[offset[id0]], 1);
+    adjacencies[offset[id0] + id_a + 1] = idx;
 
-    id_a = atomicAdd(&adjacencies[DIM_ADJ*id1], 1);
-    if (id_a < DIM_ADJ-1)
-        adjacencies[DIM_ADJ*id1 + id_a + 1] = idx;
+    id_a = atomicAdd(&adjacencies[offset[id1]], 1);
+    adjacencies[offset[id1] + id_a + 1] = idx;
 
-    id_a = atomicAdd(&adjacencies[DIM_ADJ*id2], 1);
-    if (id_a < DIM_ADJ-1)
-        adjacencies[DIM_ADJ*id2 + id_a + 1] = idx;
+    id_a = atomicAdd(&adjacencies[offset[id2]], 1);
+    adjacencies[offset[id2] + id_a + 1] = idx;
 
-    id_a = atomicAdd(&adjacencies[DIM_ADJ*id3], 1);
-    if (id_a < DIM_ADJ-1)
-        adjacencies[DIM_ADJ*id3 + id_a + 1] = idx;
+    id_a = atomicAdd(&adjacencies[offset[id3]], 1);
+    adjacencies[offset[id3] + id_a + 1] = idx;
 }
 
 __global__ void make_adjacencies_kernel(
     const size_t nb_tets,
     const int *__restrict__ tetras,
+    const int * offset,
     const int *__restrict__ adjacencies,
     int *__restrict__ neighbors)
 {
@@ -124,30 +137,30 @@ __global__ void make_adjacencies_kernel(
     {
         return;
     }
-
+    
     int id0 = tetras[4*idx]; int id1 = tetras[4*idx + 1]; int id2 = tetras[4*idx + 2]; int id3 = tetras[4*idx + 3];
 
-    int nb_n0 = adjacencies[DIM_ADJ*id0];
-    int nb_n1 = adjacencies[DIM_ADJ*id1];
-    int nb_n2 = adjacencies[DIM_ADJ*id2];
-    int nb_n3 = adjacencies[DIM_ADJ*id3];
+    int nb_n0 = adjacencies[offset[id0]];
+    int nb_n1 = adjacencies[offset[id1]];
+    int nb_n2 = adjacencies[offset[id2]];
+    int nb_n3 = adjacencies[offset[id3]];
+
 
     // Face 1
     {
-        int id_s = -1;
-        if (nb_n0 < DIM_ADJ-1)
-            id_s = id0;
-        if (nb_n1 < nb_n0 && nb_n1 < nb_n2 && nb_n1 < nb_n3 && nb_n1 < DIM_ADJ-1)
+        int id_s = id0;
+        if (nb_n1 < nb_n0 && nb_n1 < nb_n2)
             id_s = id1;
-        if (nb_n2 < nb_n0 && nb_n2 < nb_n1 && nb_n2 < nb_n3 && nb_n2 < DIM_ADJ-1)
+        if (nb_n2 < nb_n0 && nb_n2 < nb_n1)
             id_s = id2;
-
+            
         if (id_s != -1) {
-            int nb_s = adjacencies[DIM_ADJ*id_s];
+            int start_s = offset[id_s];
+            int nb_s = adjacencies[start_s];
             int adj_curr;
             int counter = 0;
             for (int i = 0; i < nb_s; i++) {
-                adj_curr = adjacencies[DIM_ADJ*id_s + i + 1];
+                adj_curr = adjacencies[start_s + i + 1];
                 if (adj_curr == idx)
                     continue;
 
@@ -165,20 +178,18 @@ __global__ void make_adjacencies_kernel(
 
     // Face 2
     {
-        int id_s = -1;
-        if (nb_n3 < DIM_ADJ-1)
-            id_s = id3;
-        if (nb_n1 < nb_n0 && nb_n1 < nb_n2 && nb_n1 < nb_n3 && nb_n1 < DIM_ADJ-1)
+        int id_s = id3;
+        if (nb_n1 < nb_n2 && nb_n1 < nb_n3)
             id_s = id1;
-        if (nb_n2 < nb_n0 && nb_n2 < nb_n1 && nb_n2 < nb_n3 && nb_n2 < DIM_ADJ-1)
+        if (nb_n2 < nb_n1 && nb_n2 < nb_n3)
             id_s = id2;
 
         if (id_s != -1) {
-            int nb_s = adjacencies[DIM_ADJ*id_s];
+            int nb_s = adjacencies[offset[id_s]];
             int adj_curr;
             int counter = 0;
             for (int i = 0; i < nb_s; i++) {
-                adj_curr = adjacencies[DIM_ADJ*id_s + i + 1];
+                adj_curr = adjacencies[offset[id_s] + i + 1];
                 if (adj_curr == idx)
                     continue;
                 if ((id3 == tetras[4*adj_curr] || id3 == tetras[4*adj_curr + 1] || id3 == tetras[4*adj_curr + 2] || id3 == tetras[4*adj_curr + 3]) &&
@@ -195,20 +206,18 @@ __global__ void make_adjacencies_kernel(
     
     // Face 3
     {
-        int id_s = -1;
-        if (nb_n0 < DIM_ADJ-131)
-            id_s = id0;
-        if (nb_n1 < nb_n0 && nb_n1 < nb_n2 && nb_n1 < nb_n3 && nb_n1 < DIM_ADJ-1)
+        int id_s = id0;
+        if (nb_n1 < nb_n0 && nb_n1 < nb_n3)
             id_s = id1;
-        if (nb_n3 < nb_n0 && nb_n3 < nb_n1 && nb_n3 < nb_n2 && nb_n3 < DIM_ADJ-1)
+        if (nb_n3 < nb_n0 && nb_n3 < nb_n1)
             id_s = id3;
 
         if (id_s != -1) {
-            int nb_s = adjacencies[DIM_ADJ*id_s];
+            int nb_s = adjacencies[offset[id_s]];
             int adj_curr;
             int counter = 0;
             for (int i = 0; i < nb_s; i++) {
-                adj_curr = adjacencies[DIM_ADJ*id_s + i + 1];
+                adj_curr = adjacencies[offset[id_s] + i + 1];
                 if (adj_curr == idx)
                     continue;
                 if ((id3 == tetras[4*adj_curr] || id3 == tetras[4*adj_curr + 1] || id3 == tetras[4*adj_curr + 2] || id3 == tetras[4*adj_curr + 3]) &&
@@ -225,20 +234,18 @@ __global__ void make_adjacencies_kernel(
 
     // Face 4
     {
-        int id_s = -1;
-        if (nb_n0 < DIM_ADJ-1)
-            id_s = id0;
-        if (nb_n2 < nb_n0 && nb_n2 < nb_n1 && nb_n2 < nb_n3 && nb_n2 < DIM_ADJ-1)
+        int id_s = id0;
+        if (nb_n2 < nb_n0 && nb_n2 < nb_n3)
             id_s = id2;
-        if (nb_n3 < nb_n0 && nb_n3 < nb_n1 && nb_n3 < nb_n2 && nb_n3 < DIM_ADJ-1)
+        if (nb_n3 < nb_n0 && nb_n3 < nb_n2)
             id_s = id3;
 
         if (id_s != -1) {
-            int nb_s = adjacencies[DIM_ADJ*id_s];
+            int nb_s = adjacencies[offset[id_s]];
             int adj_curr;
             int counter = 0;
             for (int i = 0; i < nb_s; i++) {
-                adj_curr = adjacencies[DIM_ADJ*id_s + i + 1];
+                adj_curr = adjacencies[offset[id_s] + i + 1];
                 if (adj_curr == idx)
                     continue;
                 if ((id3 == tetras[4*adj_curr] || id3 == tetras[4*adj_curr + 1] || id3 == tetras[4*adj_curr + 2] || id3 == tetras[4*adj_curr + 3]) &&
@@ -255,6 +262,56 @@ __global__ void make_adjacencies_kernel(
 }
 
 
+__global__ void count_cam_adjacencies_kernel(
+    const size_t nb_tets,
+    const size_t nb_cams,
+    const int *__restrict__ tetras,
+    const int *__restrict__ cam_ids,
+    int *__restrict__ counter)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= nb_tets)
+    {
+        return;
+    }
+
+    int id0 = tetras[4*idx]; int id1 = tetras[4*idx + 1]; int id2 = tetras[4*idx + 2]; int id3 = tetras[4*idx + 3];
+
+    for (int c_id = 0; c_id < nb_cams; c_id++) {
+        if (id0 == cam_ids[c_id] || id1 == cam_ids[c_id] ||
+            id2 == cam_ids[c_id] || id3 == cam_ids[c_id]) {
+            atomicAdd(&counter[c_id], 1);
+        }
+    }
+}
+
+__global__ void make_cam_adjacencies_kernel(
+    const size_t nb_tets,
+    const size_t nb_cams,
+    int * offset,
+    const int *__restrict__ tetras,
+    const int *__restrict__ cam_ids,
+    int *__restrict__ adjacencies)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= nb_tets)
+    {
+        return;
+    }
+
+    int id0 = tetras[4*idx]; int id1 = tetras[4*idx + 1]; int id2 = tetras[4*idx + 2]; int id3 = tetras[4*idx + 3];
+
+    int id_a;
+    int start_s;
+    for (int c_id = 0; c_id < nb_cams; c_id++) {
+        if (id0 == cam_ids[c_id] || id1 == cam_ids[c_id] ||
+            id2 == cam_ids[c_id] || id3 == cam_ids[c_id]) {
+            start_s = c_id == 0 ? 0 : offset[c_id-1];
+            id_a =  atomicAdd(&adjacencies[start_s], 1);
+            adjacencies[start_s + id_a + 1] = idx;
+        }
+    }
+}
 
 /** CPU functions **/
 /** CPU functions **/
@@ -309,7 +366,7 @@ void upsample_cuda(
         
         const int threads = 1024;
         const int blocks = (nb_edges + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
-        AT_DISPATCH_FLOATING_TYPES( sdf.type(),"upsample_kernel", ([&] {  
+        AT_DISPATCH_ALL_TYPES( sdf.type(),"upsample_kernel", ([&] {  
             upsample_kernel CUDA_KERNEL(blocks,threads) (
                 nb_edges,
                 edges.data_ptr<int>(),
@@ -328,36 +385,160 @@ void upsample_cuda(
 
 void vertex_adjacencies_cuda(
     size_t nb_tets,
+    size_t nb_sites,
     torch::Tensor tetras,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor summits,
-    torch::Tensor adjacencies)
+    int ** adjacencies,
+    int ** offset)
 {
-        
+    
+        int* counter;
+        cudaMalloc((void**)&counter, nb_sites*sizeof(int));
+        cudaMemset(counter, 0, nb_sites*sizeof(int));
+    
+        cudaMalloc((void**)offset, nb_sites*sizeof(int));
+        cudaMemset((*offset), 0, nb_sites*sizeof(int));
+
         const int threads = 1024;
         const int blocks = (nb_tets + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+        AT_DISPATCH_ALL_TYPES( tetras.type(),"count_adjacencies_kernel", ([&] {  
+            count_adjacencies_kernel CUDA_KERNEL(blocks,threads) (
+                nb_tets,
+                tetras.data_ptr<int>(),
+                counter); 
+        }));
+        cudaDeviceSynchronize();
+
+        int* counter_cpu = (int *) malloc(nb_sites*sizeof(int));
+        cudaMemcpy(counter_cpu, counter, nb_sites*sizeof(int), cudaMemcpyDeviceToHost);
+
+        int *offset_cpu = (int *) malloc(nb_sites*sizeof(int));
+        int tot_size = 0;
+        for (int i = 0; i < nb_sites; i++) {
+            offset_cpu[i] = tot_size;
+            tot_size += counter_cpu[i] + 1;
+        }
+        cudaMemcpy(*offset, offset_cpu, nb_sites*sizeof(int), cudaMemcpyHostToDevice);
+
+        cudaMalloc((void**)adjacencies, tot_size*sizeof(int));
+        cudaMemset((*adjacencies), 0, tot_size*sizeof(int));
+        
         AT_DISPATCH_ALL_TYPES( tetras.type(),"vertex_adjacencies_kernel", ([&] {  
             vertex_adjacencies_kernel CUDA_KERNEL(blocks,threads) (
                 nb_tets,
+                *offset,
                 tetras.data_ptr<int>(),
                 summits.data_ptr<int>(),
-                adjacencies.data_ptr<int>()); 
+                *adjacencies); 
         }));
+        cudaDeviceSynchronize();
+
+        
+        /*int* adj_cpu = (int *) malloc(tot_size*sizeof(int));
+        cudaMemcpy(adj_cpu, *adjacencies, tot_size*sizeof(int), cudaMemcpyDeviceToHost);
+
+        for (int i = 0; i < nb_sites; i++) {
+            //std::cout << adj_cpu[offset_cpu[i]] << " ==> " << std::endl;
+            for (int j = 0; j < adj_cpu[offset_cpu[i]]; j++) {
+                if (adj_cpu[offset_cpu[i] +j + 1] > nb_tets - 1 ||
+                    adj_cpu[offset_cpu[i] +j + 1] < 0)
+                    std::cout << adj_cpu[offset_cpu[i] +j + 1] << ", " << std::endl;
+            }
+        }*/
+
+        cudaFree(counter);
+        free(counter_cpu);
+        free(offset_cpu);
 }
 
 void make_adjacencies_cuda(
     size_t nb_tets,
     torch::Tensor tetras,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor adjacencies,    // [N_sites, 3] for each voxel => it's vertices
+    int * offset,
+    int * adjacencies,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor neighbors)
 {
         
+    const int threads = 1024;
+    const int blocks = (nb_tets + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+    AT_DISPATCH_ALL_TYPES( tetras.type(),"make_adjacencies_kernel", ([&] {  
+        make_adjacencies_kernel CUDA_KERNEL(blocks,threads) (
+            nb_tets,
+            tetras.data_ptr<int>(),
+            offset,
+            adjacencies,
+            neighbors.data_ptr<int>()); 
+    }));
+    cudaDeviceSynchronize();
+        
+    cudaFree(offset);
+    cudaFree(adjacencies);
+}
+
+
+int count_cam_neighbors_cuda(
+    size_t nb_tets,
+    size_t nb_cams,
+    torch::Tensor tetras,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor cam_ids,
+    torch::Tensor offset)
+{
+    
+        int* counter;
+        cudaMalloc((void**)&counter, nb_cams*sizeof(int));
+        cudaMemset(counter, 0, nb_cams*sizeof(int));
+
         const int threads = 1024;
         const int blocks = (nb_tets + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
-        AT_DISPATCH_ALL_TYPES( tetras.type(),"make_adjacencies_kernel", ([&] {  
-            make_adjacencies_kernel CUDA_KERNEL(blocks,threads) (
+        AT_DISPATCH_ALL_TYPES( tetras.type(),"count_cam_adjacencies_kernel", ([&] {  
+            count_cam_adjacencies_kernel CUDA_KERNEL(blocks,threads) (
                 nb_tets,
+                nb_cams,
                 tetras.data_ptr<int>(),
-                adjacencies.data_ptr<int>(),
-                neighbors.data_ptr<int>()); 
+                cam_ids.data_ptr<int>(),
+                counter); 
         }));
+        cudaDeviceSynchronize();
+
+        int* counter_cpu = (int *) malloc(nb_cams*sizeof(int));
+        cudaMemcpy(counter_cpu, counter, nb_cams*sizeof(int), cudaMemcpyDeviceToHost);
+
+        int *offset_cpu = (int *) malloc(nb_cams*sizeof(int));
+        int tot_size = 0;
+        for (int i = 0; i < nb_cams; i++) {
+            tot_size += counter_cpu[i]+1;
+            offset_cpu[i] = tot_size;
+        }
+        cudaMemcpy(offset.data_ptr<int>(), offset_cpu, nb_cams*sizeof(int), cudaMemcpyHostToDevice);
+
+        cudaFree(counter);
+        free(counter_cpu);
+        free(offset_cpu);
+
+        return tot_size;
 }
+
+
+
+void cameras_adjacencies_cuda(
+    size_t nb_tets,
+    size_t nb_cams,
+    torch::Tensor tetras,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor cam_ids,
+    torch::Tensor adjacencies,
+    torch::Tensor offset)
+{
+       
+    const int threads = 1024;
+    const int blocks = (nb_tets + threads - 1) / threads;  
+    AT_DISPATCH_ALL_TYPES( tetras.type(),"make_cam_adjacencies_kernel", ([&] {  
+        make_cam_adjacencies_kernel CUDA_KERNEL(blocks,threads) (
+            nb_tets,
+            nb_cams,
+            offset.data_ptr<int>(),
+            tetras.data_ptr<int>(),
+            cam_ids.data_ptr<int>(),
+            adjacencies.data_ptr<int>()); 
+    }));
+}
+
