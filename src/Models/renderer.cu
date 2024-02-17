@@ -345,7 +345,7 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
             id_prev = cell_ids[12 * t + i];
             id = cell_ids[12 * t + 6 + i];
             
-			/*if (lambda < 0.5f) {
+			if (lambda < 0.5f) {
                 atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + i] * 2.0f*lambda * dalpha * dalpha_dsdf_p);
                 atomicAdd(&grads_sdf[id], weights_seg[13*t + 6 + i] * 
                                 ((1.0f-2.0f*lambda) * dalpha * dalpha_dsdf_p + dalpha * dalpha_dsdf_n));
@@ -353,9 +353,9 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
                 atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + i] * 
                                     (2.0f*lambda * dalpha * dalpha_dsdf_p + (1.0-2.0f*lambda)*dalpha * dalpha_dsdf_n));
                 atomicAdd(&grads_sdf[id], weights_seg[13*t + 6 + i] * (1.0f-(1.0-2.0f*lambda)) * dalpha * dalpha_dsdf_n);
-			}*/
-            atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + i] * lambda * dalpha * dalpha_dsdf_p);
-            atomicAdd(&grads_sdf[id], weights_seg[13*t + 6 + i] * (1.0f - lambda) * dalpha * dalpha_dsdf_n);
+			}
+            //atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + i] * lambda * dalpha * dalpha_dsdf_p);
+            //atomicAdd(&grads_sdf[id], weights_seg[13*t + 6 + i] * (1.0f - lambda) * dalpha * dalpha_dsdf_n);
         }
 
         grads_sdf_net[2 * t] = dalpha * dalpha_dsdf_p;

@@ -10,6 +10,17 @@ void test_inverse_cuda(
     torch::Tensor A_inv    // [N_sites, 3] for each voxel => it's vertices
 );
 
+void knn_sdf_space_grad_cuda(
+    size_t num_sites,                // number of rays
+    size_t num_knn,                // number of rays
+    torch::Tensor  neighbors,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  feat,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights_tot
+);
 
 void sdf_space_grad_cuda(
     size_t num_tets,                // number of rays
@@ -89,6 +100,31 @@ void test_inverse(
         Buff, 
         A,
         A_inv );
+
+}
+
+void knn_sdf_space_grad(
+    size_t num_sites,                // number of rays
+    size_t num_knn,                // number of rays
+    torch::Tensor  neighbors,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  feat,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights_tot
+){
+    knn_sdf_space_grad_cuda(
+        num_sites,                // number of rays
+        num_knn,                // number of rays
+        neighbors,  // [N_voxels, 4] for each voxel => it's neighbors
+        sites,  // [N_voxels, 4] for each voxel => it's neighbors
+        sdf,  // [N_voxels, 4] for each voxel => it's neighbors
+        feat,  // [N_voxels, 4] for each voxel => it's neighbors
+        grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices
+        grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+        weights_tot
+    );
 
 }
 
@@ -236,6 +272,7 @@ void eikonal_grad(
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("test_inverse", &test_inverse, "test_inverse (CPP)");
+    m.def("knn_sdf_space_grad", &knn_sdf_space_grad, "knn_sdf_space_grad (CPP)");
     m.def("sdf_space_grad", &sdf_space_grad, "sdf_space_grad (CPP)");
     m.def("cvt_grad", &cvt_grad, "cvt_grad (CPP)");
     m.def("sdf_grad", &sdf_grad, "sdf_grad (CPP)");

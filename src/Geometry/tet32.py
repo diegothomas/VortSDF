@@ -271,7 +271,9 @@ class Tet32(Process):
             grad_sdf_space[:] = 0.0
             grad_feat_space[:] = 0.0
             weights_grad[:] = 0.0
-            cvt_grad_cuda.sdf_space_grad(self.nb_tets, self.sites.shape[0], self.summits, self.sites, sdf, fine_features, grad_sdf_space, grad_feat_space, weights_grad)
+            cvt_grad_cuda.knn_sdf_space_grad(self.sites.shape[0], self.KNN, self.knn_sites, self.sites, sdf, fine_features, grad_sdf_space, grad_feat_space, weights_grad)
+  
+            #cvt_grad_cuda.sdf_space_grad(self.nb_tets, self.sites.shape[0], self.summits, self.sites, sdf, fine_features, grad_sdf_space, grad_feat_space, weights_grad)
   
             ############ Compute approximated CVT gradients at sites
             grad_sites[:] = 0.0
@@ -321,6 +323,8 @@ class Tet32(Process):
 
         self.sites = self.sites.detach().cpu().numpy()
 
+        return sdf.cpu().numpy(), fine_features.cpu().numpy()
+
     def upsample(self, sdf, feat, visual_hull, res, cam_sites, lr):       
         ## Smooth current mesh and build sdf        
         tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(sdf.astype(np.float64)),0.0)
@@ -344,10 +348,11 @@ class Tet32(Process):
         new_feat = new_feat.cpu().numpy()
 
         sites = self.sites.cpu().numpy()
-        in_sdf = sdf
+
+        """in_sdf = sdf
         in_feat = feat
 
-        """new_sites = []
+        new_sites = []
         new_sdf = []
         new_feat = []
         for _, edge in enumerate(self.o3d_edges.lines):
@@ -378,9 +383,9 @@ class Tet32(Process):
         cam_ids = np.stack([np.where((self.sites == cam_sites[i,:]).all(axis = 1))[0] for i in range(cam_sites.shape[0])]).reshape(-1)
         cam_ids = torch.from_numpy(cam_ids).int().cuda()
                 
-        self.sites = torch.from_numpy(self.sites).float().cuda()
-        self.make_knn()
-        self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 500, 0.5, lr)
+        #self.sites = torch.from_numpy(self.sites).float().cuda()
+        #self.make_knn()
+        #in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, 0.5, lr)
 
         prev_kdtree = scipy.spatial.KDTree(new_sites)
         self.run()
@@ -391,6 +396,9 @@ class Tet32(Process):
         #out_sdf[:] = in_sdf[idx[:]]
         
         out_sdf = -f(new_sites)
+        print("out_sdf => ", out_sdf.sum())
+        print("out_sdf => ", out_sdf.min())
+        print("out_sdf => ", out_sdf.max())
         
         out_feat = np.zeros([new_sites.shape[0],feat.shape[1]])
         out_feat[:] = in_feat[idx[:]]

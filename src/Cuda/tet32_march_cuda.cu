@@ -16,7 +16,7 @@
 #define FAKEINIT
 #endif
 
-#define DIM_L_FEAT 12
+#define DIM_L_FEAT 6
 #define CLIP_ALPHA 30.0
 
 /** Device functions **/
@@ -1415,11 +1415,11 @@ __global__ void fill_samples_kernel(
 		float lambda = 0.5f;
 		if (out_sdf[2*i]*out_sdf[2*i+1] <= 0.0f) {
 			lambda = fabs(out_sdf[2*i+1])/(fabs(out_sdf[2*i])+fabs(out_sdf[2*i+1]));
-			/*if (lambda < 0.5f) {
+			if (lambda < 0.5f) {
 				out_sdf[2*i] = 2.0f*lambda*out_sdf[2*i] + (1.0f-2.0f*lambda)*out_sdf[2*i+1];
 			} else {
 				out_sdf[2*i+1] = (1.0-2.0f*lambda)*out_sdf[2*i] + (1.0f-(1.0-2.0f*lambda))*out_sdf[2*i+1];
-			}*/
+			}
 		}
 
 		for (int l = 0; l < 12; l++) {
@@ -1443,14 +1443,18 @@ __global__ void fill_samples_kernel(
         sample_rays[3 * i + 1] = ray.direction[1];
         sample_rays[3 * i + 2] = ray.direction[2];		
 
-        samples[3 * i] = ray.origin[0] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[0];
-        samples[3 * i + 1] = ray.origin[1] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[1];
-        samples[3 * i + 2] = ray.origin[2] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[2];
-
 		for (int l = 0; l < 12; l++) {
         	out_weights[13*i + l] = in_weights_rays[12 * s_id + l];
 		}
 		out_weights[13*i + 12] = lambda;
+
+		if (out_sdf[2*i]*out_sdf[2*i+1] > 0.0f) {
+			lambda = 0.1f + 0.8f*float((i+idx)%1000)/1000.0f;
+		}
+
+        samples[3 * i] = ray.origin[0] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[0];
+        samples[3 * i + 1] = ray.origin[1] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[1];
+        samples[3 * i + 2] = ray.origin[2] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[2];
 
         s_id++;
     }

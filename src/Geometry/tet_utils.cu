@@ -15,7 +15,7 @@
 #endif
 
 #define DIM_ADJ 128
-#define DIM_L_FEAT 12
+#define DIM_L_FEAT 6
 
 /** Device functions **/
 /** Device functions **/
@@ -70,7 +70,7 @@ __global__ void upsample_kernel(
         new_sites[3*new_idx + 1] = (sites[3*edge[2*idx] + 1] + sites[3*edge[2*idx+1] + 1]) / 2.0f;
         new_sites[3*new_idx + 2] = (sites[3*edge[2*idx] + 2] + sites[3*edge[2*idx+1] + 2]) / 2.0f;
         
-        new_sdf[3*new_idx] = (sdf[edge[2*idx]] + sdf[edge[2*idx+1]]) / 2.0f;
+        new_sdf[new_idx] = (sdf[edge[2*idx]] + sdf[edge[2*idx+1]]) / 2.0f;
 
         for (int l = 0; l < DIM_L_FEAT; l++) {
             new_feats[DIM_L_FEAT*new_idx + l] = (feats[DIM_L_FEAT*edge[2*idx] + l] + feats[DIM_L_FEAT*edge[2*idx+1] + l]) / 2.0f;

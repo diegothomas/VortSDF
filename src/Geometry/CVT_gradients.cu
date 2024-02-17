@@ -18,7 +18,7 @@
 #define PI 3.141592653589793238462643383279502884197
 #define _MAX_K_NN 8
 #define _BUFF_SIZE 2048
-#define DIM_L_FEAT 12
+#define DIM_L_FEAT 6
 
 /** Device functions **/
 /** Device functions **/
@@ -163,7 +163,7 @@ __global__ void test_inverse_kernel(size_t sizeMatrix, float *__restrict__ Buff,
 
 // compute the gradient for each tetrahedra
 // gradient is fixed inside each tetrahedron
-/*__global__ void sdf_space_grad_cuda_kernel(
+__global__ void knn_sdf_space_grad_cuda_kernel(
     const size_t num_sites,                // number of rays
     const size_t num_knn,                // number of rays   
     const int *__restrict__ neighbors,  // [N_voxels, 4] for each voxel => it's neighbors
@@ -183,7 +183,7 @@ __global__ void test_inverse_kernel(size_t sizeMatrix, float *__restrict__ Buff,
 
     float curr_site[3] {sites[3*idx], sites[3*idx + 1], sites[3*idx + 2]};    
     float curr_n[3] {0.0, 0.0, 0.0};
-    float dX[3*_MAX_K_NN];
+    float dX[3*_MAX_K_NN] {};
     float G[9] {0.0, 0.0, 0.0, 
                 0.0, 0.0, 0.0, 
                 0.0, 0.0, 0.0}; //dXT dX
@@ -245,18 +245,18 @@ __global__ void test_inverse_kernel(size_t sizeMatrix, float *__restrict__ Buff,
     float elem_0 = 0.0f;
     float elem_1 = 0.0f;
     float elem_2 = 0.0f;
-    float feat_0[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-    float feat_1[6] ={0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-    float feat_2[6] ={0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    float feat_0[DIM_L_FEAT] {};//= {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    float feat_1[DIM_L_FEAT] {};//={0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    float feat_2[DIM_L_FEAT] {};//={0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     for (int i = 0; i < _MAX_K_NN; i++) {
         knn_id = neighbors[num_knn*idx + i];
         elem_0 += (SDF[knn_id] - SDF[idx]) * Weights_curr[3*i];
         elem_1 += (SDF[knn_id] - SDF[idx]) * Weights_curr[3*i + 1];
         elem_2 += (SDF[knn_id] - SDF[idx]) * Weights_curr[3*i + 2];
-        for (int f_id = 0; f_id < 6; f_id++) {
-            feat_0[f_id] = feat_0[f_id] + (Feat[6*knn_id + f_id] - Feat[6*idx + f_id]) * Weights_curr[3*i];
-            feat_1[f_id] = feat_1[f_id] + (Feat[6*knn_id + f_id] - Feat[6*idx + f_id]) * Weights_curr[3*i + 1];
-            feat_2[f_id] = feat_2[f_id] + (Feat[6*knn_id + f_id] - Feat[6*idx + f_id]) * Weights_curr[3*i + 2];
+        for (int f_id = 0; f_id < DIM_L_FEAT; f_id++) {
+            feat_0[f_id] = feat_0[f_id] + (Feat[DIM_L_FEAT*knn_id + f_id] - Feat[DIM_L_FEAT*idx + f_id]) * Weights_curr[3*i];
+            feat_1[f_id] = feat_1[f_id] + (Feat[DIM_L_FEAT*knn_id + f_id] - Feat[DIM_L_FEAT*idx + f_id]) * Weights_curr[3*i + 1];
+            feat_2[f_id] = feat_2[f_id] + (Feat[DIM_L_FEAT*knn_id + f_id] - Feat[DIM_L_FEAT*idx + f_id]) * Weights_curr[3*i + 2];
         }
     }
     
@@ -264,14 +264,14 @@ __global__ void test_inverse_kernel(size_t sizeMatrix, float *__restrict__ Buff,
     grad[3*idx + 1] = elem_1;    
     grad[3*idx + 2] = elem_2;   
     
-    for (int f_id = 0; f_id < 6; f_id++) {
-        grad_feat[3*6*idx + f_id] = feat_0[f_id];
-        grad_feat[3*6*idx + 6 + f_id] = feat_1[f_id];  
-        grad_feat[3*6*idx + 12 + f_id] = feat_2[f_id];  
+    for (int f_id = 0; f_id < DIM_L_FEAT; f_id++) {
+        grad_feat[3*DIM_L_FEAT*idx + f_id] = feat_0[f_id];
+        grad_feat[3*DIM_L_FEAT*idx + DIM_L_FEAT + f_id] = feat_1[f_id];  
+        grad_feat[3*DIM_L_FEAT*idx + 2*DIM_L_FEAT + f_id] = feat_2[f_id];  
     }
 
     return;
-}*/
+}
 
 __global__ void sdf_space_grad_cuda_kernel(
     const size_t num_tets,                // number of rays
@@ -968,6 +968,32 @@ void test_inverse_cuda(
     }));
 }
 
+void knn_sdf_space_grad_cuda(
+    size_t num_sites,                // number of rays
+    size_t num_knn,                // number of rays
+    torch::Tensor  neighbors,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  feat,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights_tot
+)   {
+        const int threads = 512;
+        const int blocks = (num_sites + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+        AT_DISPATCH_FLOATING_TYPES( sites.type(),"knn_sdf_space_grad_cuda_kernel", ([&] {  
+            knn_sdf_space_grad_cuda_kernel CUDA_KERNEL(blocks,threads) (
+                num_sites,            
+                num_knn,            
+                neighbors.data_ptr<int>(),
+                sites.data_ptr<float>(),
+                sdf.data_ptr<float>(),
+                feat.data_ptr<float>(),
+                weights_tot.data_ptr<float>(),
+                grad_sdf.data_ptr<float>(),
+                grad_feat.data_ptr<float>()); 
+        }));
+}
 
 // 
 void sdf_space_grad_cuda(
