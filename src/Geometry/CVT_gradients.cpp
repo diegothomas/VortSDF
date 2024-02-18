@@ -34,6 +34,16 @@ void sdf_space_grad_cuda(
     torch::Tensor  weights_tot
 );
 
+void Laplace_grad_cuda(
+    size_t num_tets,                // number of rays
+    size_t num_sites,                // number of rays
+    torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  grad,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  grad_lapl,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights_tot
+);
+
 
 float cvt_grad_cuda(
     size_t num_sites,
@@ -159,6 +169,29 @@ void sdf_space_grad(
 
 }
 
+void sdf_laplace_grad(
+    size_t num_tets,                // number of rays
+    size_t num_sites,                // number of rays
+    torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  grad,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  grad_lapl,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights_tot
+)  {
+
+    Laplace_grad_cuda(
+        num_tets,                // number of rays
+        num_sites,                // number of rays
+        tets,  // [N_voxels, 4] for each voxel => it's neighbors
+        sites,  // [N_voxels, 4] for each voxel => it's neighbors
+        grad,  // [N_voxels, 4] for each voxel => it's neighbors
+        grad_lapl,     // [N_voxels, 4] for each voxel => it's vertices
+        weights_tot
+    );
+
+}
+
+
 float cvt_grad(
     size_t num_sites,
     size_t num_knn,
@@ -274,6 +307,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("test_inverse", &test_inverse, "test_inverse (CPP)");
     m.def("knn_sdf_space_grad", &knn_sdf_space_grad, "knn_sdf_space_grad (CPP)");
     m.def("sdf_space_grad", &sdf_space_grad, "sdf_space_grad (CPP)");
+    m.def("sdf_laplace_grad", &sdf_laplace_grad, "sdf_laplace_grad (CPP)");
     m.def("cvt_grad", &cvt_grad, "cvt_grad (CPP)");
     m.def("sdf_grad", &sdf_grad, "sdf_grad (CPP)");
     m.def("update_sdf", &update_sdf, "update_sdf (CPP)");

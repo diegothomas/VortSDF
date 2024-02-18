@@ -495,6 +495,7 @@ class Runner:
             start = timer()   
             self.grad_sdf_space[:] = 0.0
             self.grad_feat_space[:] = 0.0
+            self.grad_mean_curve[:] = 0.0
             self.weights_grad[:] = 0.0
             self.grad_eik[:] = 0.0
             self.grad_norm_smooth[:] = 0.0
@@ -509,8 +510,13 @@ class Runner:
                 cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, grad_sdf, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
                                               self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.weights_grad, self.eik_loss)
                 
+                #self.weights_grad[:] = 0.0
+                #cvt_grad_cuda.sdf_laplace_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, self.grad_sdf_space, 
+                #                    self.grad_mean_curve, self.weights_grad)
+                
                 self.grad_eik[outside_flag[:] == 1.0] = 0.0
                 self.grad_norm_smooth[outside_flag[:] == 1.0] = 0.0
+                self.grad_mean_curve[outside_flag[:] == 1.0] = 0.0
             eik_loss = 0.0 #self.eik_loss.sum()
             if verbose:
                 print('eikonal_grad time:', timer() - start)
@@ -550,8 +556,10 @@ class Runner:
             #grad_sdf = (0.5*self.voro_renderer_coarse.grads_sdf[:,0] + 1.0*self.voro_renderer_fine.grads_sdf[:,0]) / (mask_sum + 1.0e-5)
            
 
-            self.optimizer_sdf.zero_grad()
-            self.sdf.grad = grad_sdf + self.s_w*self.grad_norm_smooth + self.e_w*self.grad_eik + self.tv_w*self.grad_sdf_smooth #+ 1.0e-3*self.grad_sdf_reg / (mask_sum + 1.0e-5) #self.grad_sdf_net #
+            self.optimizer_sdf.zero_grad() # 0.00001*self.grad_mean_curve +\
+            self.sdf.grad = grad_sdf +\
+                        self.s_w*self.grad_norm_smooth + self.e_w*self.grad_eik +\
+                        self.tv_w*self.grad_sdf_smooth #+ 1.0e-3*self.grad_sdf_reg / (mask_sum + 1.0e-5) #self.grad_sdf_net #
             self.optimizer_sdf.step()
 
             ########################################
@@ -614,22 +622,25 @@ class Runner:
                     self.learning_rate_feat = 5.0e-4
                     
                 if (iter_step+1) == 9000:
-                    self.R = 30
-                    #self.sigma = 0.03
-                    #self.s_w = 0.0
-                    self.e_w = 1.0e-9
-                    self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 5.0e-4
-                    self.learning_rate_feat = 1.0e-4
-
-                if (iter_step+1) == 12000:
-                    self.R = 20
-                    #self.sigma = 0.01
+                    self.R = 35
+                    self.sigma = 0.02
+                    self.s_w = 1.0e-7
                     self.e_w = 1.0e-10
-                    self.end_iter_loc = 8000
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-4
+                    #self.end_iter_loc = 11000
+
+                if (iter_step+1) == 12000:
+                    self.R = 25
+                    self.sigma = 0.02
+                    self.e_w = 1.0e-10
+                    self.end_iter_loc = 8000
+                    self.learning_rate = 5e-5
+                    self.learning_rate_sdf = 5.0e-5
+                    self.learning_rate_feat = 5.0e-5
+
+                print("SIGMA => ", self.sigma)
                 
                 self.loc_iter = 0
 
@@ -654,8 +665,8 @@ class Runner:
             if iter_step == 1000:                
                 self.tv_w = 0.0
                 
-            if iter_step == 15000:                
-                self.s_w = 1.0e-4
+            #if iter_step == 15000:                
+            #    self.s_w = 1.0e-4
 
             self.update_learning_rate(self.loc_iter)
             self.loc_iter = self.loc_iter + 1
@@ -850,6 +861,7 @@ class Runner:
 
         self.grad_sdf_space = torch.zeros([self.sites.shape[0], 3]).float().cuda().contiguous()
         self.grad_feat_space = torch.zeros([self.sites.shape[0], 3, self.dim_feats]).float().cuda().contiguous()
+        self.grad_mean_curve = torch.zeros([self.sites.shape[0]]).float().cuda().contiguous()
         self.weights_grad = torch.zeros([self.sites.shape[0], 1]).float().cuda().contiguous()
         self.eik_loss = torch.zeros([self.sites.shape[0], 1]).float().cuda().contiguous()
         

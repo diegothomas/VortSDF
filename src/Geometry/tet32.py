@@ -383,9 +383,9 @@ class Tet32(Process):
         cam_ids = np.stack([np.where((self.sites == cam_sites[i,:]).all(axis = 1))[0] for i in range(cam_sites.shape[0])]).reshape(-1)
         cam_ids = torch.from_numpy(cam_ids).int().cuda()
                 
-        #self.sites = torch.from_numpy(self.sites).float().cuda()
-        #self.make_knn()
-        #in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, 0.5, lr)
+        self.sites = torch.from_numpy(self.sites).float().cuda()
+        self.make_knn()
+        in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, 0.5, lr)
 
         prev_kdtree = scipy.spatial.KDTree(new_sites)
         self.run()

@@ -16,7 +16,7 @@
 
 
 #define PI 3.141592653589793238462643383279502884197
-#define _MAX_K_NN 8
+#define _MAX_K_NN 24
 #define _BUFF_SIZE 2048
 #define DIM_L_FEAT 6
 
@@ -403,6 +403,7 @@ __global__ void sdf_space_grad_cuda_kernel(
     return;
 }
 
+
 __global__ void normalize_grad_sdf_feat_kernel(
     const size_t num_sites,                // number of rays
     float *__restrict__ grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices)
@@ -424,6 +425,138 @@ __global__ void normalize_grad_sdf_feat_kernel(
 
     for (int i = 0; i < DIM_L_FEAT; i++)
         grad_feat[DIM_L_FEAT*idx + i] = grad_feat[DIM_L_FEAT*idx + i]/weights_tot[idx];
+}
+
+
+
+__global__ void sdf_laplacian_cuda_kernel(
+    const size_t num_tets,                // number of rays
+    const int *__restrict__ tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    float *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ grad,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ grad_lapl,     // [N_voxels, 4] for each voxel => it's vertices)
+    float *__restrict__ weights_tot     // [N_voxels, 4] for each voxel => it's vertices
+    )
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_tets)
+    {
+        return;
+    }
+
+    int ids[4] = {0, 0, 0, 0,};
+    ids[0] = tets[4*idx];  ids[1] = tets[4*idx + 1];  ids[2] = tets[4*idx + 2];
+    ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[4*idx + 3];
+
+    float center_point[3] {0.0, 0.0, 0.0};
+    for (int i = 0; i < 3; i++) {
+        center_point[i] = (sites[3*ids[0] + i] + sites[3*ids[1] + i] + sites[3*ids[2] + i] + sites[3*ids[3] + i])/4.0f;
+    }
+    float center_grad[3] { (grad[3*ids[0]] + grad[3*ids[1]] + grad[3*ids[2]] + grad[3*ids[3]])/4.0f,
+            (grad[3*ids[0] + 1] + grad[3*ids[1] + 1] + grad[3*ids[2] + 1] + grad[3*ids[3] + 1])/4.0f,
+            (grad[3*ids[0] + 2] + grad[3*ids[1] + 2] + grad[3*ids[2] + 2] + grad[3*ids[3] + 2])/4.0f};
+
+    float volume_tet = volume_tetrahedron_32(&sites[3*ids[0]], &sites[3*ids[1]], &sites[3*ids[2]], &sites[3*ids[3]]);
+    
+    float curr_n[3] {0.0, 0.0, 0.0};
+    float dX[12];
+    float G[9] {0.0, 0.0, 0.0, 
+                0.0, 0.0, 0.0, 
+                0.0, 0.0, 0.0}; //dXT dX
+    float G_inv[9] {0.0, 0.0, 0.0, 
+                0.0, 0.0, 0.0, 
+                0.0, 0.0, 0.0};
+
+    float Weights_curr[12] {0.0, 0.0, 0.0, 0.0,
+                            0.0, 0.0, 0.0, 0.0,
+                            0.0, 0.0, 0.0, 0.0};   
+
+    for (int r_id = 0; r_id < 4; r_id++) {
+        curr_n[0] = sites[3*ids[r_id]];
+        curr_n[1] = sites[3*ids[r_id] + 1];
+        curr_n[2] = sites[3*ids[r_id] + 2];
+
+        // Calculate coefficients
+        dX[3*r_id] = curr_n[0] - center_point[0];
+        dX[3*r_id + 1] = curr_n[1] - center_point[1];
+        dX[3*r_id + 2] = curr_n[2] - center_point[2];
+        
+        G[0] = G[0] + dX[3*r_id]*dX[3*r_id]; G[1] = G[1] + dX[3*r_id]*dX[3*r_id+1];  G[2] = G[2] + dX[3*r_id]*dX[3*r_id+2];
+        G[3] = G[3] + dX[3*r_id+1]*dX[3*r_id]; G[4] = G[4] + dX[3*r_id+1]*dX[3*r_id + 1]; G[5] = G[5] + dX[3*r_id+1]*dX[3*r_id + 2];
+        G[6] = G[6] + dX[3*r_id+2]*dX[3*r_id]; G[7] = G[7] + dX[3*r_id+2]*dX[3*r_id + 1]; G[8] = G[8] + dX[3*r_id+2]*dX[3*r_id + 2];
+    }
+
+    // Compute inverse of G
+    // det = a11 (a22 a33 – a23 a32) – a12 (a21 a33 – a23 a31) + a13 (a21 a32 – a22 a31)
+    float det = G[0] * (G[4]*G[8] - G[5]*G[7]) - G[1]*(G[3]*G[8] - G[5]*G[6]) + G[2] * (G[3]*G[7] - G[4] * G[6]);
+    if (det == 0.0f) { 
+        return;
+    }
+    
+    G_inv[0] = (G[4]*G[8] - G[5]*G[7])/det; 
+    G_inv[3] = -(G[3]*G[8] - G[5]*G[6])/det; 
+    G_inv[6] = (G[3]*G[7] - G[4]*G[6])/det;
+    G_inv[1] = -(G[1]*G[8] - G[2]*G[7])/det; 
+    G_inv[4] = (G[0]*G[8] - G[2]*G[6])/det; 
+    G_inv[7] = -(G[0]*G[7] - G[1]*G[6])/det; 
+    G_inv[2] = (G[1]*G[5] - G[2]*G[4])/det; 
+    G_inv[5] = -(G[0]*G[5] - G[2]*G[3])/det; 
+    G_inv[8] = (G[0]*G[4] - G[1]*G[3])/det; 
+
+    // Matrix multiplication
+    for (int i = 0; i < 4; i++) {
+        Weights_curr[3*i] = G_inv[0] * dX[3*i] + G_inv[1] * dX[3*i + 1] + G_inv[2] * dX[3*i + 2];
+        Weights_curr[3*i + 1] = G_inv[3] * dX[3*i] + G_inv[4] * dX[3*i + 1] + G_inv[5] * dX[3*i + 2];
+        Weights_curr[3*i + 2] = G_inv[6] * dX[3*i] + G_inv[7] * dX[3*i + 1] + G_inv[8] * dX[3*i + 2];
+    }
+    
+    // Matrix multiplication
+    float elem_0 = 0.0f;
+    float elem_1 = 0.0f;
+    float elem_2 = 0.0f;
+    for (int i = 0; i < 4; i++) {
+        elem_0 += (grad[3*ids[i]] - center_grad[0]) * Weights_curr[3*i];
+        elem_1 += (grad[3*ids[i] + 1] - center_grad[1]) * Weights_curr[3*i + 1];
+        elem_2 += (grad[3*ids[i] + 2] - center_grad[2]) * Weights_curr[3*i + 2];
+    }
+    
+    float norm_lapl = elem_0*elem_0 + elem_1*elem_1 + elem_2*elem_2;
+
+    for (int i = 0; i < 4; i++) {
+        atomicAdd(&grad_lapl[ids[i]], (elem_0 * Weights_curr[3*i] * Weights_curr[3*i] + 
+                                        elem_1 * Weights_curr[3*i + 1] * Weights_curr[3*i + 1] + 
+                                        elem_2 * Weights_curr[3*i + 2]* Weights_curr[3*i + 2])*volume_tet);
+        /*atomicAdd(&grad_lapl[3*ids[i]], elem_0*volume_tet * Weights_curr[3*i] );
+        atomicAdd(&grad_lapl[3*ids[i] + 1], elem_1*volume_tet * Weights_curr[3*i + 1]);
+        atomicAdd(&grad_lapl[3*ids[i] + 2], elem_2*volume_tet * Weights_curr[3*i + 2]);*/
+
+        atomicAdd(&weights_tot[ids[i]], volume_tet);
+    }
+
+
+    return;
+}
+
+
+__global__ void normalize_laplacian_kernel(
+    const size_t num_sites,                // number of rays
+    float *__restrict__ grad_lapl,     // [N_voxels, 4] for each voxel => it's vertices)
+    float *__restrict__ weights_tot
+    )
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_sites)
+    {
+        return;
+    }
+
+    if (weights_tot[idx] == 0.0f)
+        return;
+
+    grad_lapl[idx] = grad_lapl[idx]/weights_tot[idx];
+    //for (int i = 0; i < 3; i++)
+    //    grad_lapl[3*idx + i] = grad_lapl[3*idx + i]/weights_tot[idx];
+
 }
 
 
@@ -1028,6 +1161,39 @@ void sdf_space_grad_cuda(
                 num_sites,
                 grad_sdf.data_ptr<float>(),
                 grad_feat.data_ptr<float>(),
+                weights_tot.data_ptr<float>()); 
+        }));
+}
+
+
+// 
+void Laplace_grad_cuda(
+    size_t num_tets,                // number of rays
+    size_t num_sites,                // number of rays
+    torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  grad,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  grad_lapl,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights_tot
+)   {
+        const int threads = 512;
+        const int blocks = (num_tets + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+        AT_DISPATCH_FLOATING_TYPES( sites.type(),"sdf_laplacian_cuda_kernel", ([&] {  
+            sdf_laplacian_cuda_kernel CUDA_KERNEL(blocks,threads) (
+                num_tets,            
+                tets.data_ptr<int>(),
+                sites.data_ptr<float>(),
+                grad.data_ptr<float>(),
+                grad_lapl.data_ptr<float>(),
+                weights_tot.data_ptr<float>()); 
+        }));
+    
+        const int threads2 = 1024;
+        const int blocks2 = (num_sites + threads2 - 1) / threads2; // ceil for example 8192 + 255 / 256 = 32
+        AT_DISPATCH_FLOATING_TYPES( sites.type(),"normalize_laplacian_kernel", ([&] {  
+            normalize_laplacian_kernel CUDA_KERNEL(blocks2,threads2) (
+                num_sites,
+                grad_lapl.data_ptr<float>(),
                 weights_tot.data_ptr<float>()); 
         }));
 }
