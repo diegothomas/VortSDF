@@ -107,7 +107,7 @@ class Runner:
         self.optimizer = torch.optim.Adam(params_to_train, lr=self.learning_rate)
         
         posbase_pe=5
-        viewbase_pe= 4
+        viewbase_pe= 1
         self.posfreq = torch.FloatTensor([(2**i) for i in range(posbase_pe)]).cuda()
         self.viewfreq = torch.FloatTensor([(2**i) for i in range(viewbase_pe)]).cuda()
 
@@ -123,8 +123,8 @@ class Runner:
             ##### 2. Load initial sites
             visual_hull = [-1.1, -1.1, -1.1, 1.1, 1.1, 1.1]
             import src.Geometry.sampling as sampler
-            res = 32
-            sites = sampler.sample_Bbox(visual_hull[0:3], visual_hull[3:6], res, perturb_f =  (visual_hull[3] - visual_hull[0])*0.05)
+            res = 16
+            sites = sampler.sample_Bbox(visual_hull[0:3], visual_hull[3:6], res, perturb_f =  (visual_hull[3] - visual_hull[0])*0.02)
             #sites, _ = ply.load_ply("Data/bmvs_man/bmvs_man_colmap_aligned.ply")
 
 
@@ -451,7 +451,7 @@ class Runner:
                     fine_features_grad = rgb_feat.grad[:,32:]
             else:
                 if self.position_encoding:
-                    fine_features_grad = rgb_feat.grad[:,62:]
+                    fine_features_grad = rgb_feat.grad[:,44:] # <- view pose encoding = 4 rgb_feat.grad[:,62:]  <- view pose encoding = 1
                 else:
                     fine_features_grad = rgb_feat.grad[:,29:]
             fine_features_grad = fine_features_grad.contiguous()
@@ -475,11 +475,11 @@ class Runner:
 
             ### SMOOTH SDF GRADIENT
             grad_sdf = self.vortSDF_renderer_fine.grads_sdf / (mask_sum + 1.0e-5)
-            self.grad_sdf_smooth[:] = grad_sdf[:]
+            """self.grad_sdf_smooth[:] = grad_sdf[:]
             self.counter_smooth[:] = 1.0
             backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, 1, self.sites, grad_sdf, 
                                  self.tet32.edges, self.grad_sdf_smooth, self.counter_smooth)
-            grad_sdf[:] = self.grad_sdf_smooth[:]
+            grad_sdf[:] = self.grad_sdf_smooth[:]"""
             grad_sdf[outside_flag[:] == 1.0] = 0.0   
 
             
@@ -500,7 +500,7 @@ class Runner:
             self.grad_eik[:] = 0.0
             self.grad_norm_smooth[:] = 0.0
             self.eik_loss[:] = 0.0
-            if iter_step % 3 == 0:
+            if True: #iter_step % 3 == 0:
                 with torch.no_grad():
                     self.sdf_smooth[:] = self.sdf[:]
                 self.counter_smooth[:] = 1.0
@@ -565,7 +565,7 @@ class Runner:
             ########################################
             ##### Optimize sites positions #########
             ########################################
-            if (iter_step+1) % 3000 == 0 and iter_step < 12000:
+            if (iter_step+1) % 3000 == 0 and iter_step < 15000:
                 self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt)
                 self.sdf = self.sdf.contiguous()
                 self.sdf.requires_grad_(True)
@@ -634,15 +634,28 @@ class Runner:
                 if (iter_step+1) == 12000:
                     self.R = 25
                     self.sigma = 0.02
+                    self.s_w = 1.0e-7
                     self.e_w = 1.0e-10
-                    self.end_iter_loc = 8000
-                    self.learning_rate = 5e-5
-                    self.learning_rate_sdf = 5.0e-5
+                    self.end_iter_loc = 3000
+                    self.learning_rate = 1e-4
+                    self.learning_rate_sdf = 5.0e-6
+                    self.learning_rate_feat = 1.0e-4
+                    
+                if (iter_step+1) == 15000:
+                    self.R = 20
+                    self.sigma = 0.02
+                    self.s_w = 1.0e-7
+                    self.e_w = 1.0e-10
+                    self.end_iter_loc = 5000
+                    self.learning_rate = 1e-4
+                    self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 5.0e-5
 
                 print("SIGMA => ", self.sigma)
                 
                 self.loc_iter = 0
+                
+                self.save_checkpoint()
 
                 #verbose = True
                 #self.tet32.save("Exp/bmvs_man/test_up.ply")    
@@ -652,10 +665,11 @@ class Runner:
                 print('iter:{:8>d} loss = {}, scale={}, lr={}'.format(iter_step, loss, self.inv_s, self.optimizer.param_groups[0]['lr']))
                 print('iter:{:8>d} eik loss = {}, lr={}'.format(iter_step, eik_loss, self.optimizer_sdf.param_groups[0]['lr']))
                 #print('iter:{:8>d} loss CVT = {} lr={}'.format(iter_step, loss_cvt, self.optimizer_cvt.param_groups[0]['lr']))
+                self.render_image(cam_ids, img_idx)
 
             if iter_step % self.val_freq == 0:
                 #self.inv_s = 1000
-                self.render_image(cam_ids, img_idx)
+                #self.render_image(cam_ids, img_idx)
                 self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri.ply")
                 #self.tet32.marching_tets(self.sdf.detach(), "Exp/bmvs_man/test_MT.ply")
                 #if iter_step > 1000:
@@ -666,7 +680,8 @@ class Runner:
                 self.tv_w = 0.0
                 
             #if iter_step == 15000:                
-            #    self.s_w = 1.0e-4
+            #    with torch.no_grad():
+            #        self.sdf[:] = self.sdf[:] * 2.0
 
             self.update_learning_rate(self.loc_iter)
             self.loc_iter = self.loc_iter + 1
@@ -945,6 +960,44 @@ class Runner:
             
         #for g in self.optimizer_cvt.param_groups:
         #    g['lr'] = self.learning_rate_cvt * learning_factor
+
+    @torch.no_grad()
+    def save_checkpoint(self):
+        checkpoint = {
+            'color_geo_network': self.color_network.state_dict(),
+        }
+
+        self.iter_step = 0
+
+        os.makedirs(os.path.join(self.base_exp_dir, 'checkpoints'), exist_ok=True)
+        torch.save(checkpoint, os.path.join(self.base_exp_dir, 'checkpoints', 'ckpt_{:0>6d}.pth'.format(self.iter_step)))
+        np.save(os.path.join(self.base_exp_dir, 'checkpoints', 'sdf_{:0>6d}.npy'.format(self.iter_step)), self.sdf.detach().cpu().numpy())
+        np.save(os.path.join(self.base_exp_dir, 'checkpoints', 'features_{:0>6d}.npy'.format(self.iter_step)), self.fine_features.detach().cpu().numpy())
+        np.save(os.path.join(self.base_exp_dir, 'checkpoints', 'sites_{:0>6d}.npy'.format(self.iter_step)), self.sites.cpu().numpy())
+   
+    def load_checkpoint(self, checkpoint_name):
+        checkpoint = torch.load(os.path.join(self.base_exp_dir, 'checkpoints', checkpoint_name), map_location=self.device)
+        self.color_network.load_state_dict(checkpoint['color_geo_network'])
+
+        print(os.path.join(self.base_exp_dir, 'checkpoints', checkpoint_name))
+
+        print(os.path.join(self.base_exp_dir, 'checkpoints', 'sites_{:0>6d}.npy'.format(self.iter_curr)))
+        self.sites = np.load(os.path.join(self.base_exp_dir, 'checkpoints', 'sites_{:0>6d}.npy'.format(self.iter_step)))
+        self.sites = torch.from_numpy(self.sites.astype(np.float32)).cuda()
+        self.sdf = np.load(os.path.join(self.base_exp_dir, 'checkpoints', 'sdf_{:0>6d}.npy'.format(self.iter_step)))
+        self.sdf = torch.from_numpy(self.sdf.astype(np.float32)).cuda()
+        self.sdf.requires_grad_(True)
+        
+        self.fine_features = np.load(os.path.join(self.base_exp_dir, 'checkpoints', 'features_{:0>6d}.npy'.format(self.iter_step)))
+        self.fine_features = torch.from_numpy(self.fine_features.astype(np.float32)).cuda()
+        self.fine_features.requires_grad_(True)
+                
+        self.optimizer_sdf = torch.optim.Adam([self.sdf], lr=self.learning_rate_sdf)        
+        self.optimizer_feat= torch.optim.Adam([self.fine_features], lr=self.learning_rate_feat)
+        
+        self.optimizer_sdf.load_state_dict(checkpoint['optimizer_sdf'])
+        self.optimizer_feat.load_state_dict(checkpoint['optimizer_feat'])
+     
 
 if __name__=='__main__':
     print("Code by Diego Thomas")
