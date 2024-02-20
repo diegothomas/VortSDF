@@ -569,7 +569,7 @@ class Runner:
             ########################################
             ##### Optimize sites positions #########
             ########################################
-            if (iter_step+1) % 3000 == 0 and iter_step < 15000:
+            if (iter_step+1) % 3000 == 0 and iter_step < 9000:
                 self.sigma = self.sigma / 2.0
                 
                 self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, 2.0*self.sigma)
@@ -617,18 +617,19 @@ class Runner:
                 step_size = step_size / 1.5
                 self.learning_rate_cvt = self.learning_rate_cvt / 2.0
                 self.e_w = self.e_w / 10.0
+                self.learning_rate_sdf = 1.0e-4
 
                 self.e_w = 1.0e-8
                 if (iter_step+1) == 6000:
                     self.R = 35
                     self.e_w = 1.0e-8
                     self.learning_rate = 5e-4
-                    self.learning_rate_sdf = 1.0e-3
+                    self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 5.0e-4
                     
                 if (iter_step+1) == 9000:
                     self.R = 35
-                    #self.sigma = 0.04
+                    self.sigma = 0.04
                     self.s_w = 1.0e-4
                     self.e_w = 1.0e-10
                     self.learning_rate = 1e-4
@@ -666,6 +667,7 @@ class Runner:
                 #verbose = True
                 #self.tet32.save("Exp/bmvs_man/test_up.ply")    
                 self.render_image(cam_ids, img_idx)
+                self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri_up.ply")
             
             if iter_step % self.report_freq == 0:
                 print('iter:{:8>d} loss = {}, scale={}, lr={}'.format(iter_step, loss, self.inv_s, self.optimizer.param_groups[0]['lr']))
