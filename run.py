@@ -73,7 +73,7 @@ class Runner:
         self.dim_feats = self.conf.get_int('train.dim_feats')
 
         self.end_iter_loc = 3000
-        self.s_w = 1.0e-5
+        self.s_w = 1.0e-4
         self.e_w = 1.0e-5
         self.tv_w = 1.0e-4
 
@@ -136,7 +136,7 @@ class Runner:
             #self.tet32.start() 
             #print("parallel process started")
             #self.tet32.join()
-            self.tet32.run() 
+            self.tet32.run(0.3) 
             self.tet32.load_cuda()
             #self.tet32.save("Exp/bmvs_man/test.ply")    
             
@@ -147,12 +147,12 @@ class Runner:
             cam_ids = torch.from_numpy(cam_ids).int().cuda()
             
             outside_flag = np.zeros(sites.shape[0], np.int32)
-            outside_flag[sites[:,0] < visual_hull[0] + (visual_hull[3]-visual_hull[0])/(2*res)] = 1
-            outside_flag[sites[:,1] < visual_hull[1] + (visual_hull[4]-visual_hull[1])/(2*res)] = 1
-            outside_flag[sites[:,2] < visual_hull[2] + (visual_hull[5]-visual_hull[2])/(2*res)] = 1
-            outside_flag[sites[:,0] > visual_hull[3] - (visual_hull[3]-visual_hull[0])/(2*res)] = 1
-            outside_flag[sites[:,1] > visual_hull[4] - (visual_hull[4]-visual_hull[1])/(2*res)] = 1
-            outside_flag[sites[:,2] > visual_hull[5] - (visual_hull[5]-visual_hull[2])/(2*res)] = 1
+            outside_flag[sites[:,0] < visual_hull[0] + (visual_hull[3]-visual_hull[0])/(res)] = 1
+            outside_flag[sites[:,1] < visual_hull[1] + (visual_hull[4]-visual_hull[1])/(res)] = 1
+            outside_flag[sites[:,2] < visual_hull[2] + (visual_hull[5]-visual_hull[2])/(res)] = 1
+            outside_flag[sites[:,0] > visual_hull[3] - (visual_hull[3]-visual_hull[0])/(res)] = 1
+            outside_flag[sites[:,1] > visual_hull[4] - (visual_hull[4]-visual_hull[1])/(res)] = 1
+            outside_flag[sites[:,2] > visual_hull[5] - (visual_hull[5]-visual_hull[2])/(res)] = 1
 
         #else:
         #    sites, _ = ply.load_ply(base_exp_dir + "/sites_init_" + data_name +"_32.ply")
@@ -190,7 +190,7 @@ class Runner:
         ############# CVT optimization #############################
         ############# CVT optimization #############################
         self.tet32.CVT(outside_flag, cam_ids, self.sdf.detach(), self.fine_features.detach())
-        self.tet32.run()
+        self.tet32.run(0.3)
         self.tet32.load_cuda()
         #self.tet32.save("Exp/bmvs_man/test_CVT.ply")  
         sites = np.asarray(self.tet32.vertices)  
@@ -267,7 +267,7 @@ class Runner:
         self.R = 40
         self.s_start = 10.0
         self.inv_s = 0.1
-        self.sigma = 0.1
+        self.sigma = 0.13
         step_size = 0.01
         #step_size = 0.003
         self.loc_iter = 0
@@ -501,11 +501,15 @@ class Runner:
             self.grad_norm_smooth[:] = 0.0
             self.eik_loss[:] = 0.0
             if True: #iter_step % 3 == 0:
-                with torch.no_grad():
-                    self.sdf_smooth[:] = self.sdf[:]
-                self.counter_smooth[:] = 1.0
-                backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, 1, self.sites, self.sdf, 
-                                    self.tet32.edges, self.sdf_smooth, self.counter_smooth)
+                #with torch.no_grad():
+                #    self.sdf_smooth[:] = self.sdf[:]
+                #self.counter_smooth[:] = 1.0
+                #backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, 1, self.sites, self.sdf, 
+                #                    self.tet32.edges, self.sdf_smooth, self.counter_smooth)
+                
+                self.sdf_smooth[:] = 0.0
+                backprop_cuda.bnn_smooth(self.sites.shape[0], self.sigma, 1, self.sites, self.sdf, 
+                                    self.tet32.bnn_sites, self.tet32.offset_bnn, self.sdf_smooth)
 
                 cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, grad_sdf, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
                                               self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.weights_grad, self.eik_loss)
@@ -566,7 +570,9 @@ class Runner:
             ##### Optimize sites positions #########
             ########################################
             if (iter_step+1) % 3000 == 0 and iter_step < 15000:
-                self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt)
+                self.sigma = self.sigma / 2.0
+                
+                self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, 2.0*self.sigma)
                 self.sdf = self.sdf.contiguous()
                 self.sdf.requires_grad_(True)
                 self.fine_features = self.fine_features.contiguous()
@@ -580,12 +586,12 @@ class Runner:
                 cam_ids = torch.from_numpy(cam_ids).int().cuda()
                 
                 outside_flag = np.zeros(sites.shape[0], np.int32)
-                outside_flag[sites[:,0] < visual_hull[0] + (visual_hull[3]-visual_hull[0])/(2*res)] = 1
-                outside_flag[sites[:,1] < visual_hull[1] + (visual_hull[4]-visual_hull[1])/(2*res)] = 1
-                outside_flag[sites[:,2] < visual_hull[2] + (visual_hull[5]-visual_hull[2])/(2*res)] = 1
-                outside_flag[sites[:,0] > visual_hull[3] - (visual_hull[3]-visual_hull[0])/(2*res)] = 1
-                outside_flag[sites[:,1] > visual_hull[4] - (visual_hull[4]-visual_hull[1])/(2*res)] = 1
-                outside_flag[sites[:,2] > visual_hull[5] - (visual_hull[5]-visual_hull[2])/(2*res)] = 1
+                outside_flag[sites[:,0] < visual_hull[0] + (visual_hull[3]-visual_hull[0])/(res)] = 1
+                outside_flag[sites[:,1] < visual_hull[1] + (visual_hull[4]-visual_hull[1])/(res)] = 1
+                outside_flag[sites[:,2] < visual_hull[2] + (visual_hull[5]-visual_hull[2])/(res)] = 1
+                outside_flag[sites[:,0] > visual_hull[3] - (visual_hull[3]-visual_hull[0])/(res)] = 1
+                outside_flag[sites[:,1] > visual_hull[4] - (visual_hull[4]-visual_hull[1])/(res)] = 1
+                outside_flag[sites[:,2] > visual_hull[5] - (visual_hull[5]-visual_hull[2])/(res)] = 1
 
                 
                 self.sites = torch.from_numpy(sites.astype(np.float32)).cuda()
@@ -608,7 +614,6 @@ class Runner:
                     self.vortSDF_renderer_coarse.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
                 self.vortSDF_renderer_fine.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
 
-                self.sigma = self.sigma / 2.0
                 step_size = step_size / 1.5
                 self.learning_rate_cvt = self.learning_rate_cvt / 2.0
                 self.e_w = self.e_w / 10.0
@@ -623,8 +628,8 @@ class Runner:
                     
                 if (iter_step+1) == 9000:
                     self.R = 35
-                    self.sigma = 0.02
-                    self.s_w = 1.0e-7
+                    #self.sigma = 0.04
+                    self.s_w = 1.0e-4
                     self.e_w = 1.0e-10
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-4
@@ -633,8 +638,8 @@ class Runner:
 
                 if (iter_step+1) == 12000:
                     self.R = 25
-                    self.sigma = 0.02
-                    self.s_w = 1.0e-7
+                    #self.sigma = 0.03
+                    self.s_w = 1.0e-4
                     self.e_w = 1.0e-10
                     self.end_iter_loc = 3000
                     self.learning_rate = 1e-4
@@ -643,8 +648,8 @@ class Runner:
                     
                 if (iter_step+1) == 15000:
                     self.R = 20
-                    self.sigma = 0.02
-                    self.s_w = 1.0e-7
+                    #self.sigma = 0.02
+                    self.s_w = 1.0e-5
                     self.e_w = 1.0e-10
                     self.end_iter_loc = 5000
                     self.learning_rate = 1e-4
@@ -655,7 +660,8 @@ class Runner:
                 
                 self.loc_iter = 0
                 
-                self.save_checkpoint()
+                self.save_checkpoint()                    
+                torch.cuda.empty_cache()
 
                 #verbose = True
                 #self.tet32.save("Exp/bmvs_man/test_up.ply")    
@@ -665,12 +671,14 @@ class Runner:
                 print('iter:{:8>d} loss = {}, scale={}, lr={}'.format(iter_step, loss, self.inv_s, self.optimizer.param_groups[0]['lr']))
                 print('iter:{:8>d} eik loss = {}, lr={}'.format(iter_step, eik_loss, self.optimizer_sdf.param_groups[0]['lr']))
                 #print('iter:{:8>d} loss CVT = {} lr={}'.format(iter_step, loss_cvt, self.optimizer_cvt.param_groups[0]['lr']))
-                self.render_image(cam_ids, img_idx)
+                self.render_image(cam_ids, img_idx)                    
+                torch.cuda.empty_cache()
 
             if iter_step % self.val_freq == 0:
                 #self.inv_s = 1000
                 #self.render_image(cam_ids, img_idx)
                 self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri.ply")
+                self.tet32.surface_from_sdf(self.sdf_smooth.cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri_smooth.ply")                
                 #self.tet32.marching_tets(self.sdf.detach(), "Exp/bmvs_man/test_MT.ply")
                 #if iter_step > 1000:
                 #    self.tet32.save("Exp/bmvs_man/test.ply")                         

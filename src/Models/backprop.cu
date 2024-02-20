@@ -141,6 +141,49 @@ __global__ void smooth_grad_kernel(
 }
 
 
+__global__ void bnn_smooth_kernel(
+    const size_t num_sites,                // number of rays
+    float sigma,
+    const size_t dim_sdf,
+    float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ bnn_sites,     // [N_voxels, 4] for each voxel => it's vertices)
+    int *__restrict__ bnn_offset,     // [N_voxels, 4] for each voxel => it's vertices)
+    float *__restrict__ sdf_smooth
+    )
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_sites)
+    {
+        return;
+    }
+
+    float total_weight = 0.0f;
+    float total_sdf = 0.0f;
+
+    float length_edge;
+    int bnn_id;
+    int start = bnn_offset[2*idx];
+    int end = bnn_offset[2*idx+1];
+    for (int i = start; i < start+end; i++) {
+        bnn_id = bnn_sites[i];
+        length_edge = (vertices[3*idx] - vertices[3*bnn_id])*(vertices[3*idx] - vertices[3*bnn_id]) +
+                            (vertices[3*idx + 1] - vertices[3*bnn_id + 1])*(vertices[3*idx + 1] - vertices[3*bnn_id + 1]) +
+                            (vertices[3*idx + 2] - vertices[3*bnn_id + 2])*(vertices[3*idx + 2] - vertices[3*bnn_id + 2]);
+              
+        for (int i = 0; i < dim_sdf; i++) {
+            total_sdf = total_sdf + exp(-length_edge/(sigma*sigma)) * sdf[dim_sdf*bnn_id + i];
+            total_weight = total_weight + exp(-length_edge/(sigma*sigma));
+        }
+    }
+    
+    for (int i = 0; i < dim_sdf; i++) {
+        sdf_smooth[dim_sdf*idx + i] = total_weight == 0.0f ? 0.0f : total_sdf / total_weight;
+    }
+
+    return;
+}
+
 __global__ void smooth_kernel(
     const size_t num_edges,                // number of rays
     float sigma,
@@ -443,4 +486,30 @@ void smooth_sdf_cuda(
             counter.data_ptr<float>());
     }));
     
+}
+
+void bnn_smooth_sdf_cuda(
+    size_t num_sites,
+    float sigma,
+    size_t dim_sdf,
+    torch::Tensor vertices,
+    torch::Tensor sdf,
+    torch::Tensor bnn_sites,
+    torch::Tensor bnn_offset,
+    torch::Tensor sdf_smooth
+)
+{
+    const int threads = 1024;
+    const int blocks = (num_sites + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+    AT_DISPATCH_FLOATING_TYPES( sdf.type(),"bnn_smooth_kernel", ([&] {  
+        bnn_smooth_kernel CUDA_KERNEL(blocks,threads) (
+            num_sites,                // number of rays
+            sigma,
+            dim_sdf,
+            vertices.data_ptr<float>(),       // [N_rays, 6]
+            sdf.data_ptr<float>(),       // [N_rays, 6]
+            bnn_sites.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)
+            bnn_offset.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)
+            sdf_smooth.data_ptr<float>());
+    }));
 }

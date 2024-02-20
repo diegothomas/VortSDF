@@ -71,7 +71,7 @@ class Tet32(Process):
         self.manager = Manager()
         self.d = self.manager.dict()
 
-    def run(self): 
+    def run(self, radius = 0.3): 
         time.sleep(1) 
         print("I'm the process with id: {}".format(self.id)) 
 
@@ -150,20 +150,41 @@ class Tet32(Process):
         self.knn_sites = -1 * np.ones((self.sites.shape[0], self.KNN))
         _, idx = self.KDtree.query(self.sites, k=self.KNN+1)
         self.knn_sites[:,:] = np.asarray(idx[:,1:])
-        print('KDTreeFlann time:', timer() - start)    
+        print('KDTreeFlann time:', timer() - start)
+        print('radius time:', radius)
+        start = timer()
+        res_id = self.KDtree.query_ball_point(self.sites, radius) # * np.ones((self.sites.shape[0])))   
+        print('KDTree Ball point time:', timer() - start) 
+        #print(res_id.shape)
+        self.offset_bnn = np.zeros((2*self.sites.shape[0]))
+        tot_points = 0
+        max_length = 0
+        for i in range(self.sites.shape[0]):
+            self.offset_bnn[2*i] = tot_points
+            self.offset_bnn[2*i+1] = len(res_id[i])
+            tot_points = tot_points + len(res_id[i])
+            max_length = max(max_length, len(res_id[i]))
+        self.bnn_sites = np.concatenate([np.array(res_id[id]) for id in range(self.sites.shape[0])])
+        print(max_length)
+        #print(self.bnn_sites.shape)
+        #input()
 
         self.d['summits'] = self.summits
         self.d['edges'] = self.edges
         self.d['neighbors'] = self.neighbors
         self.d['sites'] = self.sites
         self.d['knn_sites'] = self.knn_sites
+        self.d['bnn_sites'] = self.bnn_sites.reshape(-1)
+        self.d['offset_bnn'] = self.offset_bnn
         #self.d['tetras'] = self.tetras
 
     def load_cuda(self):
         self.edges = torch.from_numpy(self.d['edges']).int().cuda().contiguous()
         self.summits = torch.from_numpy(self.d['summits']).int().cuda().contiguous()  
         self.neighbors = torch.from_numpy(self.d['neighbors']).int().cuda().contiguous()        
-        self.knn_sites = torch.from_numpy(self.d['knn_sites']).int().cuda().contiguous()
+        self.knn_sites = torch.from_numpy(self.d['knn_sites']).int().cuda().contiguous()   
+        self.bnn_sites = torch.from_numpy(self.d['bnn_sites']).int().cuda().contiguous()
+        self.offset_bnn = torch.from_numpy(self.d['offset_bnn']).int().cuda().contiguous()
         self.sites = torch.from_numpy(self.d['sites']).float().cuda().contiguous()  
         #self.tetras = self.d['tetras']
         print("nb edges: ", self.edges.shape)
@@ -325,7 +346,7 @@ class Tet32(Process):
 
         return sdf.cpu().numpy(), fine_features.cpu().numpy()
 
-    def upsample(self, sdf, feat, visual_hull, res, cam_sites, lr):       
+    def upsample(self, sdf, feat, visual_hull, res, cam_sites, lr, radius = 0.3):       
         ## Smooth current mesh and build sdf        
         tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(sdf.astype(np.float64)),0.0)
         tri_mesh.filter_smooth_laplacian(number_of_iterations=3)
@@ -385,10 +406,10 @@ class Tet32(Process):
                 
         self.sites = torch.from_numpy(self.sites).float().cuda()
         self.make_knn()
-        in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, 0.5, lr)
+        in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, 1.0, lr)
 
         prev_kdtree = scipy.spatial.KDTree(new_sites)
-        self.run()
+        self.run(radius)
         new_sites = np.asarray(self.vertices)  
 
         _, idx = prev_kdtree.query(new_sites, k=1)
