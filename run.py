@@ -569,8 +569,8 @@ class Runner:
             ########################################
             ##### Optimize sites positions #########
             ########################################
-            if (iter_step+1) % 3000 == 0 and iter_step < 9000:
-                self.sigma = self.sigma / 2.0
+            if (iter_step+1) % 3000 == 0 and iter_step < 12000:
+                self.sigma = self.sigma / 1.5
                 
                 self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, 2.0*self.sigma)
                 self.sdf = self.sdf.contiguous()
@@ -629,9 +629,9 @@ class Runner:
                     
                 if (iter_step+1) == 9000:
                     self.R = 35
-                    self.sigma = 0.04
-                    self.s_w = 1.0e-4
-                    self.e_w = 1.0e-10
+                    #self.sigma = 0.04
+                    self.s_w = 1.0e-5
+                    self.e_w = 1.0e-9
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-4
@@ -640,11 +640,11 @@ class Runner:
                 if (iter_step+1) == 12000:
                     self.R = 25
                     #self.sigma = 0.03
-                    self.s_w = 1.0e-4
+                    self.s_w = 1.0e-5
                     self.e_w = 1.0e-10
                     self.end_iter_loc = 3000
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 5.0e-6
+                    self.learning_rate_sdf = 1.0e-5
                     self.learning_rate_feat = 1.0e-4
                     
                 if (iter_step+1) == 15000:
@@ -654,7 +654,7 @@ class Runner:
                     self.e_w = 1.0e-10
                     self.end_iter_loc = 5000
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 1.0e-4
+                    self.learning_rate_sdf = 1.0e-5
                     self.learning_rate_feat = 5.0e-5
 
                 print("SIGMA => ", self.sigma)

@@ -153,20 +153,29 @@ class Tet32(Process):
         print('KDTreeFlann time:', timer() - start)
         print('radius time:', radius)
         start = timer()
-        res_id = self.KDtree.query_ball_point(self.sites, radius) # * np.ones((self.sites.shape[0])))   
+        res_id = self.KDtree.query_ball_point(self.sites, radius, return_sorted = True) # * np.ones((self.sites.shape[0])))   
         print('KDTree Ball point time:', timer() - start) 
         #print(res_id.shape)
         self.offset_bnn = np.zeros((2*self.sites.shape[0]))
         tot_points = 0
         max_length = 0
+        self.bnn_sites = []
         for i in range(self.sites.shape[0]):
             self.offset_bnn[2*i] = tot_points
-            self.offset_bnn[2*i+1] = len(res_id[i])
-            tot_points = tot_points + len(res_id[i])
+            #self.offset_bnn[2*i+1] = len(res_id[i])
+            #tot_points = tot_points + len(res_id[i])
             max_length = max(max_length, len(res_id[i]))
-        self.bnn_sites = np.concatenate([np.array(res_id[id]) for id in range(self.sites.shape[0])])
+            self.offset_bnn[2*i+1] = min(400, len(res_id[i]))
+            tot_points = tot_points + min(400, len(res_id[i]))
+            if len(res_id[i]) < 400:
+                self.bnn_sites.append(np.array(res_id[i]))
+            else:
+                self.bnn_sites.append(np.array(res_id[i])[:300])
+                self.bnn_sites.append(np.array(res_id[i])[-100:])
+        self.bnn_sites = np.concatenate(self.bnn_sites) #[np.array(res_id[id]) for id in range(self.sites.shape[0])])"""
+        #self.bnn_sites = np.concatenate([np.array(res_id[id]) for id in range(self.sites.shape[0])])
         print(max_length)
-        #print(self.bnn_sites.shape)
+        print(self.bnn_sites.shape)
         #input()
 
         self.d['summits'] = self.summits
