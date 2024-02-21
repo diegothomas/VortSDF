@@ -70,6 +70,9 @@ class Tet32(Process):
         self.device = torch.device('cuda')
         self.manager = Manager()
         self.d = self.manager.dict()
+        self.lvl = 0
+        self.lvl_sites = []
+        self.nb_pre_sites = 0
 
     def run(self, radius = 0.3): 
         time.sleep(1) 
@@ -151,7 +154,7 @@ class Tet32(Process):
         _, idx = self.KDtree.query(self.sites, k=self.KNN+1)
         self.knn_sites[:,:] = np.asarray(idx[:,1:])
         print('KDTreeFlann time:', timer() - start)
-        print('radius time:', radius)
+        """print('radius time:', radius)
         start = timer()
         res_id = self.KDtree.query_ball_point(self.sites, radius, return_sorted = True) # * np.ones((self.sites.shape[0])))   
         print('KDTree Ball point time:', timer() - start) 
@@ -172,10 +175,10 @@ class Tet32(Process):
             else:
                 self.bnn_sites.append(np.array(res_id[i])[:300])
                 self.bnn_sites.append(np.array(res_id[i])[-100:])
-        self.bnn_sites = np.concatenate(self.bnn_sites) #[np.array(res_id[id]) for id in range(self.sites.shape[0])])"""
+        self.bnn_sites = np.concatenate(self.bnn_sites) #[np.array(res_id[id]) for id in range(self.sites.shape[0])])
         #self.bnn_sites = np.concatenate([np.array(res_id[id]) for id in range(self.sites.shape[0])])
         print(max_length)
-        print(self.bnn_sites.shape)
+        print(self.bnn_sites.shape)"""
         #input()
 
         self.d['summits'] = self.summits
@@ -183,17 +186,18 @@ class Tet32(Process):
         self.d['neighbors'] = self.neighbors
         self.d['sites'] = self.sites
         self.d['knn_sites'] = self.knn_sites
-        self.d['bnn_sites'] = self.bnn_sites.reshape(-1)
-        self.d['offset_bnn'] = self.offset_bnn
+        #self.d['bnn_sites'] = self.bnn_sites.reshape(-1)
+        #self.d['offset_bnn'] = self.offset_bnn
         #self.d['tetras'] = self.tetras
+
 
     def load_cuda(self):
         self.edges = torch.from_numpy(self.d['edges']).int().cuda().contiguous()
         self.summits = torch.from_numpy(self.d['summits']).int().cuda().contiguous()  
         self.neighbors = torch.from_numpy(self.d['neighbors']).int().cuda().contiguous()        
         self.knn_sites = torch.from_numpy(self.d['knn_sites']).int().cuda().contiguous()   
-        self.bnn_sites = torch.from_numpy(self.d['bnn_sites']).int().cuda().contiguous()
-        self.offset_bnn = torch.from_numpy(self.d['offset_bnn']).int().cuda().contiguous()
+        #self.bnn_sites = torch.from_numpy(self.d['bnn_sites']).int().cuda().contiguous()
+        #self.offset_bnn = torch.from_numpy(self.d['offset_bnn']).int().cuda().contiguous()
         self.sites = torch.from_numpy(self.d['sites']).float().cuda().contiguous()  
         #self.tetras = self.d['tetras']
         print("nb edges: ", self.edges.shape)
@@ -320,6 +324,9 @@ class Tet32(Process):
             grad_sites[outside_flag == 1.0, :] = 0.0
             grad_sites[cam_ids, :] = 0.0
             grad_sites_sdf[outside_flag == 1.0] = 0.0
+
+            grad_sites[:self.nb_pre_sites,:] = 0.0
+            grad_sites_sdf[:self.nb_pre_sites,:] = 0.0
             optimizer_cvt.zero_grad()
             self.sites.grad = grad_sites*mask_grad + sdf_weight*grad_sites_sdf
             optimizer_cvt.step()
@@ -355,7 +362,10 @@ class Tet32(Process):
 
         return sdf.cpu().numpy(), fine_features.cpu().numpy()
 
-    def upsample(self, sdf, feat, visual_hull, res, cam_sites, lr, radius = 0.3):       
+    def upsample(self, sdf, feat, visual_hull, res, cam_sites, lr, radius = 0.3):    
+        self.lvl_sites.append(np.arange(self.sites.shape[0]))
+        self.nb_pre_sites = self.sites.shape[0]
+
         ## Smooth current mesh and build sdf        
         tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(sdf.astype(np.float64)),0.0)
         tri_mesh.filter_smooth_laplacian(number_of_iterations=3)
@@ -415,23 +425,31 @@ class Tet32(Process):
                 
         self.sites = torch.from_numpy(self.sites).float().cuda()
         self.make_knn()
-        in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, 1.0, lr)
+        in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, 0.5, lr)
 
+        #ply.save_ply("Exp/bmvs_man/testprevlvlv.ply", (self.sites[self.lvl_sites[0][:]]).transpose())
         prev_kdtree = scipy.spatial.KDTree(new_sites)
         self.run(radius)
-        new_sites = np.asarray(self.vertices)  
+        #new_sites = np.asarray(self.vertices)  
+        self.KDtree = scipy.spatial.KDTree(self.sites)
+        
+        for lvl_curr in range(self.lvl+1):
+            _, idx = self.KDtree.query(new_sites[self.lvl_sites[lvl_curr][:]], k=1)
+            self.lvl_sites[lvl_curr][:] = idx[:]
 
-        _, idx = prev_kdtree.query(new_sites, k=1)
+        _, idx = prev_kdtree.query(self.sites, k=1)
         #out_sdf = np.zeros(new_sites.shape[0])
         #out_sdf[:] = in_sdf[idx[:]]
         
-        out_sdf = -f(new_sites)
+        out_sdf = -f(self.sites)
         print("out_sdf => ", out_sdf.sum())
         print("out_sdf => ", out_sdf.min())
         print("out_sdf => ", out_sdf.max())
         
-        out_feat = np.zeros([new_sites.shape[0],feat.shape[1]])
+        out_feat = np.zeros([self.sites.shape[0],feat.shape[1]])
         out_feat[:] = in_feat[idx[:]]
+        
+        self.lvl = self.lvl + 1
 
         return torch.from_numpy(out_sdf).float().cuda(), torch.from_numpy(out_feat).float().cuda()
 
@@ -491,6 +509,11 @@ class Tet32(Process):
                     faces_list.append(curr_face)
 
         ply.save_ply(filename, self.sites.cpu().numpy().transpose(), f=(np.asarray(faces_list)).transpose())
+
+    def save_multi_lvl(self, filename):
+        for lvl_curr in range(self.lvl):
+            ply.save_ply(filename+"{:0>2d}.ply".format(lvl_curr), (self.sites[self.lvl_sites[lvl_curr][:]]).cpu().numpy().transpose())
+        ply.save_ply(filename+".ply", self.sites.cpu().numpy().transpose())
 
 
     ## Sample points along a ray at the faces of Tet32 structure
