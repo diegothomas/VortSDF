@@ -150,9 +150,9 @@ class Tet32(Process):
 
         start = timer()
         self.KDtree = scipy.spatial.KDTree(self.sites)
-        self.knn_sites = -1 * np.ones((self.sites.shape[0], self.KNN))
+        self.knn_sites = -1 * np.ones((self.sites.shape[0], 96))
         _, idx = self.KDtree.query(self.sites, k=self.KNN+1)
-        self.knn_sites[:,:] = np.asarray(idx[:,1:])
+        self.knn_sites[:,:self.KNN] = np.asarray(idx[:,1:])
         print('KDTreeFlann time:', timer() - start)
         """print('radius time:', radius)
         start = timer()
@@ -207,7 +207,28 @@ class Tet32(Process):
         self.KDtree = scipy.spatial.KDTree(self.sites.cpu().numpy())
         self.knn_sites = -1 * np.ones((self.sites.shape[0], self.KNN))
         _, idx = self.KDtree.query(self.sites.cpu().numpy(), k=self.KNN+1)
-        self.knn_sites[:,:] = np.asarray(idx[:,1:])  
+        self.knn_sites[:,:self.KNN] = np.asarray(idx[:,1:])  
+        self.knn_sites = torch.from_numpy(self.knn_sites).int().cuda().contiguous()
+        #print('KDTreeFlann time:', timer() - start)    
+
+        
+    def make_multilvl_knn(self):
+        start = timer()
+
+        self.knn_sites = -1 * np.ones((self.sites.shape[0], 96))
+        
+        self.KDtree = scipy.spatial.KDTree(self.sites.cpu().numpy())
+        _, idx = self.KDtree.query(self.sites.cpu().numpy(), k=32)
+        self.knn_sites[:,:32] = np.asarray(idx[:,:])  
+        
+        curr_it = 1
+        start_lvl = max(0, self.lvl-2)
+        for lvl_curr in range(start_lvl,self.lvl):
+            KDtree = scipy.spatial.KDTree(self.sites[self.lvl_sites[self.lvl-curr_it][:]].cpu().numpy())
+            _, idx = KDtree.query(self.sites.cpu().numpy(), k=32)
+            self.knn_sites[:,32*curr_it:32*(curr_it+1)] = np.asarray(idx[:,:])  
+            curr_it = curr_it + 1
+
         self.knn_sites = torch.from_numpy(self.knn_sites).int().cuda().contiguous()
         #print('KDTreeFlann time:', timer() - start)    
         
@@ -274,6 +295,8 @@ class Tet32(Process):
 
 
     def CVT(self, outside_flag, cam_ids, sdf, fine_features, nb_iter = 1000, sdf_weight = 0.0, lr = 1.0e-4):
+        self.make_knn()
+
         grad_sdf_space = torch.zeros([self.sites.shape[0], 3]).float().cuda().contiguous()
         grad_feat_space = torch.zeros([self.sites.shape[0], 3, fine_features.shape[1]]).float().cuda().contiguous()
         weights_grad = torch.zeros([3*self.KNN*self.sites.shape[0]]).float().cuda().contiguous()
@@ -325,8 +348,8 @@ class Tet32(Process):
             grad_sites[cam_ids, :] = 0.0
             grad_sites_sdf[outside_flag == 1.0] = 0.0
 
-            grad_sites[:self.nb_pre_sites,:] = 0.0
-            grad_sites_sdf[:self.nb_pre_sites,:] = 0.0
+            #grad_sites[:self.nb_pre_sites,:] = 0.0
+            #grad_sites_sdf[:self.nb_pre_sites,:] = 0.0
             optimizer_cvt.zero_grad()
             self.sites.grad = grad_sites*mask_grad + sdf_weight*grad_sites_sdf
             optimizer_cvt.step()
@@ -424,7 +447,6 @@ class Tet32(Process):
         cam_ids = torch.from_numpy(cam_ids).int().cuda()
                 
         self.sites = torch.from_numpy(self.sites).float().cuda()
-        self.make_knn()
         in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, 0.5, lr)
 
         #ply.save_ply("Exp/bmvs_man/testprevlvlv.ply", (self.sites[self.lvl_sites[0][:]]).transpose())

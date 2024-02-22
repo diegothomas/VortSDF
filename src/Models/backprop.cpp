@@ -70,6 +70,17 @@ void bnn_smooth_sdf_cuda(
     torch::Tensor sdf_smooth
 );
 
+void knn_smooth_sdf_cuda(
+    size_t num_sites,
+    size_t num_knn,
+    float sigma,
+    size_t dim_sdf,
+    torch::Tensor vertices,
+    torch::Tensor sdf,
+    torch::Tensor neighbors,
+    torch::Tensor sdf_smooth
+);
+
 
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
@@ -209,6 +220,28 @@ void bnn_smooth(
         sdf_smooth);
 }
 
+
+void knn_smooth(
+    size_t num_sites,
+    size_t num_knn,
+    float sigma,
+    size_t dim_sdf,
+    torch::Tensor vertices,
+    torch::Tensor sdf,
+    torch::Tensor neighbors,
+    torch::Tensor sdf_smooth
+) {
+    knn_smooth_sdf_cuda(
+        num_sites,
+        num_knn,
+        sigma,
+        dim_sdf,
+        vertices,
+        sdf,
+        neighbors,
+        sdf_smooth);
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("eikonal_loss", &eikonal_loss, "eikonal_loss (CPP)");
     m.def("smooth_sdf", &smooth_sdf, "smooth_sdf (CPP)");
@@ -216,4 +249,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("space_reg", &space_reg, "space_reg (CPP)");
     m.def("smooth", &smooth, "smooth (CPP)");
     m.def("bnn_smooth", &bnn_smooth, "bnn_smooth (CPP)");
+    m.def("knn_smooth", &knn_smooth, "knn_smooth (CPP)");
 }

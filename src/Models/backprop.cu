@@ -141,6 +141,61 @@ __global__ void smooth_grad_kernel(
 }
 
 
+__global__ void knn_smooth_kernel(
+    const size_t num_sites,                // number of rays
+    const size_t num_knn,  
+    float sigma,
+    const size_t dim_sdf,
+    float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ neighbors,     // [N_voxels, 4] for each voxel => it's vertices)
+    float *__restrict__ sdf_smooth
+    )
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_sites)
+    {
+        return;
+    }
+
+    float total_weight = 0.0f;
+    float total_sdf = 0.0f;
+
+    int nb_lvl = num_knn / 32;
+
+    float length_edge;
+    int knn_id;
+
+    float max_dist = -1.0f;
+    for (int lvl_curr = 0; lvl_curr < nb_lvl; lvl_curr++) {
+        for (int i = 0; i < 32; i++) {
+            knn_id = neighbors[num_knn*idx + lvl_curr*32 + i];
+            if (knn_id == -1)
+                continue;
+            length_edge = (vertices[3*idx] - vertices[3*knn_id])*(vertices[3*idx] - vertices[3*knn_id]) +
+                                (vertices[3*idx + 1] - vertices[3*knn_id + 1])*(vertices[3*idx + 1] - vertices[3*knn_id + 1]) +
+                                (vertices[3*idx + 2] - vertices[3*knn_id + 2])*(vertices[3*idx + 2] - vertices[3*knn_id + 2]);
+            
+            if (length_edge < max_dist || sdf[dim_sdf*knn_id] == 0.0f)
+                continue;
+
+            if (length_edge > max_dist)
+                max_dist = length_edge;
+            
+            for (int i = 0; i < dim_sdf; i++) {
+                total_sdf = total_sdf + exp(-length_edge/(sigma*sigma)) * sdf[dim_sdf*knn_id + i];
+                total_weight = total_weight + exp(-length_edge/(sigma*sigma));
+            }
+        }
+    }
+    
+    for (int i = 0; i < dim_sdf; i++) {
+        sdf_smooth[dim_sdf*idx + i] = total_weight == 0.0f ? 0.0f : total_sdf / total_weight;
+    }
+
+    return;
+}
+
 __global__ void bnn_smooth_kernel(
     const size_t num_sites,                // number of rays
     float sigma,
@@ -183,6 +238,7 @@ __global__ void bnn_smooth_kernel(
 
     return;
 }
+
 
 __global__ void smooth_kernel(
     const size_t num_edges,                // number of rays
@@ -513,3 +569,30 @@ void bnn_smooth_sdf_cuda(
             sdf_smooth.data_ptr<float>());
     }));
 }
+
+void knn_smooth_sdf_cuda(
+    size_t num_sites,
+    size_t num_knn,
+    float sigma,
+    size_t dim_sdf,
+    torch::Tensor vertices,
+    torch::Tensor sdf,
+    torch::Tensor neighbors,
+    torch::Tensor sdf_smooth
+)
+{
+    const int threads = 1024;
+    const int blocks = (num_sites + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+    AT_DISPATCH_FLOATING_TYPES( sdf.type(),"knn_smooth_kernel", ([&] {  
+        knn_smooth_kernel CUDA_KERNEL(blocks,threads) (
+            num_sites,                // number of rays
+            num_knn,
+            sigma,
+            dim_sdf,
+            vertices.data_ptr<float>(),       // [N_rays, 6]
+            sdf.data_ptr<float>(),       // [N_rays, 6]
+            neighbors.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)
+            sdf_smooth.data_ptr<float>());
+    }));
+}
+

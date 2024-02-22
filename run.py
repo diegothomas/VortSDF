@@ -267,7 +267,7 @@ class Runner:
         self.R = 40
         self.s_start = 10.0
         self.inv_s = 0.1
-        self.sigma = 0.13
+        self.sigma = 0.08
         step_size = 0.01
         #step_size = 0.003
         self.loc_iter = 0
@@ -478,8 +478,10 @@ class Runner:
             """self.grad_sdf_smooth[:] = grad_sdf[:]
             self.counter_smooth[:] = 1.0
             backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, 1, self.sites, grad_sdf, 
-                                 self.tet32.edges, self.grad_sdf_smooth, self.counter_smooth)
-            grad_sdf[:] = self.grad_sdf_smooth[:]"""
+                                 self.tet32.edges, self.grad_sdf_smooth, self.counter_smooth)"""
+            self.grad_sdf_smooth[:] = 0.0
+            backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, 1, self.sites, grad_sdf, self.tet32.knn_sites, self.grad_sdf_smooth)
+            grad_sdf[:] = self.grad_sdf_smooth[:]
             grad_sdf[outside_flag[:] == 1.0] = 0.0   
 
             
@@ -500,23 +502,26 @@ class Runner:
             self.grad_eik[:] = 0.0
             self.grad_norm_smooth[:] = 0.0
             self.eik_loss[:] = 0.0
-            if True: #iter_step % 3 == 0:
-                with torch.no_grad():
+            if iter_step % 3 == 0:
+                """with torch.no_grad():
                     self.sdf_smooth[:] = self.sdf[:]
                 self.counter_smooth[:] = 1.0
                 backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, 1, self.sites, self.sdf, 
-                                    self.tet32.edges, self.sdf_smooth, self.counter_smooth)
+                                    self.tet32.edges, self.sdf_smooth, self.counter_smooth)"""
                 
-                if iter_step > 12000:
+                """if iter_step > 12000:
                     for _ in range(10):
                         self.counter_smooth[:] = 1.0
                         self.sdf_smooth_buff[:] = self.sdf_smooth[:]
                         backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, 1, self.sites, self.sdf_smooth_buff, 
-                                        self.tet32.edges, self.sdf_smooth, self.counter_smooth) 
+                                        self.tet32.edges, self.sdf_smooth, self.counter_smooth) """
                 
                 #self.sdf_smooth[:] = 0.0
                 #backprop_cuda.bnn_smooth(self.sites.shape[0], self.sigma, 1, self.sites, self.sdf, 
                 #                    self.tet32.bnn_sites, self.tet32.offset_bnn, self.sdf_smooth)
+                
+                self.sdf_smooth[:] = 0.0
+                backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, 1, self.sites, self.sdf, self.tet32.knn_sites, self.sdf_smooth)
 
                 cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, grad_sdf, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
                                               self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.weights_grad, self.eik_loss)
@@ -589,6 +594,8 @@ class Runner:
                 sites = np.asarray(self.tet32.vertices)  
                 cam_ids = np.stack([np.where((sites == cam_sites[i,:]).all(axis = 1))[0] for i in range(cam_sites.shape[0])]).reshape(-1)
                 self.tet32.make_adjacencies(cam_ids)
+
+                self.tet32.make_multilvl_knn()
 
                 cam_ids = torch.from_numpy(cam_ids).int().cuda()
                 
