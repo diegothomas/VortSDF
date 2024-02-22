@@ -166,6 +166,7 @@ __global__ void knn_smooth_kernel(
     float length_edge;
     int knn_id;
 
+    float radius = 2.0f*sigma;
     float max_dist = -1.0f;
     for (int lvl_curr = 0; lvl_curr < nb_lvl; lvl_curr++) {
         for (int i = 0; i < 32; i++) {
@@ -176,7 +177,7 @@ __global__ void knn_smooth_kernel(
                                 (vertices[3*idx + 1] - vertices[3*knn_id + 1])*(vertices[3*idx + 1] - vertices[3*knn_id + 1]) +
                                 (vertices[3*idx + 2] - vertices[3*knn_id + 2])*(vertices[3*idx + 2] - vertices[3*knn_id + 2]);
             
-            if (length_edge < max_dist || sdf[dim_sdf*knn_id] == 0.0f)
+            if (length_edge < max_dist || sdf[dim_sdf*knn_id] == 0.0f || sqrt(length_edge) > radius)
                 continue;
 
             if (length_edge > max_dist)
@@ -187,6 +188,7 @@ __global__ void knn_smooth_kernel(
                 total_weight = total_weight + exp(-length_edge/(sigma*sigma));
             }
         }
+        radius = 2.0f*radius;
     }
     
     for (int i = 0; i < dim_sdf; i++) {

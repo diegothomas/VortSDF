@@ -502,7 +502,7 @@ class Runner:
             self.grad_eik[:] = 0.0
             self.grad_norm_smooth[:] = 0.0
             self.eik_loss[:] = 0.0
-            if iter_step % 3 == 0:
+            if True: #iter_step % 3 == 0:
                 """with torch.no_grad():
                     self.sdf_smooth[:] = self.sdf[:]
                 self.counter_smooth[:] = 1.0
@@ -647,19 +647,19 @@ class Runner:
                     self.s_w = 1.0e-5
                     self.e_w = 1.0e-9
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 1.0e-4
+                    self.learning_rate_sdf = 5.0e-4
                     self.learning_rate_feat = 1.0e-4
                     #self.end_iter_loc = 11000
 
                 if (iter_step+1) == 12000:
                     self.R = 25
-                    #self.sigma = 0.03
-                    self.s_w = 1.0e-5
+                    self.sigma = 0.03
+                    self.s_w = 1.0e-7
                     self.e_w = 1.0e-10
-                    self.end_iter_loc = 3000
+                    self.end_iter_loc = 13000
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 1.0e-5
-                    self.learning_rate_feat = 1.0e-4
+                    self.learning_rate_sdf = 5.0e-5
+                    self.learning_rate_feat = 5.0e-4
                     
                 if (iter_step+1) == 15000:
                     self.R = 20
@@ -688,12 +688,11 @@ class Runner:
                 print('iter:{:8>d} loss = {}, scale={}, lr={}'.format(iter_step, loss, self.inv_s, self.optimizer.param_groups[0]['lr']))
                 print('iter:{:8>d} eik loss = {}, lr={}'.format(iter_step, eik_loss, self.optimizer_sdf.param_groups[0]['lr']))
                 #print('iter:{:8>d} loss CVT = {} lr={}'.format(iter_step, loss_cvt, self.optimizer_cvt.param_groups[0]['lr']))
-                self.render_image(cam_ids, img_idx)                    
-                torch.cuda.empty_cache()
+                
 
             if iter_step % self.val_freq == 0:
                 #self.inv_s = 1000
-                #self.render_image(cam_ids, img_idx)
+                self.render_image(cam_ids, img_idx)
                 self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri.ply")
                 self.tet32.surface_from_sdf(self.sdf_smooth.cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri_smooth.ply")                
                 #self.tet32.marching_tets(self.sdf.detach(), "Exp/bmvs_man/test_MT.ply")
@@ -703,6 +702,8 @@ class Runner:
 
             if iter_step == 1000:                
                 self.tv_w = 0.0
+            #if iter_step == 20000:  
+            #    self.s_w = 1.0e-6
                 
             #if iter_step == 15000:                
             #    with torch.no_grad():
