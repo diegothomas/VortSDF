@@ -913,8 +913,8 @@ __global__ void eikonal_grad_kernel(
     ids[0] = tets[4*idx];  ids[1] = tets[4*idx + 1];  ids[2] = tets[4*idx + 2];
     ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[4*idx + 3];
 
-    if (grad_sdf_o[ids[0]] == 0.0f && grad_sdf_o[ids[1]] == 0.0f && grad_sdf_o[ids[2]] == 0.0f && grad_sdf_o[ids[3]] == 0.0f)
-        return;
+    //if (grad_sdf_o[ids[0]] == 0.0f && grad_sdf_o[ids[1]] == 0.0f && grad_sdf_o[ids[2]] == 0.0f && grad_sdf_o[ids[3]] == 0.0f)
+    //    return;
 
     float center_point[3] {0.0, 0.0, 0.0};
     for (int i = 0; i < 3; i++) {
@@ -1017,7 +1017,7 @@ __global__ void eikonal_grad_kernel(
     }
 
     for (int i = 0; i < 4; i++) {
-        if (grad_sdf_o[ids[i]] != 0.0f) {
+        //if (grad_sdf_o[ids[i]] != 0.0f) {
             atomicAdd(&grad_eik[ids[i]], (diff_loss[0] * Weights_curr[3*i] + 
                                             diff_loss[1] * Weights_curr[3*i + 1] + 
                                             diff_loss[2] * Weights_curr[3*i + 2])*volume_tet);
@@ -1038,7 +1038,7 @@ __global__ void eikonal_grad_kernel(
 
             atomicAdd(&weights_tot[ids[i]], volume_tet);
             atomicAdd(&Loss[ids[i]], abs(sqrt(norm_grad)-1)*volume_tet);
-        }
+        //}
     }
 
 
