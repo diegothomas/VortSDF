@@ -447,7 +447,7 @@ class Tet32(Process):
         cam_ids = torch.from_numpy(cam_ids).int().cuda()
                 
         self.sites = torch.from_numpy(self.sites).float().cuda()
-        in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, 0.5, lr)
+        in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, 1.0, lr)
 
         #ply.save_ply("Exp/bmvs_man/testprevlvlv.ply", (self.sites[self.lvl_sites[0][:]]).transpose())
         prev_kdtree = scipy.spatial.KDTree(new_sites)

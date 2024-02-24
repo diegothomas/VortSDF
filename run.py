@@ -263,7 +263,7 @@ class Runner:
         self.render_image(cam_ids, 0)
         input()"""
         
-        self.s_max = 1000
+        self.s_max = 2000
         self.R = 40
         self.s_start = 10.0
         self.inv_s = 0.1
@@ -504,7 +504,7 @@ class Runner:
             self.grad_eik[:] = 0.0
             self.grad_norm_smooth[:] = 0.0
             self.eik_loss[:] = 0.0
-            if iter_step % 10 == 0:
+            if True: #self.s_w > 0.0 and iter_step % 10 == 0:
                 """with torch.no_grad():
                     self.sdf_smooth[:] = self.sdf[:]
                 self.counter_smooth[:] = 1.0
@@ -583,7 +583,7 @@ class Runner:
             ########################################
             ##### Optimize sites positions #########
             ########################################
-            if (iter_step+1) % 3000 == 0 and iter_step < 12000:
+            if (iter_step+1) % 3000 == 0 and iter_step < 15000:
                 self.sigma = self.sigma / 1.5
                 
                 self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, 2.0*self.sigma)
@@ -663,7 +663,7 @@ class Runner:
                     #self.sigma = 0.03
                     self.s_w = 1.0e-7
                     self.e_w = 1.0e-10
-                    self.end_iter_loc = 13000
+                    self.end_iter_loc = 3000
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 5.0e-4
@@ -672,12 +672,13 @@ class Runner:
                 if (iter_step+1) == 15000:
                     self.R = 20
                     #self.sigma = 0.02
-                    self.s_w = 1.0e-7
+                    self.s_w = 1.0e-8
                     self.e_w = 1.0e-10
-                    self.end_iter_loc = 5000
+                    self.end_iter_loc = 10000
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 5.0e-5
-                    self.learning_rate_feat = 5.0e-5
+                    self.learning_rate_sdf = 1.0e-5
+                    self.learning_rate_feat = 1.0e-4
+                    self.vortSDF_renderer_fine.mask_reg = 0.0
 
                 print("SIGMA => ", self.sigma)
                 
