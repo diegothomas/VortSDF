@@ -504,7 +504,7 @@ class Runner:
             self.grad_eik[:] = 0.0
             self.grad_norm_smooth[:] = 0.0
             self.eik_loss[:] = 0.0
-            if True: #self.s_w > 0.0 and iter_step % 10 == 0:
+            if self.s_w > 0.0: # and iter_step % 10 == 0:
                 """with torch.no_grad():
                     self.sdf_smooth[:] = self.sdf[:]
                 self.counter_smooth[:] = 1.0
@@ -523,7 +523,7 @@ class Runner:
                 #                    self.tet32.bnn_sites, self.tet32.offset_bnn, self.sdf_smooth)
                 
                 self.sdf_smooth[:] = 0.0
-                backprop_cuda.knn_smooth(self.sites.shape[0], 96, 2.0*self.sigma, 1, self.sites, self.sdf, self.tet32.knn_sites, self.sdf_smooth)
+                backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, 1, self.sites, self.sdf, self.tet32.knn_sites, self.sdf_smooth)
 
                 cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, grad_sdf, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
                                               self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.weights_grad, self.eik_loss)
@@ -672,7 +672,7 @@ class Runner:
                 if (iter_step+1) == 15000:
                     self.R = 20
                     #self.sigma = 0.02
-                    self.s_w = 1.0e-8
+                    self.s_w = 0.0 #1.0e-8
                     self.e_w = 1.0e-10
                     self.end_iter_loc = 10000
                     self.learning_rate = 1e-4
@@ -711,8 +711,8 @@ class Runner:
 
             if iter_step == 1000:                
                 self.tv_w = 0.0
-            #if iter_step == 20000:  
-            #    self.s_w = 1.0e-6
+            if iter_step == 20000:  
+                self.s_w = 1.0e-8
                 #self.learning_rate_sdf = 1.0e-5
                 
             #if iter_step == 15000:                
