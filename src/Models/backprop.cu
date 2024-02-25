@@ -148,6 +148,7 @@ __global__ void knn_smooth_kernel(
     const size_t dim_sdf,
     float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ feat,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ neighbors,     // [N_voxels, 4] for each voxel => it's vertices)
     float *__restrict__ sdf_smooth
     )
@@ -163,7 +164,7 @@ __global__ void knn_smooth_kernel(
 
     int nb_lvl = num_knn / 32;
 
-    float length_edge;
+    float length_edge, length_feat;
     int knn_id;
 
     float radius = 2.0f*sigma;
@@ -180,12 +181,19 @@ __global__ void knn_smooth_kernel(
             if (length_edge < max_dist || sdf[dim_sdf*knn_id] == 0.0f || sqrt(length_edge) > radius)
                 continue;
 
+            // add bilateral smooth term with features
+            length_feat = 0.0f;
+            for (int i = 0; i < DIM_L_FEAT; i++) {
+                length_feat = length_feat +  (feat[DIM_L_FEAT*idx+ i] - feat[DIM_L_FEAT*knn_id+ i])*
+                                                (feat[DIM_L_FEAT*idx+ i] - feat[DIM_L_FEAT*knn_id+ i]);
+            }
+
             if (length_edge > max_dist)
                 max_dist = length_edge;
             
             for (int i = 0; i < dim_sdf; i++) {
-                total_sdf = total_sdf + exp(-length_edge/(sigma*sigma)) * sdf[dim_sdf*knn_id + i];
-                total_weight = total_weight + exp(-length_edge/(sigma*sigma));
+                total_sdf = total_sdf + exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)) * sdf[dim_sdf*knn_id + i];
+                total_weight = total_weight + exp(-length_edge/(sigma*sigma) - length_feat/(0.05f));
             }
         }
         radius = 2.0f*radius;
@@ -579,6 +587,7 @@ void knn_smooth_sdf_cuda(
     size_t dim_sdf,
     torch::Tensor vertices,
     torch::Tensor sdf,
+    torch::Tensor feat,
     torch::Tensor neighbors,
     torch::Tensor sdf_smooth
 )
@@ -593,6 +602,7 @@ void knn_smooth_sdf_cuda(
             dim_sdf,
             vertices.data_ptr<float>(),       // [N_rays, 6]
             sdf.data_ptr<float>(),       // [N_rays, 6]
+            feat.data_ptr<float>(),       // [N_rays, 6]
             neighbors.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)
             sdf_smooth.data_ptr<float>());
     }));

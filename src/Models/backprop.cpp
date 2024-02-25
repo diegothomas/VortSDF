@@ -77,6 +77,7 @@ void knn_smooth_sdf_cuda(
     size_t dim_sdf,
     torch::Tensor vertices,
     torch::Tensor sdf,
+    torch::Tensor feat,
     torch::Tensor neighbors,
     torch::Tensor sdf_smooth
 );
@@ -228,6 +229,7 @@ void knn_smooth(
     size_t dim_sdf,
     torch::Tensor vertices,
     torch::Tensor sdf,
+    torch::Tensor feat,
     torch::Tensor neighbors,
     torch::Tensor sdf_smooth
 ) {
@@ -238,6 +240,7 @@ void knn_smooth(
         dim_sdf,
         vertices,
         sdf,
+        feat,
         neighbors,
         sdf_smooth);
 }

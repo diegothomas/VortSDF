@@ -107,7 +107,7 @@ class Runner:
         self.optimizer = torch.optim.Adam(params_to_train, lr=self.learning_rate)
         
         posbase_pe=5
-        viewbase_pe= 1
+        viewbase_pe= 4
         self.posfreq = torch.FloatTensor([(2**i) for i in range(posbase_pe)]).cuda()
         self.viewfreq = torch.FloatTensor([(2**i) for i in range(viewbase_pe)]).cuda()
 
@@ -343,6 +343,7 @@ class Runner:
             #samples = (self.samples[:nb_samples,:] + self.samples_loc[:nb_samples,:])/2.0
             samples = self.samples[:nb_samples,:]
             samples = samples.contiguous()
+            samples = (samples + 1.1)/2.2
 
             ##### ##### ##### ##### ##### ##### ##### 
             # Build fine features
@@ -451,7 +452,7 @@ class Runner:
                     fine_features_grad = rgb_feat.grad[:,32:]
             else:
                 if self.position_encoding:
-                    fine_features_grad = rgb_feat.grad[:,44:] # <- view pose encoding = 4 rgb_feat.grad[:,62:]  <- view pose encoding = 1
+                    fine_features_grad = rgb_feat.grad[:,62:] # 44 <- view pose encoding = 4 rgb_feat.grad[:,62:]  <- view pose encoding = 1
                 else:
                     fine_features_grad = rgb_feat.grad[:,29:]
             fine_features_grad = fine_features_grad.contiguous()
@@ -480,7 +481,7 @@ class Runner:
             backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, 1, self.sites, grad_sdf, 
                                  self.tet32.edges, self.grad_sdf_smooth, self.counter_smooth)"""
             self.grad_sdf_smooth[:] = 0.0
-            backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, 1, self.sites, grad_sdf, self.tet32.knn_sites, self.grad_sdf_smooth)
+            backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, 1, self.sites, grad_sdf, self.fine_features, self.tet32.knn_sites, self.grad_sdf_smooth)
             grad_sdf[:] = self.grad_sdf_smooth[:]
             grad_sdf[outside_flag[:] == 1.0] = 0.0   
 
@@ -523,7 +524,7 @@ class Runner:
                 #                    self.tet32.bnn_sites, self.tet32.offset_bnn, self.sdf_smooth)
                 
                 self.sdf_smooth[:] = 0.0
-                backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, 1, self.sites, self.sdf, self.tet32.knn_sites, self.sdf_smooth)
+                backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, 1, self.sites, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)
 
                 cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, grad_sdf, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
                                               self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.weights_grad, self.eik_loss)
@@ -670,17 +671,19 @@ class Runner:
                     self.vortSDF_renderer_fine.mask_reg = 0.01
                     
                 if (iter_step+1) == 15000:
-                    self.R = 20
+                    self.R = 25
                     #self.sigma = 0.02
-                    self.s_w = 0.0 #1.0e-8
+                    self.s_w = 1.0e-9
                     self.e_w = 1.0e-10
                     self.end_iter_loc = 10000
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 1.0e-5
+                    self.learning_rate_sdf = 5.0e-5
                     self.learning_rate_feat = 1.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 0.0
 
                 print("SIGMA => ", self.sigma)
+                #with torch.no_grad():
+                #    self.sdf[:] = self.sdf[:] + self.sigma
                 
                 self.loc_iter = 0
                 
@@ -711,13 +714,13 @@ class Runner:
 
             if iter_step == 1000:                
                 self.tv_w = 0.0
-            if iter_step == 20000:  
-                self.s_w = 1.0e-8
-                #self.learning_rate_sdf = 1.0e-5
+            #if iter_step == 32000:  
+            #    self.s_w = 1.0e-8
+            #    #self.learning_rate_sdf = 1.0e-5
                 
-            #if iter_step == 15000:                
+            #if iter_step == 13000 or iter_step == 17000 or iter_step == 20000:                
             #    with torch.no_grad():
-            #        self.sdf[:] = self.sdf[:] * 4.0
+            #        self.sdf[:] = self.sdf[:] + self.sigma
 
             self.update_learning_rate(self.loc_iter)
             self.loc_iter = self.loc_iter + 1
@@ -777,6 +780,7 @@ class Runner:
             #samples = (self.samples[:nb_samples,:] + self.samples_loc[:nb_samples,:])/2.0
             samples = self.samples[:nb_samples,:]
             samples = samples.contiguous()
+            samples = (samples + 1.1)/2.2
 
             """samp_entry = self.samples_loc[:nb_samples,:] + self.out_z[:nb_samples,0].reshape(-1,1).expand(-1, 3)*self.samples_rays[:nb_samples,:]
             samp_exit = self.samples_loc[:nb_samples,:] + self.out_z[:nb_samples,1].reshape(-1,1).expand(-1, 3)*self.samples_rays[:nb_samples,:]
