@@ -75,7 +75,7 @@ class Runner:
         self.end_iter_loc = 3000
         self.s_w = 1.0e-5
         self.e_w = 1.0e-5
-        self.tv_w = 1.0e-4
+        self.tv_w = 1.0e-5
 
         self.report_freq = self.conf.get_int('train.report_freq')
         self.val_freq = self.conf.get_int('train.val_freq')
@@ -115,6 +115,28 @@ class Runner:
         k_viewbase_pe= 1
         self.k_posfreq = torch.FloatTensor([(2**i) for i in range(k_posbase_pe)]).cuda()
         self.k_viewfreq = torch.FloatTensor([(2**i) for i in range(k_viewbase_pe)]).cuda()
+
+        # Load checkpoint
+        latest_model_name = None
+        if is_continue:
+            if checkpoint == '':
+                model_list_raw = os.listdir(os.path.join(self.base_exp_dir, 'checkpoints'))
+                model_list = []
+                for model_name in model_list_raw:
+                    if model_name[-3:] == 'pth' and int(model_name[5:-4]) <= self.end_iter:
+                        model_list.append(model_name)
+                model_list.sort()
+                latest_model_name = model_list[-1]
+            else:
+                latest_model_name = checkpoint
+            print(latest_model_name)
+
+        if latest_model_name is not None:
+            if latest_model_name.split('_')[0] == 'coarse':
+                self.load_coarse_checkpoint(latest_model_name)
+            else:
+                self.load_checkpoint(latest_model_name)
+            start = timer()
 
 
     def train(self, data_name, K_NN = 24, verbose = True):
@@ -474,6 +496,13 @@ class Runner:
             ####### Regularization terms ###########
             ########################################
 
+            ############ Compute spatial SDF gradients
+            self.grad_sdf_space[:] = 0.0
+            self.grad_feat_space[:] = 0.0
+            self.weights_grad_space[:] = 0.0
+            cvt_grad_cuda.knn_sdf_space_grad(self.sites.shape[0], self.tet32.KNN, self.tet32.knn_sites, self.sites, 
+                                                self.sdf, self.fine_features, self.grad_sdf_space, self.grad_feat_space, self.weights_grad_space)
+
             ### SMOOTH SDF GRADIENT
             grad_sdf = self.vortSDF_renderer_fine.grads_sdf / (mask_sum + 1.0e-5)
             """self.grad_sdf_smooth[:] = grad_sdf[:]
@@ -481,7 +510,7 @@ class Runner:
             backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, 1, self.sites, grad_sdf, 
                                  self.tet32.edges, self.grad_sdf_smooth, self.counter_smooth)"""
             self.grad_sdf_smooth[:] = 0.0
-            backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, 1, self.sites, grad_sdf, self.fine_features, self.tet32.knn_sites, self.grad_sdf_smooth)
+            backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, 1, self.sites, self.grad_sdf_space, grad_sdf, self.fine_features, self.tet32.knn_sites, self.grad_sdf_smooth)
             grad_sdf[:] = self.grad_sdf_smooth[:]
             grad_sdf[outside_flag[:] == 1.0] = 0.0   
 
@@ -492,7 +521,7 @@ class Runner:
             backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, self.dim_feats, self.sites, self.grad_features, 
                                  self.tet32.edges, self.grad_feat_smooth, self.counter_smooth)"""
             #self.grad_feat_smooth[:] = 0.0
-            #backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.dim_feats, self.sites, self.grad_features, self.tet32.knn_sites, self.grad_feat_smooth) 
+            #backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.dim_feats, self.sites, self.grad_sdf_space, self.grad_features, self.fine_features, self.tet32.knn_sites, self.grad_feat_smooth) 
             #self.grad_features[:] = self.grad_feat_smooth[:]
             #self.grad_features[outside_flag[:] == 1.0] = 0.0  
             
@@ -524,7 +553,7 @@ class Runner:
                 #                    self.tet32.bnn_sites, self.tet32.offset_bnn, self.sdf_smooth)
                 
                 self.sdf_smooth[:] = 0.0
-                backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, 1, self.sites, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)
+                backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, 1, self.sites, self.grad_sdf_space, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)
 
                 cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, grad_sdf, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
                                               self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.weights_grad, self.eik_loss)
@@ -565,7 +594,7 @@ class Runner:
             ########################################
             
             self.optimizer_feat.zero_grad()
-            self.fine_features.grad = self.grad_features #+ 0.00001*self.grad_feat_smooth #+ 1.0e+5*self.grad_feat_reg / (mask_sum + 1.0e-5)
+            self.fine_features.grad = self.grad_features + self.tv_w*self.grad_feat_smooth #+ 1.0e+5*self.grad_feat_reg / (mask_sum + 1.0e-5)
             self.optimizer_feat.step()
 
             ########################################
@@ -584,7 +613,7 @@ class Runner:
             ########################################
             ##### Optimize sites positions #########
             ########################################
-            if (iter_step+1) % 3000 == 0 and iter_step < 15000:
+            if ((iter_step+1) % 3000 == 0 and iter_step < 12000) or (iter_step+1) == 20000:
                 self.sigma = self.sigma / 1.5
                 
                 self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, 2.0*self.sigma)
@@ -621,10 +650,11 @@ class Runner:
                 with torch.no_grad():  
                     delta_sites[:] = self.sites[:]
                 
-                self.color_network = ColorNetwork(**self.conf['model.color_network']).to(self.device)
-                params_to_train = []
-                params_to_train += list(self.color_network.parameters())
-                self.optimizer = torch.optim.Adam(params_to_train, lr=self.learning_rate)
+                if (iter_step+1) < 15000:
+                    self.color_network = ColorNetwork(**self.conf['model.color_network']).to(self.device)
+                    params_to_train = []
+                    params_to_train += list(self.color_network.parameters())
+                    self.optimizer = torch.optim.Adam(params_to_train, lr=self.learning_rate)
 
                 self.optimizer_sdf = torch.optim.Adam([self.sdf], lr=self.learning_rate_sdf)        
                 self.optimizer_feat = torch.optim.Adam([self.fine_features], lr=self.learning_rate_feat) 
@@ -640,6 +670,7 @@ class Runner:
                 self.learning_rate_cvt = self.learning_rate_cvt / 2.0
                 self.e_w = self.e_w / 10.0
                 self.learning_rate_sdf = 1.0e-4
+                self.tv_w = self.tv_w / 2.0
 
                 self.e_w = 1.0e-8
                 if (iter_step+1) == 6000:
@@ -655,7 +686,7 @@ class Runner:
                     self.s_w = 1.0e-6
                     self.e_w = 1.0e-9
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 5.0e-4
+                    self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-4
                     #self.end_iter_loc = 11000
 
@@ -664,20 +695,20 @@ class Runner:
                     #self.sigma = 0.03
                     self.s_w = 1.0e-7
                     self.e_w = 1.0e-10
-                    self.end_iter_loc = 3000
+                    self.end_iter_loc = 8000
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 1.0e-4
+                    self.learning_rate_sdf = 5.0e-5
                     self.learning_rate_feat = 5.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 0.01
                     
-                if (iter_step+1) == 15000:
+                if (iter_step+1) == 20000:
                     self.R = 25
                     #self.sigma = 0.02
-                    self.s_w = 1.0e-9
-                    self.e_w = 1.0e-10
+                    self.s_w = 1.0e-8
+                    self.e_w = 1.0e-8
                     self.end_iter_loc = 10000
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 5.0e-5
+                    self.learning_rate_sdf = 1.0e-5
                     self.learning_rate_feat = 1.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 0.0
 
@@ -687,7 +718,7 @@ class Runner:
                 
                 self.loc_iter = 0
                 
-                #self.save_checkpoint()                    
+                self.save_checkpoint()                    
                 torch.cuda.empty_cache()
 
                 #verbose = True
@@ -705,27 +736,31 @@ class Runner:
             if iter_step % self.val_freq == 0:
                 #self.inv_s = 1000
                 self.render_image(cam_ids, img_idx)
-                self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri.ply")
-                self.tet32.surface_from_sdf(self.sdf_smooth.cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri_smooth.ply")                
+                self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri.ply", self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
+                self.tet32.surface_from_sdf(self.sdf_smooth.cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri_smooth.ply", self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])                
                 #self.tet32.marching_tets(self.sdf.detach(), "Exp/bmvs_man/test_MT.ply")
                 #if iter_step > 1000:
                 #    self.tet32.save("Exp/bmvs_man/test.ply")                         
                 torch.cuda.empty_cache()
 
-            if iter_step == 1000:                
-                self.tv_w = 0.0
-            #if iter_step == 32000:  
-            #    self.s_w = 1.0e-8
+            #if iter_step == 1000:                
+            #    self.tv_w = 0.0
+            #if iter_step == 20000:  
+            #    self.tv_w = 0.0
+            #    self.s_w = 1.0e-6
             #    #self.learning_rate_sdf = 1.0e-5
                 
-            #if iter_step == 13000 or iter_step == 17000 or iter_step == 20000:                
-            #    with torch.no_grad():
-            #        self.sdf[:] = self.sdf[:] + self.sigma
+            if iter_step == 25000:                
+                with torch.no_grad():
+                    self.sdf[:] = self.sdf[:] * 4.0
 
             self.update_learning_rate(self.loc_iter)
             self.loc_iter = self.loc_iter + 1
 
         self.render_image(cam_ids, 0)
+        self.save_checkpoint()  
+        self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/final_tri.ply", self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
+                
 
     @torch.no_grad()
     def render_image(self, cam_ids, img_idx = 0, iter_step = 0, resolution_level = 1):
@@ -918,6 +953,7 @@ class Runner:
         self.grad_sdf_space = torch.zeros([self.sites.shape[0], 3]).float().cuda().contiguous()
         self.grad_feat_space = torch.zeros([self.sites.shape[0], 3, self.dim_feats]).float().cuda().contiguous()
         self.grad_mean_curve = torch.zeros([self.sites.shape[0]]).float().cuda().contiguous()
+        self.weights_grad_space = torch.zeros([3*self.tet32.KNN*self.sites.shape[0]]).float().cuda().contiguous()
         self.weights_grad = torch.zeros([self.sites.shape[0], 1]).float().cuda().contiguous()
         self.eik_loss = torch.zeros([self.sites.shape[0], 1]).float().cuda().contiguous()
         

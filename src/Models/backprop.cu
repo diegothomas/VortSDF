@@ -147,6 +147,7 @@ __global__ void knn_smooth_kernel(
     float sigma,
     const size_t dim_sdf,
     float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ grads,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ feat,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ neighbors,     // [N_voxels, 4] for each voxel => it's vertices)
@@ -162,10 +163,14 @@ __global__ void knn_smooth_kernel(
     float total_weight = 0.0f;
     float total_sdf = 0.0f;
 
-    int nb_lvl = num_knn / 32;
+    int nb_lvl = fmin(2, num_knn / 32);
 
-    float length_edge, length_feat;
+    float length_edge, length_feat, length_o = 0.0f;
     int knn_id;
+
+    float curr_point[3] {vertices[3*idx], vertices[3*idx + 1], vertices[3*idx + 2]};
+    float curr_grad[3] {grads[3*idx], grads[3*idx + 1], grads[3*idx + 2]};
+    float curr_edge[3] {};
 
     float radius = 2.0f*sigma;
     float max_dist = -1.0f;
@@ -174,12 +179,17 @@ __global__ void knn_smooth_kernel(
             knn_id = neighbors[num_knn*idx + lvl_curr*32 + i];
             if (knn_id == -1)
                 continue;
-            length_edge = (vertices[3*idx] - vertices[3*knn_id])*(vertices[3*idx] - vertices[3*knn_id]) +
-                                (vertices[3*idx + 1] - vertices[3*knn_id + 1])*(vertices[3*idx + 1] - vertices[3*knn_id + 1]) +
-                                (vertices[3*idx + 2] - vertices[3*knn_id + 2])*(vertices[3*idx + 2] - vertices[3*knn_id + 2]);
+            
+            curr_edge[0] = (curr_point[0] - vertices[3*knn_id]);
+            curr_edge[1] = (curr_point[1] - vertices[3*knn_id + 1]);
+            curr_edge[2] = (curr_point[2] - vertices[3*knn_id + 2]);
+            length_edge = curr_edge[0]*curr_edge[0] + curr_edge[1]*curr_edge[1] + curr_edge[2]*curr_edge[2];
             
             if (length_edge < max_dist || sdf[dim_sdf*knn_id] == 0.0f || sqrt(length_edge) > radius)
                 continue;
+
+            // add bilateral smooth term with grad
+            //length_o = fabs(curr_edge[0]*curr_grad[0] + curr_edge[1]*curr_grad[1] + curr_edge[2]*curr_grad[2]);
 
             // add bilateral smooth term with features
             length_feat = 0.0f;
@@ -192,8 +202,8 @@ __global__ void knn_smooth_kernel(
                 max_dist = length_edge;
             
             for (int i = 0; i < dim_sdf; i++) {
-                total_sdf = total_sdf + exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)) * sdf[dim_sdf*knn_id + i];
-                total_weight = total_weight + exp(-length_edge/(sigma*sigma) - length_feat/(0.05f));
+                total_sdf = total_sdf + exp(-length_edge/(sigma*sigma) - length_feat/(0.05f) - (length_o*length_o)/(sigma*sigma)) * sdf[dim_sdf*knn_id + i];
+                total_weight = total_weight + exp(-length_edge/(sigma*sigma) - length_feat/(0.05f) - (length_o*length_o)/(sigma*sigma));
             }
         }
         radius = 2.0f*radius;
@@ -586,6 +596,7 @@ void knn_smooth_sdf_cuda(
     float sigma,
     size_t dim_sdf,
     torch::Tensor vertices,
+    torch::Tensor grads,
     torch::Tensor sdf,
     torch::Tensor feat,
     torch::Tensor neighbors,
@@ -601,6 +612,7 @@ void knn_smooth_sdf_cuda(
             sigma,
             dim_sdf,
             vertices.data_ptr<float>(),       // [N_rays, 6]
+            grads.data_ptr<float>(),       // [N_rays, 6]
             sdf.data_ptr<float>(),       // [N_rays, 6]
             feat.data_ptr<float>(),       // [N_rays, 6]
             neighbors.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)

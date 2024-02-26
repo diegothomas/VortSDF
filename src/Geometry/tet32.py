@@ -509,14 +509,21 @@ class Tet32(Process):
         ply.save_ply(filename, np.transpose(nnz_vertices_out.cpu()),  f = np.transpose(nnz_faces.cpu()))  
 
 
-    def surface_from_sdf(self, values, filename = ""):
+    def surface_from_sdf(self, values, filename = "", translate = None, scale = None):
         #print(values.shape)
         tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(values.astype(np.float64)),0.0)
 
         """filter_smooth_laplacian(self, number_of_iterations=1, lambda_filter=0.5, filter_scope=<FilterScope.All: 0>)"""
         
+        if translate is not None:
+            translate = np.ascontiguousarray(translate, dtype=np.float32)
+        
         #print(tri_mesh)
         self.tri_vertices = np.asarray(tri_mesh.vertices)
+
+        if translate is not None:
+            self.tri_vertices = self.tri_vertices*scale + translate
+
         self.tri_faces = np.asarray(tri_mesh.triangles)
         if not filename == "":
             ply.save_ply(filename, np.asarray(self.tri_vertices).transpose(), f=(np.asarray(self.tri_faces)).transpose())
