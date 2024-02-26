@@ -1006,9 +1006,9 @@ __global__ void tet32_march_cuda_kernel(
 		//float contrib_out = (1.0f - sdf2Alpha(next_sdf, (1.0f-lambda)*next_sdf + lambda * prev_sdf_tet, inv_s));
         if (prev_tet_id != -1) { //})  && lambda > 0.0f && (contrib_in > 0.0f || contrib_out > 0.0f || next_sdf*prev_sdf_tet < 0.0f)) {
 			if (true) { //(curr_z + STEP > curr_dist) {
-				if (prev_sdf_tet > next_sdf) {
-				//if (prev_sdf_tet*next_sdf <= 0.0f || 
-				//	(prev_sdf_tet > next_sdf && fmin(fabs(next_sdf), fabs(prev_sdf_tet))*inv_s < 3.0*CLIP_ALPHA)) {
+				//if (prev_sdf_tet > next_sdf) {
+				if (prev_sdf_tet*next_sdf <= 0.0f || 
+					(prev_sdf_tet > next_sdf && fmin(fabs(next_sdf), fabs(prev_sdf_tet))*inv_s < 2.0*CLIP_ALPHA)) {
 					z_val_ray[2 * s_id] = prev_dist_tet;
 					z_val_ray[2 * s_id + 1] = curr_dist;
 

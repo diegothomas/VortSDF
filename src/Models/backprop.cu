@@ -108,6 +108,7 @@ __global__ void smooth_grad_kernel(
     const size_t num_edges,                // number of rays
     float sigma,
     float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ activated,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ feat,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ edges,     // [N_voxels, 4] for each voxel => it's vertices)
@@ -121,6 +122,9 @@ __global__ void smooth_grad_kernel(
     {
         return;
     }
+
+    if (activated[edges[2*idx]] == 0 && activated[edges[2*idx + 1]] == 0)
+        return;
     
     float length_edge = (vertices[3*edges[2*idx]] - vertices[3*edges[2*idx+1]])*(vertices[3*edges[2*idx]] - vertices[3*edges[2*idx+1]]) +
                             (vertices[3*edges[2*idx] + 1] - vertices[3*edges[2*idx+1] + 1])*(vertices[3*edges[2*idx] + 1] - vertices[3*edges[2*idx+1] + 1]) +
@@ -145,8 +149,10 @@ __global__ void knn_smooth_kernel(
     const size_t num_sites,                // number of rays
     const size_t num_knn,  
     float sigma,
+    float sigma_feat,
     const size_t dim_sdf,
     float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ activated,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ grads,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ feat,     // [N_voxels, 4] for each voxel => it's vertices
@@ -159,6 +165,9 @@ __global__ void knn_smooth_kernel(
     {
         return;
     }
+
+    if (activated[idx] == 0)
+        return;
 
     float total_weight = 0.0f;
     float total_sdf = 0.0f;
@@ -395,8 +404,62 @@ __global__ void space_reg_kernel(
     return;
 }
 
+__global__ void activate_sites_kernel(
+    const size_t num_rays,                // number of rays
+    const size_t num_knn, 
+    const int *__restrict__ cell_ids,
+    const int *__restrict__ offsets,
+    int *__restrict__ activated
+    )
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_rays)
+    {
+        return;
+    }
+    
+    int knn_id, id_prev, id;
+    int start = offsets[2 * idx];
+    int end = offsets[2 * idx + 1];
+    for (int t = start; t < start + end; t++) {      
+        for (int i = 0; i < 6; i++) {
+            id = cell_ids[12 * t + 6 + i];
+            //activated[id] = 1;
+            atomicExch(&activated[id], 1);
+        }        
+    }
+    return;
+}
 
+__global__ void activate_knn_kernel(
+    const size_t num_sites,                // number of rays
+    const size_t num_knn, 
+    const int *__restrict__ neighbors,     
+    const int *__restrict__ activated_buff,     
+    int *__restrict__ activated
+    )
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_sites)
+    {
+        return;
+    }
 
+    if (activated_buff[idx] == 0)
+        return;
+    
+    int knn_id, id_prev, id;
+
+    for (int j = 0; j < 64/*num_knn*/; j++) {
+        knn_id = neighbors[num_knn*idx + j];
+        if (knn_id == -1)
+            continue;
+        //activated[knn_id] = 1;
+        atomicExch(&activated[knn_id], 1);
+    }    
+
+    return;
+}
 /** CPU functions **/
 /** CPU functions **/
 /** CPU functions **/
@@ -466,6 +529,7 @@ void smooth_cuda(
     size_t num_edges,
     float sigma,
     torch::Tensor vertices,
+    torch::Tensor activated,
     torch::Tensor sdf,
     torch::Tensor feat,
     torch::Tensor edges,
@@ -481,6 +545,7 @@ void smooth_cuda(
             num_edges,
             sigma,
             vertices.data_ptr<float>(),
+            activated.data_ptr<int>(),
             sdf.data_ptr<float>(),
             feat.data_ptr<float>(),
             edges.data_ptr<int>(),
@@ -594,8 +659,10 @@ void knn_smooth_sdf_cuda(
     size_t num_sites,
     size_t num_knn,
     float sigma,
+    float sigma_feat,
     size_t dim_sdf,
     torch::Tensor vertices,
+    torch::Tensor activated, 
     torch::Tensor grads,
     torch::Tensor sdf,
     torch::Tensor feat,
@@ -610,8 +677,10 @@ void knn_smooth_sdf_cuda(
             num_sites,                // number of rays
             num_knn,
             sigma,
+            sigma_feat,
             dim_sdf,
             vertices.data_ptr<float>(),       // [N_rays, 6]
+            activated.data_ptr<int>(),       // [N_rays, 6]
             grads.data_ptr<float>(),       // [N_rays, 6]
             sdf.data_ptr<float>(),       // [N_rays, 6]
             feat.data_ptr<float>(),       // [N_rays, 6]
@@ -620,3 +689,37 @@ void knn_smooth_sdf_cuda(
     }));
 }
 
+void activate_sites_cuda(
+    size_t num_rays,
+    size_t num_sites,
+    size_t num_knn,
+    torch::Tensor cell_ids,
+    torch::Tensor offsets,
+    torch::Tensor neighbors,
+    torch::Tensor activated_buff,
+    torch::Tensor activated
+)
+{
+    const int threads = 1024;
+    const int blocks = (num_rays + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+    AT_DISPATCH_ALL_TYPES( cell_ids.type(),"activate_sites_kernel", ([&] {  
+        activate_sites_kernel CUDA_KERNEL(blocks,threads) (
+            num_rays,    
+            num_knn,
+            cell_ids.data_ptr<int>(),     
+            offsets.data_ptr<int>(),    
+            activated_buff.data_ptr<int>());
+    }));
+
+    cudaDeviceSynchronize();
+
+    const int blocks2 = (num_sites + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+    AT_DISPATCH_ALL_TYPES( cell_ids.type(),"activate_knn_kernel", ([&] {  
+        activate_knn_kernel CUDA_KERNEL(blocks2,threads) (
+            num_sites,    
+            num_knn,
+            neighbors.data_ptr<int>(),      
+            activated_buff.data_ptr<int>(),
+            activated.data_ptr<int>());
+    }));
+}

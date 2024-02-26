@@ -15,6 +15,7 @@ void knn_sdf_space_grad_cuda(
     size_t num_knn,                // number of rays
     torch::Tensor  neighbors,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  activated,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  feat,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices
@@ -118,6 +119,7 @@ void knn_sdf_space_grad(
     size_t num_knn,                // number of rays
     torch::Tensor  neighbors,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  activated,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  feat,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices
@@ -129,6 +131,7 @@ void knn_sdf_space_grad(
         num_knn,                // number of rays
         neighbors,  // [N_voxels, 4] for each voxel => it's neighbors
         sites,  // [N_voxels, 4] for each voxel => it's neighbors
+        activated,  // [N_voxels, 4] for each voxel => it's neighbors
         sdf,  // [N_voxels, 4] for each voxel => it's neighbors
         feat,  // [N_voxels, 4] for each voxel => it's neighbors
         grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices

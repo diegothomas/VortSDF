@@ -168,6 +168,7 @@ __global__ void knn_sdf_space_grad_cuda_kernel(
     const size_t num_knn,                // number of rays   
     const int *__restrict__ neighbors,  // [N_voxels, 4] for each voxel => it's neighbors
     const float *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices
+    const int *__restrict__ activated,     // [N_voxels, 4] for each voxel => it's vertices
     const float *__restrict__ SDF,     // [N_voxels, 4] for each voxel => it's vertices
     const float *__restrict__ Feat,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ Weights,     // [N_voxels, 4] for each voxel => it's vertices
@@ -180,6 +181,9 @@ __global__ void knn_sdf_space_grad_cuda_kernel(
     {
         return;
     }
+
+    if (activated[idx] == 0)
+        return;
 
     float curr_site[3] {sites[3*idx], sites[3*idx + 1], sites[3*idx + 2]};    
     float curr_n[3] {0.0, 0.0, 0.0};
@@ -1106,6 +1110,7 @@ void knn_sdf_space_grad_cuda(
     size_t num_knn,                // number of rays
     torch::Tensor  neighbors,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  activated,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  feat,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices
@@ -1120,6 +1125,7 @@ void knn_sdf_space_grad_cuda(
                 num_knn,            
                 neighbors.data_ptr<int>(),
                 sites.data_ptr<float>(),
+                activated.data_ptr<int>(),
                 sdf.data_ptr<float>(),
                 feat.data_ptr<float>(),
                 weights_tot.data_ptr<float>(),

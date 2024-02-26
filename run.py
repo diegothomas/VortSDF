@@ -290,6 +290,7 @@ class Runner:
         self.s_start = 10.0
         self.inv_s = 0.1
         self.sigma = 0.08
+        self.sigma_feat = 0.05
         step_size = 0.01
         #step_size = 0.003
         self.loc_iter = 0
@@ -339,6 +340,12 @@ class Runner:
             if verbose:
                 print('fill_samples time:', timer() - start)   
 
+            start = timer()
+            self.activated_buff[:] = 0
+            self.activated[:] = 1
+            #backprop_cuda.activate_sites(rays_o.shape[0], self.sites.shape[0], 96, self.out_ids, self.offsets, self.tet32.knn_sites, self.activated_buff, self.activated)
+            #if verbose:
+            #    print('activate time:', timer() - start)   
 
             if False: 
                 #pts = self.samples[:nb_samples,:].cpu()
@@ -497,20 +504,21 @@ class Runner:
             ########################################
 
             ############ Compute spatial SDF gradients
-            self.grad_sdf_space[:] = 0.0
+            """self.grad_sdf_space[:] = 0.0
             self.grad_feat_space[:] = 0.0
             self.weights_grad_space[:] = 0.0
-            cvt_grad_cuda.knn_sdf_space_grad(self.sites.shape[0], self.tet32.KNN, self.tet32.knn_sites, self.sites, 
+            cvt_grad_cuda.knn_sdf_space_grad(self.sites.shape[0], self.tet32.KNN, self.tet32.knn_sites, self.sites, self.activated,
                                                 self.sdf, self.fine_features, self.grad_sdf_space, self.grad_feat_space, self.weights_grad_space)
-
+            """
             ### SMOOTH SDF GRADIENT
             grad_sdf = self.vortSDF_renderer_fine.grads_sdf / (mask_sum + 1.0e-5)
-            """self.grad_sdf_smooth[:] = grad_sdf[:]
+            self.grad_sdf_smooth[:] = grad_sdf[:]
             self.counter_smooth[:] = 1.0
             backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, 1, self.sites, grad_sdf, 
-                                 self.tet32.edges, self.grad_sdf_smooth, self.counter_smooth)"""
-            self.grad_sdf_smooth[:] = 0.0
-            backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, 1, self.sites, self.grad_sdf_space, grad_sdf, self.fine_features, self.tet32.knn_sites, self.grad_sdf_smooth)
+                                 self.tet32.edges, self.grad_sdf_smooth, self.counter_smooth)
+            """self.grad_sdf_smooth[:] = 0.0
+            backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.sigma_feat, 1, self.sites, self.activated,
+                                        self.grad_sdf_space, grad_sdf, self.fine_features, self.tet32.knn_sites, self.grad_sdf_smooth)"""
             grad_sdf[:] = self.grad_sdf_smooth[:]
             grad_sdf[outside_flag[:] == 1.0] = 0.0   
 
@@ -535,11 +543,11 @@ class Runner:
             self.grad_norm_smooth[:] = 0.0
             self.eik_loss[:] = 0.0
             if self.s_w > 0.0: # and iter_step % 10 == 0:
-                """with torch.no_grad():
+                with torch.no_grad():
                     self.sdf_smooth[:] = self.sdf[:]
                 self.counter_smooth[:] = 1.0
                 backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, 1, self.sites, self.sdf, 
-                                    self.tet32.edges, self.sdf_smooth, self.counter_smooth)"""
+                                    self.tet32.edges, self.sdf_smooth, self.counter_smooth)
                 
                 """if iter_step > 12000:
                     for _ in range(10):
@@ -552,8 +560,9 @@ class Runner:
                 #backprop_cuda.bnn_smooth(self.sites.shape[0], self.sigma, 1, self.sites, self.sdf, 
                 #                    self.tet32.bnn_sites, self.tet32.offset_bnn, self.sdf_smooth)
                 
-                self.sdf_smooth[:] = 0.0
-                backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, 1, self.sites, self.grad_sdf_space, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)
+                """self.sdf_smooth[:] = 0.0
+                backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.sigma_feat, 1, self.sites,  self.activated,
+                                         self.grad_sdf_space, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)"""
 
                 cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, grad_sdf, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
                                               self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.weights_grad, self.eik_loss)
@@ -582,7 +591,8 @@ class Runner:
                 self.grad_sdf_smooth[:] = 0.0
                 self.grad_feat_smooth[:] = 0.0
                 self.weight_sdf_smooth[:] = 0.0
-                backprop_cuda.smooth_sdf(self.tet32.edges.shape[0], self.sigma, self.sites, self.sdf, self.fine_features, self.tet32.edges, self.grad_sdf_smooth, self.grad_feat_smooth, self.weight_sdf_smooth)
+                backprop_cuda.smooth_sdf(self.tet32.edges.shape[0], self.sigma, self.sites, self.activated,
+                                         self.sdf, self.fine_features, self.tet32.edges, self.grad_sdf_smooth, self.grad_feat_smooth, self.weight_sdf_smooth)
                 self.weight_sdf_smooth[self.weight_sdf_smooth[:] == 0.0] = 1.0
                 self.grad_sdf_smooth = self.grad_sdf_smooth / self.weight_sdf_smooth
                 self.grad_feat_smooth = self.grad_feat_smooth / self.weight_sdf_smooth.reshape(-1,1)
@@ -704,8 +714,10 @@ class Runner:
                 if (iter_step+1) == 20000:
                     self.R = 25
                     #self.sigma = 0.02
-                    self.s_w = 1.0e-8
-                    self.e_w = 1.0e-8
+                    self.sigma_feat = 0.02
+                    self.s_w = 1.0e-10
+                    self.e_w = 1.0e-10
+                    self.tv_w = 1.0e-6
                     self.end_iter_loc = 10000
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-5
@@ -926,6 +938,9 @@ class Runner:
 
         self.mask_grad = torch.zeros(self.sites.shape).cuda()       
         self.mask_grad = self.mask_grad.contiguous()
+
+        self.activated_buff = torch.zeros(self.sites.shape[0], dtype=torch.int32).cuda().contiguous()     
+        self.activated = torch.zeros(self.sites.shape[0], dtype=torch.int32).cuda().contiguous()      
 
         self.sdf_smooth = torch.zeros([self.sdf.shape[0]]).cuda().contiguous()  
         self.sdf_smooth_buff = torch.zeros([self.sdf.shape[0]]).cuda().contiguous()   

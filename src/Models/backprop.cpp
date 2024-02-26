@@ -25,6 +25,7 @@ void smooth_cuda(
     size_t num_edges,
     float sigma,
     torch::Tensor vertices,
+    torch::Tensor activated,
     torch::Tensor sdf,
     torch::Tensor feat,
     torch::Tensor edges,
@@ -74,8 +75,10 @@ void knn_smooth_sdf_cuda(
     size_t num_sites,
     size_t num_knn,
     float sigma,
+    float sigma_feat,
     size_t dim_sdf,
     torch::Tensor vertices,
+    torch::Tensor activated, 
     torch::Tensor grads,
     torch::Tensor sdf,
     torch::Tensor feat,
@@ -83,6 +86,17 @@ void knn_smooth_sdf_cuda(
     torch::Tensor sdf_smooth
 );
 
+
+void activate_sites_cuda(
+    size_t num_rays,
+    size_t num_sites,
+    size_t num_knn,
+    torch::Tensor cell_ids,
+    torch::Tensor offsets,
+    torch::Tensor neighbors,
+    torch::Tensor activated_buff,
+    torch::Tensor activated
+);
 
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
@@ -131,6 +145,7 @@ void smooth_sdf(
     size_t num_edges,
     float sigma,
     torch::Tensor vertices,
+    torch::Tensor activated,
     torch::Tensor sdf,
     torch::Tensor feat,
     torch::Tensor edges,
@@ -142,6 +157,7 @@ void smooth_sdf(
     smooth_cuda(num_edges,
     sigma,
     vertices,
+    activated,
     sdf,
     feat,
     edges,
@@ -227,8 +243,10 @@ void knn_smooth(
     size_t num_sites,
     size_t num_knn,
     float sigma,
+    float sigma_feat,
     size_t dim_sdf,
     torch::Tensor vertices,
+    torch::Tensor activated, 
     torch::Tensor grads,
     torch::Tensor sdf,
     torch::Tensor feat,
@@ -239,13 +257,36 @@ void knn_smooth(
         num_sites,
         num_knn,
         sigma,
+        sigma_feat,
         dim_sdf,
         vertices,
+        activated, 
         grads,
         sdf,
         feat,
         neighbors,
         sdf_smooth);
+}
+
+void activate_sites(
+    size_t num_rays,
+    size_t num_sites,
+    size_t num_knn,
+    torch::Tensor cell_ids,
+    torch::Tensor offsets,
+    torch::Tensor neighbors,
+    torch::Tensor activated_buff,
+    torch::Tensor activated
+) {
+    activate_sites_cuda(
+        num_rays,
+        num_sites,
+        num_knn,
+        cell_ids,
+        offsets,
+        neighbors,
+        activated_buff,
+        activated);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
@@ -256,4 +297,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("smooth", &smooth, "smooth (CPP)");
     m.def("bnn_smooth", &bnn_smooth, "bnn_smooth (CPP)");
     m.def("knn_smooth", &knn_smooth, "knn_smooth (CPP)");
+    m.def("activate_sites", &activate_sites, "activate_sites (CPP)");
 }

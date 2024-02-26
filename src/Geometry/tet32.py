@@ -301,6 +301,8 @@ class Tet32(Process):
         grad_feat_space = torch.zeros([self.sites.shape[0], 3, fine_features.shape[1]]).float().cuda().contiguous()
         weights_grad = torch.zeros([3*self.KNN*self.sites.shape[0]]).float().cuda().contiguous()
 
+        activated = torch.ones([self.sites.shape[0]]).int().cuda().contiguous()
+
         grad_sites = torch.zeros(self.sites.shape).cuda()       
         grad_sites = grad_sites.contiguous()
 
@@ -328,7 +330,7 @@ class Tet32(Process):
             grad_sdf_space[:] = 0.0
             grad_feat_space[:] = 0.0
             weights_grad[:] = 0.0
-            cvt_grad_cuda.knn_sdf_space_grad(self.sites.shape[0], self.KNN, self.knn_sites, self.sites, sdf, fine_features, grad_sdf_space, grad_feat_space, weights_grad)
+            cvt_grad_cuda.knn_sdf_space_grad(self.sites.shape[0], self.KNN, self.knn_sites, self.sites, activated, sdf, fine_features, grad_sdf_space, grad_feat_space, weights_grad)
   
             #cvt_grad_cuda.sdf_space_grad(self.nb_tets, self.sites.shape[0], self.summits, self.sites, sdf, fine_features, grad_sdf_space, grad_feat_space, weights_grad)
   
