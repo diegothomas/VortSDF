@@ -574,6 +574,7 @@ __global__ void cvt_grad_cuda_kernel(
     const float *__restrict__ gammas, 
     const int *__restrict__ neighbors,  // [N_voxels, 4] for each voxel => it's neighbors
     const float *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices
+    const float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ grad_sites,     // [N_voxels, 4] for each voxel => it's vertices
     float* loss
 )
@@ -609,7 +610,7 @@ __global__ void cvt_grad_cuda_kernel(
     float num2 = 0.0f;
     float weight_cvt = 1.0f;
 
-    float nmle_length;
+    float nmle_length, alpha, alpha_min, alpha_max;
     float d_min_dist[3] {0.0, 0.0, 0.0};
     float d_max_dist[3] {0.0, 0.0, 0.0};
 
@@ -624,6 +625,7 @@ __global__ void cvt_grad_cuda_kernel(
         float max_dist = -1.0e32;
         int max_id = -1;
         float dist = 0.0f;
+        alpha_min = 0.5f; alpha_max = 0.5f;
 
         for (int i = 0; i < num_knn; i++) {
             knn_id = neighbors[num_knn*idx + i];
@@ -641,10 +643,14 @@ __global__ void cvt_grad_cuda_kernel(
             nmle[1] = nmle[1] / nmle_length;
             nmle[2] = nmle[2] / nmle_length;
             
+            alpha = 0.5f;
+            if (sdf[idx]*sdf[knn_id] < 0.0f)
+                alpha = fabs(sdf[idx])/(fabs(sdf[idx]) + fabs(sdf[knn_id]));
+
             // Compute middle point
-            b_point[0] = (sites[3*knn_id] + curr_site[0]) / 2.0f;
-            b_point[1] = (sites[3*knn_id + 1] + curr_site[1]) / 2.0f;
-            b_point[2] = (sites[3*knn_id + 2] + curr_site[2]) / 2.0f;
+            b_point[0] = (alpha*sites[3*knn_id] + (1.0f-alpha)*curr_site[0]);
+            b_point[1] = (alpha*sites[3*knn_id + 1] + (1.0f-alpha)*curr_site[1]);
+            b_point[2] = (alpha*sites[3*knn_id + 2] + (1.0f-alpha)*curr_site[2]);
             
             // Compute ray - plane intersection point
             denom = nmle[0] * curr_ray[0] + nmle[1] * curr_ray[1] + nmle[2] * curr_ray[2];
@@ -653,10 +659,12 @@ __global__ void cvt_grad_cuda_kernel(
                 if (dist >= 0.0 && dist < min_dist) {
                     min_dist = dist;
                     min_id = knn_id;
+                    alpha_min = alpha;
                 }
                 if (dist <= 0.0 && dist > max_dist) {
                     max_dist = dist;
                     max_id = knn_id;
+                    alpha_max = alpha;
                 }
             }
         }                    
@@ -678,18 +686,21 @@ __global__ void cvt_grad_cuda_kernel(
                 (sites[3*max_id+1] - curr_site[1]) * (sites[3*max_id+1] - curr_site[1])+ 
                 (sites[3*max_id+2] - curr_site[2]) * (sites[3*max_id+2] - curr_site[2]);
 
-        d_min_dist[0] = 0.5 * (-(sites[3*min_id] - curr_site[0])/denom1 + num1 * curr_ray[0]/(denom1*denom1));
-        d_min_dist[1] = 0.5 * (-(sites[3*min_id+1] - curr_site[1])/denom1 + num1 * curr_ray[1]/(denom1*denom1));
-        d_min_dist[2] = 0.5 * (-(sites[3*min_id+2] - curr_site[2])/denom1 + num1 * curr_ray[2]/(denom1*denom1));
+        d_min_dist[0] = alpha_min * (-(sites[3*min_id] - curr_site[0])/denom1 + num1 * curr_ray[0]/(denom1*denom1));
+        d_min_dist[1] = alpha_min * (-(sites[3*min_id+1] - curr_site[1])/denom1 + num1 * curr_ray[1]/(denom1*denom1));
+        d_min_dist[2] = alpha_min * (-(sites[3*min_id+2] - curr_site[2])/denom1 + num1 * curr_ray[2]/(denom1*denom1));
 
-        d_max_dist[0] = 0.5 * (-(sites[3*max_id] - curr_site[0])/denom2 + num2 * curr_ray[0]/(denom2*denom2));
-        d_max_dist[1] = 0.5 * (-(sites[3*max_id+1] - curr_site[1])/denom2 + num2 * curr_ray[1]/(denom2*denom2));   
-        d_max_dist[2] = 0.5 * (-(sites[3*max_id+2] - curr_site[2])/denom2 + num2 * curr_ray[2]/(denom2*denom2));       
+        d_max_dist[0] = alpha_max * (-(sites[3*max_id] - curr_site[0])/denom2 + num2 * curr_ray[0]/(denom2*denom2));
+        d_max_dist[1] = alpha_max * (-(sites[3*max_id+1] - curr_site[1])/denom2 + num2 * curr_ray[1]/(denom2*denom2));   
+        d_max_dist[2] = alpha_max * (-(sites[3*max_id+2] - curr_site[2])/denom2 + num2 * curr_ray[2]/(denom2*denom2));       
 
         // gradients related to CVT loss
-        grad_sites[3*idx] = grad_sites[3*idx] - (min_dist * d_min_dist[0] + max_dist * d_max_dist[0]);  
+        grad_sites[3*idx] = grad_sites[3*idx] - (min_dist + max_dist) * (d_min_dist[0] + d_max_dist[0]);  
+        grad_sites[3*idx+1] = grad_sites[3*idx+1] - (min_dist + max_dist) * (d_min_dist[1] + d_max_dist[1]);    
+        grad_sites[3*idx+2] = grad_sites[3*idx+2] - (min_dist + max_dist) * (d_min_dist[2] + d_max_dist[2]);   
+        /*grad_sites[3*idx] = grad_sites[3*idx] - (min_dist * d_min_dist[0] + max_dist * d_max_dist[0]);  
         grad_sites[3*idx+1] = grad_sites[3*idx+1] - (min_dist * d_min_dist[1] + max_dist * d_max_dist[1]);    
-        grad_sites[3*idx+2] = grad_sites[3*idx+2] - (min_dist * d_min_dist[2] + max_dist * d_max_dist[2]);   
+        grad_sites[3*idx+2] = grad_sites[3*idx+2] - (min_dist * d_min_dist[2] + max_dist * d_max_dist[2]);   */
         /*grad_sites[3*idx] = grad_sites[3*idx] - (min_dist+max_dist) * curr_ray[0];  
         grad_sites[3*idx+1] = grad_sites[3*idx+1] - (min_dist+max_dist) * curr_ray[1];    
         grad_sites[3*idx+2] = grad_sites[3*idx+2] - (min_dist+max_dist) * curr_ray[2];*/ 
@@ -1214,6 +1225,7 @@ float cvt_grad_cuda(
     torch::Tensor gammas, 
     torch::Tensor neighbors,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor grad_sites    // [N_sites, 3] for each voxel => it's vertices
 )   {
     
@@ -1233,6 +1245,7 @@ float cvt_grad_cuda(
                 gammas.data_ptr<float>(),
                 neighbors.data_ptr<int>(),
                 sites.data_ptr<float>(),
+                sdf.data_ptr<float>(),
                 grad_sites.data_ptr<float>(),
                 loss); 
     }));

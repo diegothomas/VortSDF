@@ -275,6 +275,7 @@ __global__ void smooth_kernel(
     const size_t dim_sdf,
     float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ feat,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ edges,     // [N_voxels, 4] for each voxel => it's vertices)
     float *__restrict__ sdf_smooth,    // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ counter     // [N_voxels, 4] for each voxel => it's vertices
@@ -289,19 +290,26 @@ __global__ void smooth_kernel(
     float length_edge = (vertices[3*edges[2*idx]] - vertices[3*edges[2*idx+1]])*(vertices[3*edges[2*idx]] - vertices[3*edges[2*idx+1]]) +
                             (vertices[3*edges[2*idx] + 1] - vertices[3*edges[2*idx+1] + 1])*(vertices[3*edges[2*idx] + 1] - vertices[3*edges[2*idx+1] + 1]) +
                             (vertices[3*edges[2*idx] + 2] - vertices[3*edges[2*idx+1] + 2])*(vertices[3*edges[2*idx] + 2] - vertices[3*edges[2*idx+1] + 2]);
+
+    // add bilateral smooth term with features
+    float length_feat = 0.0f;
+    for (int i = 0; i < DIM_L_FEAT; i++) {
+        length_feat = length_feat +  (feat[DIM_L_FEAT*edges[2*idx]+ i] - feat[DIM_L_FEAT*edges[2*idx+1]+ i])*
+                                        (feat[DIM_L_FEAT*edges[2*idx]+ i] - feat[DIM_L_FEAT*edges[2*idx+1]+ i]);
+    }
               
     for (int i = 0; i < dim_sdf; i++) {
         if (sdf[dim_sdf*edges[2*idx + 1] + i] != 0.0f)
-            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx] + i], exp(-length_edge/(sigma*sigma)) * sdf[dim_sdf*edges[2*idx + 1] + i]);          
+            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx] + i], exp(-length_edge/(sigma*sigma) - length_feat/(sigma)) * sdf[dim_sdf*edges[2*idx + 1] + i]);          
         
         if (sdf[dim_sdf*edges[2*idx] + i] != 0.0f)
-            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx + 1] + i], exp(-length_edge/(sigma*sigma)) * sdf[dim_sdf*edges[2*idx] + i]);
+            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx + 1] + i], exp(-length_edge/(sigma*sigma) - length_feat/(sigma)) * sdf[dim_sdf*edges[2*idx] + i]);
     }
 
     if (sdf[dim_sdf*edges[2*idx + 1]] != 0.0f)
-        atomicAdd(&counter[edges[2*idx]], exp(-length_edge/(sigma*sigma)));
+        atomicAdd(&counter[edges[2*idx]], exp(-length_edge/(sigma*sigma) - length_feat/(sigma)));
     if (sdf[dim_sdf*edges[2*idx]] != 0.0f)
-        atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/(sigma*sigma)));
+        atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/(sigma*sigma) - length_feat/(sigma)));
 
     return;
 }
@@ -598,6 +606,7 @@ void smooth_sdf_cuda(
     size_t dim_sdf,
     torch::Tensor vertices,
     torch::Tensor sdf,
+    torch::Tensor feat,
     torch::Tensor edges,
     torch::Tensor sdf_smooth,
     torch::Tensor counter 
@@ -612,6 +621,7 @@ void smooth_sdf_cuda(
             dim_sdf,
             vertices.data_ptr<float>(),       // [N_rays, 6]
             sdf.data_ptr<float>(),       // [N_rays, 6]
+            feat.data_ptr<float>(),       // [N_rays, 6]
             edges.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)
             sdf_smooth.data_ptr<float>(),     // [N_voxels, 4] for each voxel => it's vertices)
             counter.data_ptr<float>());

@@ -54,6 +54,7 @@ float cvt_grad_cuda(
     torch::Tensor gammas, 
     torch::Tensor neighbors,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor grad_sites    // [N_sites, 3] for each voxel => it's vertices
 );
 
@@ -203,6 +204,7 @@ float cvt_grad(
     torch::Tensor gammas, 
     torch::Tensor neighbors,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor grad_sites    // [N_sites, 3] for each voxel => it's vertices
 ) {
     //std::cout << "March through implicit cvt" << std::endl; 
@@ -219,6 +221,7 @@ float cvt_grad(
         gammas, 
         neighbors,   
         sites, 
+        sdf, 
         grad_sites );
 
 }

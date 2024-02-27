@@ -55,6 +55,7 @@ void smooth_sdf_cuda(
     size_t dim_sdf,
     torch::Tensor vertices,
     torch::Tensor sdf,
+    torch::Tensor feat,
     torch::Tensor edges,
     torch::Tensor sdf_smooth,
     torch::Tensor counter 
@@ -200,6 +201,7 @@ void smooth(
     size_t dim_sdf,
     torch::Tensor vertices,
     torch::Tensor sdf,
+    torch::Tensor feat,
     torch::Tensor edges,
     torch::Tensor sdf_smooth,
     torch::Tensor counter 
@@ -212,6 +214,7 @@ void smooth(
     dim_sdf,
     vertices,
     sdf,
+    feat,
     edges,
     sdf_smooth,
     counter);
