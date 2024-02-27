@@ -235,6 +235,9 @@ class Runner:
         with torch.no_grad():
             norm_sites = torch.linalg.norm(self.sites, ord=2, axis=-1, keepdims=True)
             self.sdf[:] = norm_sites[:,0] - 0.5
+
+        #self.tet32.clipped_cvt(self.sdf.detach(), self.fine_features.detach(), outside_flag, 
+        #                       cam_ids, self.learning_rate_cvt, "Exp/bmvs_man/clipped_CVT.ply")
         #input()  
         
         self.Allocate_data()
@@ -512,14 +515,14 @@ class Runner:
             """
             ### SMOOTH SDF GRADIENT
             grad_sdf = self.vortSDF_renderer_fine.grads_sdf / (mask_sum + 1.0e-5)
-            """self.grad_sdf_smooth[:] = grad_sdf[:]
+            self.grad_sdf_smooth[:] = grad_sdf[:]
             self.counter_smooth[:] = 1.0
             backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, 1, self.sites, grad_sdf, 
-                                 self.fine_features, self.tet32.edges, self.grad_sdf_smooth, self.counter_smooth)"""
+                                 self.fine_features, self.tet32.edges, self.grad_sdf_smooth, self.counter_smooth)
             """self.grad_sdf_smooth[:] = 0.0
             backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.sigma_feat, 1, self.sites, self.activated,
                                         self.grad_sdf_space, grad_sdf, self.fine_features, self.tet32.knn_sites, self.grad_sdf_smooth)"""
-            #grad_sdf[:] = self.grad_sdf_smooth[:]
+            grad_sdf[:] = self.grad_sdf_smooth[:]
             grad_sdf[outside_flag[:] == 1.0] = 0.0   
 
             
@@ -591,7 +594,7 @@ class Runner:
                 self.grad_sdf_smooth[:] = 0.0
                 self.grad_feat_smooth[:] = 0.0
                 self.weight_sdf_smooth[:] = 0.0
-                #self.activated[grad_sdf == 0.0] = 0
+                self.activated[grad_sdf == 0.0] = 0
                 backprop_cuda.smooth_sdf(self.tet32.edges.shape[0], self.sigma, self.sites, self.activated,
                                          self.sdf, self.fine_features, self.tet32.edges, self.grad_sdf_smooth, self.grad_feat_smooth, self.weight_sdf_smooth)
                 self.weight_sdf_smooth[self.weight_sdf_smooth[:] == 0.0] = 1.0
@@ -605,7 +608,7 @@ class Runner:
             ########################################
             
             self.optimizer_feat.zero_grad()
-            self.fine_features.grad = self.grad_features + self.tv_w*self.grad_feat_smooth #+ 1.0e+5*self.grad_feat_reg / (mask_sum + 1.0e-5)
+            self.fine_features.grad = self.grad_features# + 0.001*self.tv_w*self.grad_feat_smooth #+ 1.0e+5*self.grad_feat_reg / (mask_sum + 1.0e-5)
             self.optimizer_feat.step()
 
             ########################################
@@ -624,7 +627,7 @@ class Runner:
             ########################################
             ##### Optimize sites positions #########
             ########################################
-            if ((iter_step+1) % 3000 == 0 and iter_step < 12000):# or (iter_step+1) == 20000:
+            if ((iter_step+1) % 3000 == 0 and iter_step < 12000) or (iter_step+1) == 20000:
                 self.sigma = self.sigma / 1.5
                 
                 self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, 2.0*self.sigma)
@@ -661,7 +664,7 @@ class Runner:
                 with torch.no_grad():  
                     delta_sites[:] = self.sites[:]
                 
-                if True: # (iter_step+1) < 12000:
+                if False: # (iter_step+1) < 12000:
                     self.color_network = ColorNetwork(**self.conf['model.color_network']).to(self.device)
                     params_to_train = []
                     params_to_train += list(self.color_network.parameters())
@@ -696,9 +699,9 @@ class Runner:
                     #self.sigma = 0.04
                     self.s_w = 1.0e-6
                     self.e_w = 1.0e-9
-                    self.learning_rate = 1e-4
+                    self.learning_rate = 1e-3
                     self.learning_rate_sdf = 1.0e-4
-                    self.learning_rate_feat = 1.0e-4
+                    self.learning_rate_feat = 5.0e-4
                     #self.end_iter_loc = 11000
 
                 if (iter_step+1) == 12000:
@@ -707,8 +710,8 @@ class Runner:
                     self.s_w = 1.0e-7
                     self.e_w = 1.0e-10
                     self.tv_w = 1.0e-6
-                    self.end_iter_loc = 18000
-                    self.learning_rate = 1e-4
+                    self.end_iter_loc = 8000
+                    self.learning_rate = 1e-3
                     self.learning_rate_sdf = 5.0e-5
                     self.learning_rate_feat = 5.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 0.01
@@ -717,12 +720,12 @@ class Runner:
                     self.R = 25
                     #self.sigma = 0.02
                     self.sigma_feat = 0.02
-                    self.s_w = 1.0e-10
+                    self.s_w = 1.0e-8
                     self.e_w = 1.0e-10
-                    self.tv_w = 1.0e-6
+                    self.tv_w = 1.0e-5
                     self.end_iter_loc = 10000
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 1.0e-5
+                    self.learning_rate_sdf = 2.0e-5
                     self.learning_rate_feat = 1.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 0.0
 
@@ -748,7 +751,8 @@ class Runner:
                 
 
             if iter_step % self.val_freq == 0:
-                #self.inv_s = 1000
+                #self.inv_s = 1000                       
+                torch.cuda.empty_cache()
                 self.render_image(cam_ids, img_idx)
                 self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri.ply", self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
                 #self.tet32.surface_from_sdf(self.sdf_smooth.cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri_smooth.ply", self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])                
@@ -774,7 +778,9 @@ class Runner:
         self.render_image(cam_ids, 0)
         self.save_checkpoint()  
         self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/final_tri.ply", self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
-                
+           
+        #self.tet32.clipped_cvt(self.sdf.detach(), self.fine_features.detach(), outside_flag, 
+        #                       cam_ids, self.learning_rate_cvt, "Exp/bmvs_man/clipped_CVT.ply")
 
     @torch.no_grad()
     def render_image(self, cam_ids, img_idx = 0, iter_step = 0, resolution_level = 1):

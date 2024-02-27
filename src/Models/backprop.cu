@@ -293,23 +293,23 @@ __global__ void smooth_kernel(
 
     // add bilateral smooth term with features
     float length_feat = 0.0f;
-    for (int i = 0; i < DIM_L_FEAT; i++) {
+    /*for (int i = 0; i < DIM_L_FEAT; i++) {
         length_feat = length_feat +  (feat[DIM_L_FEAT*edges[2*idx]+ i] - feat[DIM_L_FEAT*edges[2*idx+1]+ i])*
                                         (feat[DIM_L_FEAT*edges[2*idx]+ i] - feat[DIM_L_FEAT*edges[2*idx+1]+ i]);
-    }
+    }*/
               
     for (int i = 0; i < dim_sdf; i++) {
         if (sdf[dim_sdf*edges[2*idx + 1] + i] != 0.0f)
-            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx] + i], exp(-length_edge/(sigma*sigma) - length_feat/(sigma)) * sdf[dim_sdf*edges[2*idx + 1] + i]);          
+            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx] + i], exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)) * sdf[dim_sdf*edges[2*idx + 1] + i]);          
         
         if (sdf[dim_sdf*edges[2*idx] + i] != 0.0f)
-            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx + 1] + i], exp(-length_edge/(sigma*sigma) - length_feat/(sigma)) * sdf[dim_sdf*edges[2*idx] + i]);
+            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx + 1] + i], exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)) * sdf[dim_sdf*edges[2*idx] + i]);
     }
 
     if (sdf[dim_sdf*edges[2*idx + 1]] != 0.0f)
-        atomicAdd(&counter[edges[2*idx]], exp(-length_edge/(sigma*sigma) - length_feat/(sigma)));
+        atomicAdd(&counter[edges[2*idx]], exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)));
     if (sdf[dim_sdf*edges[2*idx]] != 0.0f)
-        atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/(sigma*sigma) - length_feat/(sigma)));
+        atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)));
 
     return;
 }

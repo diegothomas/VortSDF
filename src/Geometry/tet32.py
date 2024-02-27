@@ -306,11 +306,11 @@ class Tet32(Process):
         grad_sites = torch.zeros(self.sites.shape).cuda()       
         grad_sites = grad_sites.contiguous()
 
-        #grad_sites_sdf = torch.zeros(self.sites.shape).cuda()       
-        #grad_sites_sdf = grad_sites_sdf.contiguous()
+        grad_sites_sdf = torch.zeros(self.sites.shape).cuda()       
+        grad_sites_sdf = grad_sites_sdf.contiguous()
 
-        #mask_grad = torch.zeros(self.sites.shape).cuda()       
-        #mask_grad = mask_grad.contiguous()
+        mask_grad = torch.zeros(self.sites.shape).cuda()       
+        mask_grad = mask_grad.contiguous()
 
         delta_sites = torch.zeros(self.sites.shape).float().cuda()
         with torch.no_grad():  
@@ -339,21 +339,21 @@ class Tet32(Process):
             loss_cvt = cvt_grad_cuda.cvt_grad(self.sites.shape[0], self.KNN, thetas, phis, gammas, self.knn_sites, self.sites, sdf, grad_sites)
             grad_sites = grad_sites / self.sites.shape[0]
             
-            #grad_sites_sdf[:] = 0.0
-            #cvt_grad_cuda.sdf_grad(self.sites.shape[0], self.KNN, self.knn_sites, self.sites, sdf, grad_sites_sdf)
+            grad_sites_sdf[:] = 0.0
+            cvt_grad_cuda.sdf_grad(self.sites.shape[0], self.KNN, self.knn_sites, self.sites, sdf, grad_sites_sdf)
             
-            #mask_grad[:,:] = 1.0
-            #if sdf_weight > 0.0:
-            #    mask_grad[(torch.linalg.norm(grad_sites_sdf, ord=2, axis=-1, keepdims=True) > 0.0).reshape(-1),:] = 1.0e-3
+            mask_grad[:,:] = 1.0
+            if sdf_weight > 0.0:
+                mask_grad[(torch.linalg.norm(grad_sites_sdf, ord=2, axis=-1, keepdims=True) > 0.0).reshape(-1),:] = 1.0e-3
 
             grad_sites[outside_flag == 1.0, :] = 0.0
             grad_sites[cam_ids, :] = 0.0
-            #grad_sites_sdf[outside_flag == 1.0] = 0.0
+            grad_sites_sdf[outside_flag == 1.0] = 0.0
 
             #grad_sites[:self.nb_pre_sites,:] = 0.0
             #grad_sites_sdf[:self.nb_pre_sites,:] = 0.0
             optimizer_cvt.zero_grad()
-            self.sites.grad = grad_sites #*mask_grad + sdf_weight*grad_sites_sdf
+            self.sites.grad = grad_sites*mask_grad + sdf_weight*grad_sites_sdf
             optimizer_cvt.step()
 
             with torch.no_grad():
@@ -462,7 +462,7 @@ class Tet32(Process):
             self.lvl_sites[lvl_curr][:] = idx[:]
 
         _, idx = prev_kdtree.query(self.sites, k=1)
-        #out_sdf = np.zeros(new_sites.shape[0])
+        #out_sdf = np.zeros(self.sites.shape[0])
         #out_sdf[:] = in_sdf[idx[:]]
         
         out_sdf = -f(self.sites)
@@ -532,15 +532,15 @@ class Tet32(Process):
 
 
     def clipped_cvt(self, sdf, feat, outside_flag, cam_ids, lr, filename = "", translate = None, scale = None):
-        self.sites = torch.from_numpy(self.sites).float().cuda()
+        #self.sites = torch.from_numpy(self.sites).float().cuda()
         in_sdf, in_feat = self.CVT(outside_flag, cam_ids, sdf, feat, 300, 1.0, lr)
 
         faces_list = [] 
         vtx_list = [] 
         offset = 0
-        voro = scipy.spatial.Voronoi(self.sites.cpu().numpy())
-        for i in tqdm(range(self.nb_sites)):            
-            if voro.point_region[i] == -1 or sdf[i] > 0:
+        voro = scipy.spatial.Voronoi(self.sites)
+        for i in tqdm(range(self.sites.shape[0])):            
+            if voro.point_region[i] == -1 or in_sdf[i] > 0:
                 continue
             infinite_reg = sum([x == -1 for x in voro.regions[voro.point_region[i]]])
 
@@ -552,13 +552,15 @@ class Tet32(Process):
                 hull = scipy.spatial.ConvexHull(points)
                 # 12 = 2 * 6 faces are the simplices (2 simplices per square face)
                 for s in hull.simplices:
-                    s = np.append(s, s[0]) 
-                    faces_list.append(s + offset)
+                    #s = np.append(s, s[0]) 
+                    faces_list.append(s.reshape(1,3) + offset)
                 #draw.polygon(list(map(tuple, points[hull.vertices])), outline=(0, 0, 0))
                 offset = offset + points.shape[0]
 
-        vtx_list = np.stack(vtx_list)
-        faces_list = np.stack(faces_list)
+        vtx_list = np.concatenate(vtx_list)
+        faces_list = np.concatenate(faces_list)
+        print(vtx_list.shape)
+        print(faces_list.shape)
         ply.save_ply(filename, vtx_list.transpose(), f=faces_list.transpose())
 
     def save(self, filename):
