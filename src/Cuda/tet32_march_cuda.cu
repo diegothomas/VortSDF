@@ -920,8 +920,8 @@ __global__ void tet32_march_cuda_kernel(
 	float curr_p[3] = { ray_o[0] + ray_d[0] * curr_z,
 						ray_o[1] + ray_d[1] * curr_z,
 						ray_o[2] + ray_d[2] * curr_z };
-	float prev_weights_tet[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-	float next_weights[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	float prev_weights_tet[6] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f  };
+	float next_weights[6] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f  };
 
 	float next_feat[DIM_L_FEAT] = { };
 	float prev_feat_tet[DIM_L_FEAT] = { };
@@ -965,6 +965,7 @@ __global__ void tet32_march_cuda_kernel(
 		curr_p[1] = ray_o[1] + ray_d[1] * curr_dist;
 		curr_p[2] = ray_o[2] + ray_d[2] * curr_dist;
 
+		//next_weights[3] = next_weights[0]; next_weights[4] = next_weights[1]; next_weights[5] = next_weights[2]; 
 		next_sdf = get_sdf_triangle32(next_weights, curr_p, vertices, sdf, tets, ids[0], ids[1], ids[2]);
 		get_feat_triangle32(next_feat, next_weights, curr_p, vertices, vol_feat, tets, ids[0], ids[1], ids[2]);
 		ids_s[3] = ids[0]; ids_s[4] = ids[1]; ids_s[5] = ids[2]; 

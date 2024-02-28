@@ -11,6 +11,7 @@ import scipy.ndimage as ndimage
 import matplotlib.pyplot as plt
 from src.Confs.VisHull import Load_Visual_Hull
 import cv2
+from skimage.measure import block_reduce
 import imageio
 
 
@@ -234,14 +235,30 @@ class Dataset:
             print("unknown datatype")
             exit()
 
+        self.images_smooth_np = block_reduce(self.images_np, block_size=(1,3,3,1), func=np.mean)
+        self.masks_smooth_np = block_reduce(self.masks_np, block_size=(1,3,3,1), func=np.mean)
+        
+        self.images_smooth_np_2 = block_reduce(self.images_np, block_size=(1,2,2,1), func=np.mean)
+        self.masks_smooth_np_2 = block_reduce(self.masks_np, block_size=(1,2,2,1), func=np.mean)
+        """for i in range(self.n_images):
+            cv2.imwrite('Exp/img.png', 255*self.images_smooth_np[i,:,:,:])
+            print(self.images_smooth_np.shape)
+            print(self.images_np.shape)
+            input()"""
+
         self.images = torch.from_numpy(self.images_np.astype(np.float32)).cpu()  # [n_images, H, W, 3]
         self.masks  = torch.from_numpy(self.masks_np.astype(np.float32)).cpu()   # [n_images, H, W, 3]
+        self.images_smooth = torch.from_numpy(self.images_smooth_np.astype(np.float32)).cpu()  # [n_images, H, W, 3]
+        self.masks_smooth  = torch.from_numpy(self.masks_smooth_np.astype(np.float32)).cpu()   # [n_images, H, W, 3]
+        self.images_smooth_2 = torch.from_numpy(self.images_smooth_np_2.astype(np.float32)).cpu()  # [n_images, H, W, 3]
+        self.masks_smooth_2  = torch.from_numpy(self.masks_smooth_np_2.astype(np.float32)).cpu()   # [n_images, H, W, 3]
         self.intrinsics_all = torch.stack(self.intrinsics_all).to(self.device)   # [n_images, 4, 4]
         self.intrinsics_all_inv = torch.inverse(self.intrinsics_all)  # [n_images, 4, 4]
         self.focal = self.intrinsics_all[0][0, 0]
         self.pose_all = torch.stack(self.pose_all).to(self.device)  # [n_images, 4, 4]
         self.pose_all_inv = torch.stack(self.pose_all_inv).to(self.device)  # [n_images, 4, 4]
         self.H, self.W = self.images.shape[1], self.images.shape[2]
+        self.H_smooth, self.W_smooth = self.images_smooth.shape[1], self.images_smooth.shape[2]
         print(self.H, self.W)
         self.image_pixels = self.H * self.W
 
@@ -620,6 +637,34 @@ class Dataset:
 
         pixels_x_f = pixels_x.float() + torch.rand(pixels_x.shape)-0.5
         pixels_y_f = pixels_y.float() + torch.rand(pixels_y.shape)-0.5
+        p = torch.stack([pixels_x_f, pixels_y_f, torch.ones_like(pixels_y_f)], dim=-1).float().to(self.device)   # batch_size, 3
+        p = torch.matmul(self.intrinsics_all_inv[img_idx, None, :3, :3], p[:, :, None]).squeeze() # batch_size, 3
+        rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)    # batch_size, 3
+        rays_v = torch.matmul(self.pose_all[img_idx, None, :3, :3], rays_v[:, :, None]).squeeze()  # batch_size, 3
+        rays_o = self.pose_all[img_idx, None, :3, 3].expand(rays_v.shape) # batch_size, 3
+        return torch.cat([rays_o.cpu(), rays_v.cpu(), color, mask[:, :1]], dim=-1).cuda()     # batch_size, 10
+    
+    def gen_random_rays_smooth_at(self, img_idx, batch_size, lvl = 2.0):
+        """
+        Generate random rays at world space from one camera.
+        """
+        pixels_x = torch.randint(low=0, high=self.W_smooth, size=[batch_size])
+        pixels_y = torch.randint(low=0, high=self.H_smooth, size=[batch_size])
+
+        pixels_x[pixels_x < 0] = 0
+        pixels_x[pixels_x > self.W_smooth-1] = self.W_smooth-1
+        pixels_y[pixels_y < 0] = 0
+        pixels_y[pixels_y > self.H_smooth-1] = self.H_smooth-1
+
+        if lvl == 2.0:
+            color = self.images_smooth_2[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
+            mask = self.masks_smooth_2[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
+        else:
+            color = self.images_smooth[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
+            mask = self.masks_smooth[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
+
+        pixels_x_f = pixels_x.float()*lvl# + torch.rand(pixels_x.shape)-0.5
+        pixels_y_f = pixels_y.float()*lvl# + torch.rand(pixels_y.shape)-0.5
         p = torch.stack([pixels_x_f, pixels_y_f, torch.ones_like(pixels_y_f)], dim=-1).float().to(self.device)   # batch_size, 3
         p = torch.matmul(self.intrinsics_all_inv[img_idx, None, :3, :3], p[:, :, None]).squeeze() # batch_size, 3
         rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)    # batch_size, 3

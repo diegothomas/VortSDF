@@ -40,18 +40,18 @@ __global__ void backprop_feat_kernel(
     ////////////////////////Linear interpolation//////////////////////////
     //////////////////////////////////////////////////////////////
     float lamda = cell_weights[13*idx + 12] ;
-    /*for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 3; i++) {
         id_prev = cell_ids[12 * idx +6+ i];
         id = cell_ids[12 * idx + 9 + i];
 
         for (int k = 0; k < DIM_L_FEAT; k++) { 
-            atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[13*idx +6+ i] * grad_samples[2*DIM_L_FEAT * idx + k]);       
-            atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[13*idx + 9 + i] *grad_samples[2*DIM_L_FEAT * idx + DIM_L_FEAT + k]);     
+            atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[13*idx + i] * grad_samples[2*DIM_L_FEAT * idx + k]);       
+            atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[13*idx + 6 + i] *grad_samples[2*DIM_L_FEAT * idx + DIM_L_FEAT + k]);     
             //atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[13*idx + i] * lamda * grad_samples[DIM_L_FEAT * idx + k]);              
             //atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[13*idx + 6 + i] * (1.0f - lamda) * grad_samples[DIM_L_FEAT * idx + k]);
         }
-    }*/
-    for (int i = 0; i < 6; i++) {
+    }
+    /*for (int i = 0; i < 6; i++) {
         id_prev = cell_ids[12 * idx + i];
         id = cell_ids[12 * idx + 6 + i];
 
@@ -61,7 +61,7 @@ __global__ void backprop_feat_kernel(
             //atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[13*idx + i] * lamda * grad_samples[DIM_L_FEAT * idx + k]);              
             //atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[13*idx + 6 + i] * (1.0f - lamda) * grad_samples[DIM_L_FEAT * idx + k]);
         }
-    }
+    }*/
     ////////////////////////Network interpolation//////////////////////////
     //////////////////////////////////////////////////////////////
     /*for (int i = 0; i < 3; i++) {

@@ -530,6 +530,18 @@ class Tet32(Process):
         if not filename == "":
             ply.save_ply(filename, np.asarray(self.tri_vertices).transpose(), f=(np.asarray(self.tri_faces)).transpose())
 
+    def smooth_sdf(self, sdf):
+        ## Smooth current mesh and build sdf        
+        tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(sdf.astype(np.float64)),0.0)
+        tri_mesh.filter_smooth_laplacian(number_of_iterations=3)
+
+        self.tri_vertices = np.asarray(tri_mesh.vertices)
+        self.tri_faces = np.asarray(tri_mesh.triangles)
+        f = SDF(np.asarray(self.tri_vertices), np.asarray(self.tri_faces))
+
+        out_sdf = -f(self.sites.cpu().numpy())
+        return torch.from_numpy(out_sdf).float().cuda()
+
 
     def clipped_cvt(self, sdf, feat, outside_flag, cam_ids, lr, filename = "", translate = None, scale = None):
         #self.sites = torch.from_numpy(self.sites).float().cuda()
