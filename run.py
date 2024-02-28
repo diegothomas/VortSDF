@@ -305,161 +305,176 @@ class Runner:
 
             ## Generate rays
             data = self.dataset.gen_random_rays_zbuff_at(img_idx, num_rays, 0)  
-            rays_o, rays_d, true_rgb, mask = data[:, :3], data[:, 3: 6], data[:, 6: 9], data[:, 9: 10]
+            rays_o_full, rays_d_full, true_rgb_full, mask_full = data[:, :3], data[:, 3: 6], data[:, 6: 9], data[:, 9: 10]
 
-            rays_o = rays_o.reshape(-1, 3)
-            rays_d = rays_d.reshape(-1, 3)
-            true_rgb = true_rgb.reshape(-1, 3)
-            mask = mask.reshape(-1, 1)
+            rays_o_full = rays_o_full.reshape(-1, 3)
+            rays_d_full = rays_d_full.reshape(-1, 3)
+            true_rgb_full = true_rgb_full.reshape(-1, 3)
+            mask_full = mask_full.reshape(-1, 1)
 
-            rays_o = rays_o.contiguous()
-            rays_d = rays_d.contiguous()
-            true_rgb = true_rgb.contiguous()
-            mask = mask.contiguous()
-            
-            ## sample points along the rays
-            start = timer()
-            self.offsets[:] = 0
-            nb_samples = self.tet32.sample_rays_cuda(step_size, self.inv_s, img_idx, rays_d, self.sdf, self.fine_features, cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_feat, self.in_ids, self.offsets, self.n_samples)    
-            if verbose:
-                print('CVT_Sample time:', timer() - start)   
-            
-            if nb_samples == 0:
-                continue
+            rays_o_full = rays_o_full.contiguous()
+            rays_d_full = rays_d_full.contiguous()
+            true_rgb_full = true_rgb_full.contiguous()
+            mask_full = mask_full.contiguous()
 
-            """if self.offsets[self.offsets[:,1] == -1].sum() != 0:
-                print("no good topologie", self.offsets[self.offsets[:,1] == -1, 1].sum())
-                #self.tet32.start() 
-                #input()"""
+            with torch.no_grad():
+                self.vortSDF_renderer_fine.counter[:] = 0.0
+                self.vortSDF_renderer_fine.grads_color[:, :] = 0
+                self.vortSDF_renderer_fine.grads_sdf[:] = 0
+                self.vortSDF_renderer_fine.grads_sdf_net[:] = 0
+
+            for rays_o, rays_d, true_rgb, mask in zip(rays_o_full.split(self.batch_size), rays_d_full.split(self.batch_size), true_rgb_full.split(self.batch_size), mask_full.split(self.batch_size)):
+                rays_o = rays_o.contiguous()
+                rays_d = rays_d.contiguous()
+                true_rgb = true_rgb.contiguous()
+                mask = mask.contiguous()
             
-            self.offsets[self.offsets[:,1] == -1] = 0     
+                ## sample points along the rays
+                start = timer()
+                self.offsets[:] = 0
+                nb_samples = self.tet32.sample_rays_cuda(step_size, self.inv_s, img_idx, rays_d, self.sdf, self.fine_features, cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_feat, self.in_ids, self.offsets, self.n_samples)    
+                if verbose:
+                    print('CVT_Sample time:', timer() - start)   
                 
-            start = timer()
-            self.samples[:] = 0.0
-            tet32_march_cuda.fill_samples(rays_o.shape[0], self.n_samples, rays_o, rays_d, self.sites, 
-                                        self.in_z, self.in_sdf, self.in_feat, self.in_weights, self.in_ids, 
-                                        self.out_z, self.out_sdf, self.out_feat, self.out_weights, self.out_ids, 
-                                        self.offsets, self.samples, self.samples_loc, self.samples_rays)
-            if verbose:
-                print('fill_samples time:', timer() - start)   
+                if nb_samples == 0:
+                    continue
 
-            #start = timer()
-            #self.activated_buff[:] = 0
-            self.activated[:] = 1
-            #backprop_cuda.activate_sites(rays_o.shape[0], self.sites.shape[0], 96, self.out_ids, self.offsets, self.tet32.knn_sites, self.activated_buff, self.activated)
-            #if verbose:
-            #    print('activate time:', timer() - start)   
+                """if self.offsets[self.offsets[:,1] == -1].sum() != 0:
+                    print("no good topologie", self.offsets[self.offsets[:,1] == -1, 1].sum())
+                    #self.tet32.start() 
+                    #input()"""
+                
+                self.offsets[self.offsets[:,1] == -1] = 0     
+                    
+                start = timer()
+                self.samples[:] = 0.0
+                tet32_march_cuda.fill_samples(rays_o.shape[0], self.n_samples, rays_o, rays_d, self.sites, 
+                                            self.in_z, self.in_sdf, self.in_feat, self.in_weights, self.in_ids, 
+                                            self.out_z, self.out_sdf, self.out_feat, self.out_weights, self.out_ids, 
+                                            self.offsets, self.samples, self.samples_loc, self.samples_rays)
+                if verbose:
+                    print('fill_samples time:', timer() - start)   
 
-            if False: 
-                #pts = self.samples[:nb_samples,:].cpu()
-                norm = matplotlib.colors.Normalize(vmin=-0.3, vmax=0.3 , clip = False)
-                sdf_rgb = plt.cm.jet(norm(self.out_sdf[:,0].cpu())).astype(np.float32)
-                print("NB rays == ", rays_o.shape[0])
-                print("img_idx == ", img_idx)
-                print("nb_samples == ", nb_samples)
-                """sdf_samp = torch.zeros((rays_o.shape[0]*256, 3)).cuda()
-                for i in range(rays_o.shape[0]):
-                    for j in range(256):
-                        sdf_samp[i*256+j, :] = rays_o[i,:] + self.in_z[2*i*256+2*j]*rays_d[i,:]"""
-                """colors_samples = torch.zeros_like(pts)
-                for i in range(rays_o.shape[0]):                            
-                    start = self.offsets[2*i]
-                    end = self.offsets[2*i+1]
-                    for j in range(start, start+end-1):
-                        colors_samples[j,:] = true_rgb[i,:]"""
-                ply.save_ply("Exp/bmvs_man/samples.ply", np.transpose(self.samples[:nb_samples,:].cpu()), col = 255*np.transpose(sdf_rgb))
-                #ply.save_ply("TMP/meshes/samples_"+str(self.iter_step).zfill(5)+".ply", np.transpose(pts.cpu()), col = 255*np.transpose(sdf_rgb))
-                #print("nb samples: ", nb_samples)
-                input()
+                #start = timer()
+                #self.activated_buff[:] = 0
+                self.activated[:] = 1
+                #backprop_cuda.activate_sites(rays_o.shape[0], self.sites.shape[0], 96, self.out_ids, self.offsets, self.tet32.knn_sites, self.activated_buff, self.activated)
+                #if verbose:
+                #    print('activate time:', timer() - start)   
 
-            #samples = (self.samples[:nb_samples,:] + self.samples_loc[:nb_samples,:])/2.0
-            samples = self.samples[:nb_samples,:]
-            samples = samples.contiguous()
-            samples = (samples + 1.1)/2.2
+                if False: 
+                    #pts = self.samples[:nb_samples,:].cpu()
+                    norm = matplotlib.colors.Normalize(vmin=-0.3, vmax=0.3 , clip = False)
+                    sdf_rgb = plt.cm.jet(norm(self.out_sdf[:,0].cpu())).astype(np.float32)
+                    print("NB rays == ", rays_o.shape[0])
+                    print("img_idx == ", img_idx)
+                    print("nb_samples == ", nb_samples)
+                    """sdf_samp = torch.zeros((rays_o.shape[0]*256, 3)).cuda()
+                    for i in range(rays_o.shape[0]):
+                        for j in range(256):
+                            sdf_samp[i*256+j, :] = rays_o[i,:] + self.in_z[2*i*256+2*j]*rays_d[i,:]"""
+                    """colors_samples = torch.zeros_like(pts)
+                    for i in range(rays_o.shape[0]):                            
+                        start = self.offsets[2*i]
+                        end = self.offsets[2*i+1]
+                        for j in range(start, start+end-1):
+                            colors_samples[j,:] = true_rgb[i,:]"""
+                    ply.save_ply("Exp/bmvs_man/samples.ply", np.transpose(self.samples[:nb_samples,:].cpu()), col = 255*np.transpose(sdf_rgb))
+                    #ply.save_ply("TMP/meshes/samples_"+str(self.iter_step).zfill(5)+".ply", np.transpose(pts.cpu()), col = 255*np.transpose(sdf_rgb))
+                    #print("nb samples: ", nb_samples)
+                    input()
 
-            ##### ##### ##### ##### ##### ##### ##### 
-            # Build fine features
-            #fine_features = (self.out_feat[:nb_samples,:6] + self.out_feat[:nb_samples,:-6])/2.0#self.fine_features[self.out_ids[:nb_samples, 1]]
-            #fine_features = self.out_feat[:nb_samples,:6]
-            self.colors = self.out_feat[:nb_samples,:3] 
-            self.colors = self.colors.contiguous()
+                #samples = (self.samples[:nb_samples,:] + self.samples_loc[:nb_samples,:])/2.0
+                samples = self.samples[:nb_samples,:]
+                samples = samples.contiguous()
+                samples = (samples + 1.1)/2.2
 
-            
-            ##### ##### ##### ##### ##### ##### 
-            xyz_emb = (samples.unsqueeze(-1) * self.posfreq).flatten(-2)
-            xyz_emb = torch.cat([samples, xyz_emb.sin(), xyz_emb.cos()], -1)
-
-            viewdirs_emb = (self.samples_rays[:nb_samples,:].unsqueeze(-1) * self.viewfreq).flatten(-2)
-            viewdirs_emb = torch.cat([self.samples_rays[:nb_samples,:], viewdirs_emb.sin(), viewdirs_emb.cos()], -1)
-
-            # Get sdf values
-            """samp_entry = self.samples_loc[:nb_samples,:] + self.out_z[:nb_samples,0].reshape(-1,1).expand(-1, 3)*self.samples_rays[:nb_samples,:]
-            samp_exit = self.samples_loc[:nb_samples,:] + self.out_z[:nb_samples,1].reshape(-1,1).expand(-1, 3)*self.samples_rays[:nb_samples,:]
-            
-            sdf_feat_entry = torch.cat([samp_entry, self.out_sdf[:nb_samples,2:5], self.out_weights[:nb_samples,:3]], -1)
-            sdf_feat_entry.requires_grad_(True)
-            sdf_feat_entry.retain_grad()
-            sdf_entry = self.sdf_network.sdf(sdf_feat_entry)
-            
-            sdf_feat_exit = torch.cat([samp_exit, self.out_sdf[:nb_samples,5:8], self.out_weights[:nb_samples,3:6]], -1)
-            sdf_feat_exit.requires_grad_(True)
-            sdf_feat_exit.retain_grad()
-            sdf_exit = self.sdf_network.sdf(sdf_feat_exit)
-
-            sdf_samples = torch.cat([sdf_entry, sdf_exit], -1).contiguous()"""
-            #print(sdf_samples.shape)
-            #input()
-                         
-            if self.double_net:
-                geo_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:]], -1)
-                colors_feat = self.color_coarse.rgb(geo_feat)   
-                self.colors = torch.sigmoid(colors_feat)
+                ##### ##### ##### ##### ##### ##### ##### 
+                # Build fine features
+                #fine_features = (self.out_feat[:nb_samples,:6] + self.out_feat[:nb_samples,:-6])/2.0#self.fine_features[self.out_ids[:nb_samples, 1]]
+                #fine_features = self.out_feat[:nb_samples,:6]
+                self.colors = self.out_feat[:nb_samples,:3] 
                 self.colors = self.colors.contiguous()
-            
-            # network interpolation
-            #print(xyz_emb.shape)
-            #print(viewdirs_emb.shape)
-            if self.double_net:
-                if self.position_encoding:
-                    rgb_feat = torch.cat([xyz_emb, viewdirs_emb, colors_feat, self.out_sdf[:nb_samples,:], self.out_feat[:nb_samples,:]], -1)
+
+                
+                ##### ##### ##### ##### ##### ##### 
+                xyz_emb = (samples.unsqueeze(-1) * self.posfreq).flatten(-2)
+                xyz_emb = torch.cat([samples, xyz_emb.sin(), xyz_emb.cos()], -1)
+
+                viewdirs_emb = (self.samples_rays[:nb_samples,:].unsqueeze(-1) * self.viewfreq).flatten(-2)
+                viewdirs_emb = torch.cat([self.samples_rays[:nb_samples,:], viewdirs_emb.sin(), viewdirs_emb.cos()], -1)
+
+                # Get sdf values
+                """samp_entry = self.samples_loc[:nb_samples,:] + self.out_z[:nb_samples,0].reshape(-1,1).expand(-1, 3)*self.samples_rays[:nb_samples,:]
+                samp_exit = self.samples_loc[:nb_samples,:] + self.out_z[:nb_samples,1].reshape(-1,1).expand(-1, 3)*self.samples_rays[:nb_samples,:]
+                
+                sdf_feat_entry = torch.cat([samp_entry, self.out_sdf[:nb_samples,2:5], self.out_weights[:nb_samples,:3]], -1)
+                sdf_feat_entry.requires_grad_(True)
+                sdf_feat_entry.retain_grad()
+                sdf_entry = self.sdf_network.sdf(sdf_feat_entry)
+                
+                sdf_feat_exit = torch.cat([samp_exit, self.out_sdf[:nb_samples,5:8], self.out_weights[:nb_samples,3:6]], -1)
+                sdf_feat_exit.requires_grad_(True)
+                sdf_feat_exit.retain_grad()
+                sdf_exit = self.sdf_network.sdf(sdf_feat_exit)
+
+                sdf_samples = torch.cat([sdf_entry, sdf_exit], -1).contiguous()"""
+                #print(sdf_samples.shape)
+                #input()
+                            
+                if self.double_net:
+                    geo_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:]], -1)
+                    colors_feat = self.color_coarse.rgb(geo_feat)   
+                    self.colors = torch.sigmoid(colors_feat)
+                    self.colors = self.colors.contiguous()
+                
+                # network interpolation
+                #print(xyz_emb.shape)
+                #print(viewdirs_emb.shape)
+                if self.double_net:
+                    if self.position_encoding:
+                        rgb_feat = torch.cat([xyz_emb, viewdirs_emb, colors_feat, self.out_sdf[:nb_samples,:], self.out_feat[:nb_samples,:]], -1)
+                    else:
+                        rgb_feat = torch.cat([viewdirs_emb, colors_feat, self.out_sdf[:nb_samples,:], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
                 else:
-                    rgb_feat = torch.cat([viewdirs_emb, colors_feat, self.out_sdf[:nb_samples,:], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
-            else:
-                if self.position_encoding:
-                    rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:], self.out_feat[:nb_samples,:]], -1)
+                    if self.position_encoding:
+                        rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:], self.out_feat[:nb_samples,:]], -1)
+                    else:
+                        rgb_feat = torch.cat([viewdirs_emb, self.out_sdf[:nb_samples,:], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
+                #print(rgb_feat.shape)
+
+                #rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
+
+                # linear interpolation
+                #rgb_feat = torch.cat([xyz_emb, viewdirs_emb, fine_features], -1)
+
+                rgb_feat.requires_grad_(True)
+                rgb_feat.retain_grad()
+
+                #self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat) + colors_feat.detach()) 
+                if self.double_net:
+                    self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat) + colors_feat.detach()) #+ self.colors
                 else:
-                    rgb_feat = torch.cat([viewdirs_emb, self.out_sdf[:nb_samples,:], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
-            #print(rgb_feat.shape)
-
-            #rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
-
-            # linear interpolation
-            #rgb_feat = torch.cat([xyz_emb, viewdirs_emb, fine_features], -1)
-
-            rgb_feat.requires_grad_(True)
-            rgb_feat.retain_grad()
-
-            #self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat) + colors_feat.detach()) 
-            if self.double_net:
-                self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat) + colors_feat.detach()) #+ self.colors
-            else:
-                self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat)) #+ self.colors
-            self.colors_fine = self.colors_fine.contiguous()
+                    self.colors_fine = torch.sigmoid(self.color_network.rgb(rgb_feat)) #+ self.colors
+                self.colors_fine = self.colors_fine.contiguous()
 
 
-            ########################################
-            ####### Render the image ###############
-            ########################################
-            mask = (mask > 0.5).float()
+                ########################################
+                ####### Render the image ###############
+                ########################################
+                mask = (mask > 0.5).float()
 
-            start = timer()       
-            if self.double_net:
-                color_coarse_loss = VortSDFRenderingFunction.apply(self.vortSDF_renderer_coarse_net, rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors, true_rgb, mask, self.out_ids, self.offsets)
-            #self.vortSDF_renderer_coarse.render_gpu(rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors, true_rgb, mask, self.out_ids, self.offsets)
-            
-            color_fine_loss = VortSDFRenderingFunction.apply(self.vortSDF_renderer_fine, rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors_fine, true_rgb, mask, self.out_ids, self.offsets)
-            if verbose:
-                print('RenderingFunction time:', timer() - start)
+                start = timer()       
+                if self.double_net:
+                    color_coarse_loss = VortSDFRenderingFunction.apply(self.vortSDF_renderer_coarse_net, rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors, true_rgb, mask, self.out_ids, self.offsets)
+                #self.vortSDF_renderer_coarse.render_gpu(rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors, true_rgb, mask, self.out_ids, self.offsets)
+                
+                color_fine_loss = VortSDFRenderingFunction.apply(self.vortSDF_renderer_fine, rays_o.shape[0], self.inv_s, self.out_sdf, self.tet32.knn_sites, self.out_weights, self.colors_fine, true_rgb, mask, self.out_ids, self.offsets)
+                if verbose:
+                    print('RenderingFunction time:', timer() - start)
+
+            #print(self.vortSDF_renderer_fine.counter.max())
+            #self.vortSDF_renderer_fine.normalize_grads(self.sites.shape[0])
 
             # Total loss   
             mask_sum = mask.sum()
@@ -722,7 +737,7 @@ class Runner:
                     self.sigma_feat = 0.02
                     self.s_w = 1.0e-8
                     self.e_w = 1.0e-10
-                    self.tv_w = 1.0e-5
+                    self.tv_w = 1.0e-6
                     self.end_iter_loc = 10000
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 2.0e-5

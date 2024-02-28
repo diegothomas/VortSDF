@@ -17,9 +17,15 @@ void render_cuda(
     torch::Tensor grads_sdf,
     torch::Tensor grads_color,
     torch::Tensor grads_sdf_net,
+    torch::Tensor counter,
     torch::Tensor color_loss,
     torch::Tensor mask_loss
 ); 
+
+void normalize_grads_cuda(
+    size_t num_sites,
+    torch::Tensor grads_sdf,
+    torch::Tensor counter);
 
 void render_no_sdf_cuda(
     size_t num_rays,
@@ -70,6 +76,7 @@ void render(
     torch::Tensor grads_sdf,
     torch::Tensor grads_color,
     torch::Tensor grads_sdf_net,
+    torch::Tensor counter,
     torch::Tensor color_loss,
     torch::Tensor mask_loss        //***************
 ) {
@@ -88,10 +95,19 @@ void render(
     grads_sdf,
     grads_color,
     grads_sdf_net,
+    counter,
     color_loss,
     mask_loss  );
 }
 
+void normalize_grads(
+    size_t num_sites,
+    torch::Tensor grads_sdf,
+    torch::Tensor counter
+) {
+    
+    normalize_grads_cuda(num_sites, grads_sdf, counter);
+}
 
 void render_no_sdf(
     size_t num_rays,
@@ -152,4 +168,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("render", &render, "render (CPP)");
     m.def("render_no_sdf", &render_no_sdf, "render_no_sdf (CPP)");
     m.def("render_no_grad", &render_no_grad, "render_no_grad (CPP)");
+    m.def("normalize_grads", &normalize_grads, "normalize_grads (CPP)");
 }

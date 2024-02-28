@@ -245,7 +245,7 @@ __global__ void render_no_sdf_kernel(
 
 
 __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 grad_color_diff, float Mask, int n,
-                        float* grads_color, float* grads_sdf_net, float* grads_sdf, const float* sdf_seg, const int *neighbors, const float* weights_seg, const float* color_samples, const int* offsets, const int* cell_ids,
+                        float* grads_color, float* grads_sdf_net, float* grads_sdf, float* counter, const float* sdf_seg, const int *neighbors, const float* weights_seg, const float* color_samples, const int* offsets, const int* cell_ids,
                         float inv_s, float MaskReg = 0.0f, float colorDiscrepancyReg = 0.0f, float BackgroundEntropyReg = 0.0f, int NoColorSpilling = 0) 
 {
 
@@ -342,6 +342,23 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
         //////////////////////////////////////////////////////////////
         float lambda = weights_seg[13*t + 12] ;
         for (int i = 0; i < 6; i++) {
+            /*id_prev = cell_ids[12 * t + 6 + i];
+            id = cell_ids[12 * t + 9 + i];
+            
+			if (lambda < 0.5f) {
+                atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + 6 + i] * 2.0f*lambda * dalpha * dalpha_dsdf_p);
+                atomicAdd(&grads_sdf[id], weights_seg[13*t + 9 + i] * 
+                                ((1.0f-2.0f*lambda) * dalpha * dalpha_dsdf_p + dalpha * dalpha_dsdf_n));
+                atomicAdd(&counter[id], 2.0f-2.0f*lambda);
+                atomicAdd(&counter[id_prev], 2.0f*lambda);
+			} else {
+                atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + 6+ i] * 
+                                    (2.0f*lambda * dalpha * dalpha_dsdf_p + (1.0-2.0f*lambda)*dalpha * dalpha_dsdf_n));
+                atomicAdd(&grads_sdf[id], weights_seg[13*t + 9 + i] * (1.0f-(1.0-2.0f*lambda)) * dalpha * dalpha_dsdf_n);
+                atomicAdd(&counter[id], 2.0f*lambda);
+                atomicAdd(&counter[id_prev], 1.0f);
+			}*/
+
             id_prev = cell_ids[12 * t + i];
             id = cell_ids[12 * t + 6 + i];
             
@@ -349,10 +366,14 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
                 atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + i] * 2.0f*lambda * dalpha * dalpha_dsdf_p);
                 atomicAdd(&grads_sdf[id], weights_seg[13*t + 6 + i] * 
                                 ((1.0f-2.0f*lambda) * dalpha * dalpha_dsdf_p + dalpha * dalpha_dsdf_n));
+                atomicAdd(&counter[id], 2.0f-2.0f*lambda);
+                atomicAdd(&counter[id_prev], 2.0f*lambda);
 			} else {
                 atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + i] * 
                                     (2.0f*lambda * dalpha * dalpha_dsdf_p + (1.0-2.0f*lambda)*dalpha * dalpha_dsdf_n));
                 atomicAdd(&grads_sdf[id], weights_seg[13*t + 6 + i] * (1.0f-(1.0-2.0f*lambda)) * dalpha * dalpha_dsdf_n);
+                atomicAdd(&counter[id], 2.0f*lambda);
+                atomicAdd(&counter[id_prev], 1.0f);
 			}
             //atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + i] * lambda * dalpha * dalpha_dsdf_p);
             //atomicAdd(&grads_sdf[id], weights_seg[13*t + 6 + i] * (1.0f - lambda) * dalpha * dalpha_dsdf_n);
@@ -407,6 +428,7 @@ __global__ void render_kernel(
     float *__restrict__ grads_sdf,
     float *__restrict__ grads_color,
     float *__restrict__ grads_sdf_net,
+    float *__restrict__ counter,
     float *__restrict__ color_loss,
     float *__restrict__ mask_loss)
 {
@@ -426,7 +448,7 @@ __global__ void render_kernel(
         float3 grad_color_diff = huber_grad(integrated_color - in_color);
 
         backward(integrated_color, Wtotal, in_color, grad_color_diff, msk,
-            idx, grads_color, grads_sdf_net, grads_sdf, sdf_seg, neighbors, weights_seg, color_samples,
+            idx, grads_color, grads_sdf_net, grads_sdf, counter, sdf_seg, neighbors, weights_seg, color_samples,
             offsets, cell_ids, inv_s, mask_reg, 0.0f, 0.0f, 1);
 
         //color_loss[3*idx] = integrated_color.x;
@@ -438,6 +460,24 @@ __global__ void render_kernel(
     //}
     return;
 }
+
+
+__global__ void normalize_grads_kernel(
+    const size_t num_sites,
+    float *__restrict__ grads_sdf,
+    const float *__restrict__ counter)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_sites)
+    {
+        return;
+    }
+    
+    grads_sdf[idx] = counter[idx] == 0.0f ? 0.0f : grads_sdf[idx] / 2.0f;//counter[idx];
+
+    return;
+}
+
 
 
 __global__ void render_no_grad_kernel(
@@ -489,6 +529,7 @@ void render_cuda(
     torch::Tensor grads_sdf,
     torch::Tensor grads_color,
     torch::Tensor grads_sdf_net,
+    torch::Tensor counter,
     torch::Tensor color_loss,
     torch::Tensor mask_loss)
 {
@@ -510,11 +551,27 @@ void render_cuda(
                 grads_sdf.data_ptr<float>(),
                 grads_color.data_ptr<float>(),
                 grads_sdf_net.data_ptr<float>(),
+                counter.data_ptr<float>(),
                 color_loss.data_ptr<float>(),
                 mask_loss.data_ptr<float>());
         }));
 
         // Need normalization ??
+}
+
+void normalize_grads_cuda(
+    size_t num_sites,
+    torch::Tensor grads_sdf,
+    torch::Tensor counter)
+{
+        const int threads = 1024;
+        const int blocks = (num_sites + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+        AT_DISPATCH_FLOATING_TYPES( grads_sdf.type(),"normalize_grads_kernel", ([&] {  
+            normalize_grads_kernel CUDA_KERNEL(blocks,threads) (
+                num_sites,
+                grads_sdf.data_ptr<float>(),
+                counter.data_ptr<float>());
+        }));
 }
 
 void render_no_sdf_cuda(
