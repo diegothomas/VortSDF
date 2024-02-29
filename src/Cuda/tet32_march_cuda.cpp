@@ -6,6 +6,7 @@
 int tet32_march_cuda(
 	float STEP,
 	float inv_s,
+	float sigma,
     size_t num_rays,
     size_t num_knn,
     size_t num_samples,
@@ -59,6 +60,7 @@ void fill_samples_cuda(
 int tet32_march(
 	float STEP,
 	float inv_s,
+	float sigma,
     size_t num_rays,
     size_t num_knn,
     size_t num_samples,
@@ -85,6 +87,7 @@ int tet32_march(
     return tet32_march_cuda(
 	    STEP,
 	    inv_s,
+	    sigma,
         num_rays,
         num_knn,
         num_samples,

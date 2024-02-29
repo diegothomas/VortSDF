@@ -723,6 +723,7 @@ __global__ void tet32_march_cuda_adapt_kernel(
 __global__ void tet32_march_cuda_kernel(
 	const float STEP_IN,
 	const float inv_s,
+	const float sigma,
     const size_t num_rays,                // number of rays
     const size_t num_knn,                // number of rays
     const size_t num_samples,                // number of rays
@@ -939,8 +940,8 @@ __global__ void tet32_march_cuda_kernel(
 	int samples_count = 0;
 	int prev_ids[4] = { 0,0,0,0 };
 	int prev_prev_ids[4] = { 0,0,0,0 };
-	float sigma = 0.0001f;
-    float sdf_tot, weights_tot, dist;
+	//float sigma = 0.0001f;
+    float sdf_tot, weights_tot, dist, dist0, dist1, dist2;
 	int knn_id;
 	int prev_closest_id = 0;
 	float STEP = STEP_IN;
@@ -969,6 +970,18 @@ __global__ void tet32_march_cuda_kernel(
 		next_sdf = get_sdf_triangle32(next_weights, curr_p, vertices, sdf, tets, ids[0], ids[1], ids[2]);
 		get_feat_triangle32(next_feat, next_weights, curr_p, vertices, vol_feat, tets, ids[0], ids[1], ids[2]);
 		ids_s[3] = ids[0]; ids_s[4] = ids[1]; ids_s[5] = ids[2]; 
+		
+		dist0 = (curr_p[0] - v_0[0])*(curr_p[0] - v_0[0]) + 
+						(curr_p[1] - v_0[1])*(curr_p[1] - v_0[1]) + 
+						(curr_p[2] - v_0[2])*(curr_p[2] - v_0[2]);
+
+		dist1 = (curr_p[0] - v_1[0])*(curr_p[0] - v_1[0]) + 
+						(curr_p[1] - v_1[1])*(curr_p[1] - v_1[1]) + 
+						(curr_p[2] - v_1[2])*(curr_p[2] - v_1[2]);
+						
+		dist2 = (curr_p[0] - v_2[0])*(curr_p[0] - v_2[0]) + 
+						(curr_p[1] - v_2[1])*(curr_p[1] - v_2[1]) + 
+						(curr_p[2] - v_2[2])*(curr_p[2] - v_2[2]);
 
 		float STEP_CURR = STEP_IN;
 		if (prev_tet_id == -1) {
@@ -1042,9 +1055,9 @@ __global__ void tet32_march_cuda_kernel(
 					weights_ray[12 * s_id + 4] = prev_weights_tet[4]; 
 					weights_ray[12 * s_id + 5] = prev_weights_tet[5]; 
 
-					weights_ray[12 * s_id + 6] = next_weights[0];
-					weights_ray[12 * s_id + 7] = next_weights[1];
-					weights_ray[12 * s_id + 8] = next_weights[2];
+					weights_ray[12 * s_id + 6] = next_weights[0];//*exp(-dist0/(sigma*sigma));
+					weights_ray[12 * s_id + 7] = next_weights[1];//*exp(-dist1/(sigma*sigma));
+					weights_ray[12 * s_id + 8] = next_weights[2];//*exp(-dist2/(sigma*sigma));
 					weights_ray[12 * s_id + 9] = next_weights[3];
 					weights_ray[12 * s_id + 10] = next_weights[4];
 					weights_ray[12 * s_id + 11] = next_weights[5];
@@ -1063,6 +1076,7 @@ __global__ void tet32_march_cuda_kernel(
 					prev_weights[l] = next_weights[l];
 					prev_ids_s[l] = ids_s[l];
 				}
+				
 			}
 
 			if (s_id > num_samples - 1) {
@@ -1173,6 +1187,9 @@ __global__ void tet32_march_cuda_kernel(
 			prev_feat_tet[l] = next_feat[l];
 		for (int l = 0; l < 4; l++)
 			prev_weights_tet[l] = next_weights[l];
+		prev_weights_tet[0] = prev_weights_tet[0];//*exp(-dist0/(sigma*sigma));
+		prev_weights_tet[1] = prev_weights_tet[1];//*exp(-dist1/(sigma*sigma));
+		prev_weights_tet[2] = prev_weights_tet[2];//*exp(-dist2/(sigma*sigma));
         prev_prev_tet_id = prev_tet_id;
 		prev_tet_id = tet_id;
 		//prev_closest_id = ids[closest_id];
@@ -1472,6 +1489,7 @@ __global__ void fill_samples_kernel(
 int tet32_march_cuda(
 	float STEP,
 	float inv_s,
+	float sigma,
     size_t num_rays,
     size_t num_knn,
     size_t num_samples,
@@ -1504,6 +1522,7 @@ int tet32_march_cuda(
             tet32_march_cuda_kernel CUDA_KERNEL(blocks,threads) (
 				STEP,
 	 			inv_s,
+	 			sigma,
                 num_rays,
     			num_knn,
                 num_samples,

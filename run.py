@@ -155,7 +155,7 @@ class Runner:
         if not hasattr(self, 'tet32'):
             ##### 2. Load initial sites
             #visual_hull = [-1.1, -1.1, -1.1, 1.1, 1.1, 1.1] -> man
-            visual_hull = [-0.8, -1.0, -0.8, 0.7, 1.0, 0.7] #-> sculpture
+            visual_hull = [-0.8, -1.0, -0.8, 0.7, 1.0, 0.8] #-> sculpture
             import src.Geometry.sampling as sampler
             res = 16
             sites = sampler.sample_Bbox(visual_hull[0:3], visual_hull[3:6], res, perturb_f =  (visual_hull[3] - visual_hull[0])*0.02)
@@ -300,7 +300,7 @@ class Runner:
         self.render_image(cam_ids, 0)
         input()"""
         
-        self.s_max = 2000
+        self.s_max = 10000
         self.R = 40
         self.s_start = 10.0
         self.inv_s = 0.1
@@ -316,7 +316,7 @@ class Runner:
             self.inv_s = min(self.s_max, self.loc_iter/self.R + self.s_start)
 
             ## Generate rays
-            if iter_step+1 < 15000:
+            if True: #iter_step+1 < 15000:
                 num_rays = self.batch_size
                 #data = self.dataset.gen_random_rays_smooth_at(img_idx, num_rays, 3.0)  
                 data = self.dataset.gen_random_rays_zbuff_at(img_idx, num_rays, 0) 
@@ -355,7 +355,7 @@ class Runner:
                 ## sample points along the rays
                 start = timer()
                 self.offsets[:] = 0
-                nb_samples = self.tet32.sample_rays_cuda(step_size, self.inv_s, img_idx, rays_d, self.sdf, self.fine_features, cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_feat, self.in_ids, self.offsets, self.n_samples)    
+                nb_samples = self.tet32.sample_rays_cuda(step_size, self.inv_s, self.sigma, img_idx, rays_d, self.sdf, self.fine_features, cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_feat, self.in_ids, self.offsets, self.n_samples)    
                 if verbose:
                     print('CVT_Sample time:', timer() - start)   
                 
@@ -670,7 +670,7 @@ class Runner:
             ########################################
             ##### Optimize sites positions #########
             ########################################
-            if (iter_step+1) == 3000 or (iter_step+1) == 6000 or (iter_step+1) == 10000 or (iter_step+1) == 15000:# or (iter_step+1) == 20000:
+            if (iter_step+1) == 3000 or (iter_step+1) == 6000 or (iter_step+1) == 16000:# or (iter_step+1) == 26000:# or (iter_step+1) == 25000:
                 self.sigma = self.sigma / 1.5
                 #if (iter_step+1) == 20000:
                 #    self.batch_size = 10240
@@ -731,52 +731,58 @@ class Runner:
                 self.learning_rate_sdf = 1.0e-4
                 self.tv_w = self.tv_w / 2.0
 
-                self.e_w = 1.0e-8
-                if (iter_step+1) == 6000:
-                    self.R = 40
-                    self.s_start = 50.0
+                if (iter_step+1) == 3000:
                     self.e_w = 1.0e-8
-                    self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 5.0e-4
+                    self.s_start = 100.0
+                    self.learning_rate = 5e-4
+                    self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 5.0e-4
-                    self.end_iter_loc = 4000
+
+                if (iter_step+1) == 6000:
+                    self.R = 20
+                    self.s_start = 500.0
+                    self.e_w = 1.0e-8
+                    self.learning_rate = 1e-4
+                    self.learning_rate_sdf = 1.0e-5
+                    self.learning_rate_feat = 1.0e-4
+                    self.end_iter_loc = 10000
                     self.learning_rate_alpha = 1.0e-4
                     
-                if (iter_step+1) == 10000:
-                    self.R = 30
-                    self.s_start = 100.0
+                if (iter_step+1) == 16000:
+                    self.R = 10
+                    self.s_start = 1000.0
                     #self.sigma = 0.04
-                    self.s_w = 1.0e-6
+                    self.s_w = 5.0e-7
                     self.e_w = 1.0e-9
                     self.tv_w = 1.0e-6
+                    self.learning_rate = 1e-4
+                    self.learning_rate_sdf = 1.0e-5
+                    self.learning_rate_feat = 5.0e-5
+                    self.end_iter_loc = 10000
+                    self.vortSDF_renderer_fine.mask_reg = 0.001
+
+                if (iter_step+1) == 26000:
+                    self.R = 10
+                    self.s_start = 2000.0
+                    self.sigma = 0.03
+                    self.s_w = 1.0e-7
+                    self.e_w = 1.0e-10
+                    self.tv_w = 1.0e-6
+                    self.end_iter_loc = 10000
                     self.learning_rate = 5e-4
                     self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-4
-                    self.end_iter_loc = 5000
-                    self.vortSDF_renderer_fine.mask_reg = 0.01
-
-                if (iter_step+1) == 15000:
-                    self.R = 20
-                    self.s_start = 200.0
-                    self.sigma = 0.03
-                    self.s_w = 1.0e-6
-                    self.e_w = 1.0e-10
-                    self.tv_w = 1.0e-6
-                    self.end_iter_loc = 15000
-                    self.learning_rate = 5e-4
-                    self.learning_rate_sdf = 5.0e-5
-                    self.learning_rate_feat = 1.0e-4
-                    self.vortSDF_renderer_fine.mask_reg = 0.01
+                    self.vortSDF_renderer_fine.mask_reg = 0.001
                     
-                if (iter_step+1) == 20000:
-                    self.R = 20
-                    self.s_start = 300.0
+                if (iter_step+1) == 25000:
+                    self.R = 10
+                    self.s_start = 3000.0
                     #self.sigma = 0.02
                     self.sigma_feat = 0.02
                     self.s_w = 1.0e-8
                     self.e_w = 1.0e-10
                     self.tv_w = 1.0e-7
-                    self.end_iter_loc = 40000
+                    self.end_iter_loc = 15000
                     self.learning_rate = 5e-4
                     self.learning_rate_sdf = 5.0e-5
                     self.learning_rate_feat = 1.0e-4
@@ -836,11 +842,14 @@ class Runner:
             #    with torch.no_grad():
             #        self.sdf[:] = self.sdf[:] * 4.0
                 
-            if self.loc_iter > 0.8*self.end_iter_loc: # iter_step == 22000:
+            if self.loc_iter == round(0.8*self.end_iter_loc): # iter_step == 22000:
                 self.tv_w = 1.0e-4
-                #self.s_w = 1.0e-6
+                self.s_w = 0.5*self.s_w
+
+            if self.loc_iter == round(0.5*self.end_iter_loc):
+                self.s_w = 0.5*self.s_w
                 
-            if iter_step == 17000 or iter_step == 22000 or iter_step == 25000:     
+            if iter_step == 10000 or iter_step == 13000 or iter_step == 20000:   
                 sdf_smooth_lapl = self.tet32.smooth_sdf(self.sdf.detach().cpu().numpy().reshape(-1))
                 with torch.no_grad():
                     self.sdf[:] = sdf_smooth_lapl[:]
@@ -895,7 +904,7 @@ class Runner:
             ## sample points along the rays
             start = timer()
             self.offsets[:] = 0
-            nb_samples = self.tet32.sample_rays_cuda(0.01, self.inv_s, img_idx, rays_d_batch, self.sdf, self.fine_features, cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_feat, self.in_ids, self.offsets, self.n_samples)    
+            nb_samples = self.tet32.sample_rays_cuda(0.01, self.inv_s, self.sigma, img_idx, rays_d_batch, self.sdf, self.fine_features, cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_feat, self.in_ids, self.offsets, self.n_samples)    
                 
             start = timer()
             self.samples[:] = 0.0

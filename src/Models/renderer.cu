@@ -286,14 +286,14 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
         inv_clipped = (fabs(sdf) < CLIP_ALPHA / inv_s) ? double(inv_s) : sdf_clamp / double(sdf);
 
         alpha = min(1.0f, __double2float_rn((1.0 + exp(-sdf_prev_clamp)) / (1.0 + exp(-sdf_clamp))));
-        if (sdf_prev > sdf && alpha < 1.0f) { // && sdf_prev > 0.0f
+        if (sdf_prev > sdf) { // && alpha < 1.0f) { // && sdf_prev > 0.0f
         //if (sdf_prev*sdf <= 0.0f || 
         //        (sdf_prev > sdf && (fabs(sdf)*inv_s < CLIP_ALPHA || fabs(sdf_prev)*inv_s < CLIP_ALPHA))) {
             //alpha = min(1.0f, __double2float_rn((1.0 + exp(-sdf_prev_clamp)) / (1.0 + exp(-sdf_clamp))));
-            dalpha_dsdf_p = (fabs(sdf_prev * inv_s) > CLIP_ALPHA) ? 0.0f : __double2float_rn(-inv_clipped_p * exp(-sdf_prev_clamp) / (1.0 + exp(-sdf_clamp)));
-            //dalpha_dsdf_p = __double2float_rn(-inv_clipped_p * exp(-sdf_prev_clamp) / (1.0 + exp(-sdf_clamp)));
-            dalpha_dsdf_n = (fabs(sdf * inv_s) > CLIP_ALPHA) ? 0.0f : __double2float_rn((1.0 + exp(-sdf_prev_clamp)) * ((inv_clipped * exp(-sdf_clamp)) / ((1.0 + exp(-sdf_clamp)) * (1.0 + exp(-sdf_clamp)))));
-            //dalpha_dsdf_n = __double2float_rn((1.0 + exp(-sdf_prev_clamp)) * ((inv_clipped * exp(-sdf_clamp)) / ((1.0 + exp(-sdf_clamp)) * (1.0 + exp(-sdf_clamp)))));
+            //dalpha_dsdf_p = (fabs(sdf_prev * inv_s) > CLIP_ALPHA) ? 0.0f : __double2float_rn(-inv_clipped_p * exp(-sdf_prev_clamp) / (1.0 + exp(-sdf_clamp)));
+            dalpha_dsdf_p = __double2float_rn(-inv_clipped_p * exp(-sdf_prev_clamp) / (1.0 + exp(-sdf_clamp)));
+            //dalpha_dsdf_n = (fabs(sdf * inv_s) > CLIP_ALPHA) ? 0.0f : __double2float_rn((1.0 + exp(-sdf_prev_clamp)) * ((inv_clipped * exp(-sdf_clamp)) / ((1.0 + exp(-sdf_clamp)) * (1.0 + exp(-sdf_clamp)))));
+            dalpha_dsdf_n = __double2float_rn((1.0 + exp(-sdf_prev_clamp)) * ((inv_clipped * exp(-sdf_clamp)) / ((1.0 + exp(-sdf_clamp)) * (1.0 + exp(-sdf_clamp)))));
         }
         else {
             alpha = 1.0f;
