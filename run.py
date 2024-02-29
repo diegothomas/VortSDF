@@ -304,11 +304,11 @@ class Runner:
             self.inv_s = min(self.s_max, iter_step/self.R + self.s_start)
 
             ## Generate rays
-            if iter_step+1 < 20000:
+            if iter_step+1 < 15000:
                 num_rays = self.batch_size
                 #data = self.dataset.gen_random_rays_smooth_at(img_idx, num_rays, 3.0)  
                 data = self.dataset.gen_random_rays_zbuff_at(img_idx, num_rays, 0) 
-            elif iter_step+1 < 26000:
+            elif iter_step+1 < 20000:
                 num_rays = self.batch_size
                 #data = self.dataset.gen_random_rays_smooth_at(img_idx, num_rays, 2.0)  
                 data = self.dataset.gen_random_rays_zbuff_at(img_idx, num_rays, 0) 
@@ -541,14 +541,14 @@ class Runner:
             """
             ### SMOOTH SDF GRADIENT
             grad_sdf = self.vortSDF_renderer_fine.grads_sdf / (mask_sum + 1.0e-5)
-            """self.grad_sdf_smooth[:] = grad_sdf[:]
+            self.grad_sdf_smooth[:] = grad_sdf[:]
             self.counter_smooth[:] = 1.0
             backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, 1, self.sites, grad_sdf, 
-                                 self.fine_features, self.tet32.edges, self.grad_sdf_smooth, self.counter_smooth)"""
+                                 self.fine_features, self.tet32.edges, self.grad_sdf_smooth, self.counter_smooth)
             """self.grad_sdf_smooth[:] = 0.0
             backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.sigma_feat, 1, self.sites, self.activated,
                                         self.grad_sdf_space, grad_sdf, self.fine_features, self.tet32.knn_sites, self.grad_sdf_smooth)"""
-            #grad_sdf[:] = self.grad_sdf_smooth[:]
+            grad_sdf[:] = self.grad_sdf_smooth[:]
             grad_sdf[outside_flag[:] == 1.0] = 0.0   
 
             
@@ -571,7 +571,7 @@ class Runner:
             self.grad_eik[:] = 0.0
             self.grad_norm_smooth[:] = 0.0
             self.eik_loss[:] = 0.0
-            if self.s_w > 0.0: # and iter_step % 10 == 0:
+            if self.s_w > 0.0 and iter_step % 3 == 0:
                 with torch.no_grad():
                     self.sdf_smooth[:] = self.sdf[:]
                 self.counter_smooth[:] = 1.0
@@ -615,12 +615,12 @@ class Runner:
             if verbose:
                 print('space_reg time:', timer() - start)"""
         
-            if self.tv_w > 0.0:
+            if self.tv_w > 0.0 and iter_step % 3 == 0:
                 start = timer()   
                 self.grad_sdf_smooth[:] = 0.0
                 self.grad_feat_smooth[:] = 0.0
                 self.weight_sdf_smooth[:] = 0.0
-                self.activated[grad_sdf == 0.0] = 0
+                #self.activated[grad_sdf == 0.0] = 0
                 backprop_cuda.smooth_sdf(self.tet32.edges.shape[0], self.sigma, self.sites, self.activated,
                                          self.sdf, self.fine_features, self.tet32.edges, self.grad_sdf_smooth, self.grad_feat_smooth, self.weight_sdf_smooth)
                 self.weight_sdf_smooth[self.weight_sdf_smooth[:] == 0.0] = 1.0
@@ -634,7 +634,7 @@ class Runner:
             ########################################
             
             self.optimizer_feat.zero_grad()
-            self.fine_features.grad = self.grad_features + 0.0001*self.tv_w*self.grad_feat_smooth #+ 1.0e+5*self.grad_feat_reg / (mask_sum + 1.0e-5)
+            self.fine_features.grad = self.grad_features #+ 0.0001*self.tv_w*self.grad_feat_smooth #+ 1.0e+5*self.grad_feat_reg / (mask_sum + 1.0e-5)
             self.optimizer_feat.step()
 
             """if iter_step > 5000 and self.loc_iter < 1000:
@@ -658,7 +658,7 @@ class Runner:
             ########################################
             ##### Optimize sites positions #########
             ########################################
-            if (iter_step+1) == 3000 or (iter_step+1) == 6000 or (iter_step+1) == 10000 or (iter_step+1) == 20000 or (iter_step+1) == 26000:
+            if (iter_step+1) == 3000 or (iter_step+1) == 6000 or (iter_step+1) == 10000 or (iter_step+1) == 15000 or (iter_step+1) == 20000:
                 self.sigma = self.sigma / 1.5
                 #if (iter_step+1) == 20000:
                 #    self.batch_size = 10240
@@ -727,6 +727,7 @@ class Runner:
                     self.learning_rate_sdf = 5.0e-4
                     self.learning_rate_feat = 5.0e-4
                     self.end_iter_loc = 4000
+                    self.learning_rate_alpha = 1.0e-4
                     
                 if (iter_step+1) == 10000:
                     self.R = 50
@@ -735,33 +736,33 @@ class Runner:
                     self.e_w = 1.0e-9
                     self.tv_w = 1.0e-5
                     self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 5.0e-5
+                    self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-4
-                    self.end_iter_loc = 10000
+                    self.end_iter_loc = 5000
                     self.vortSDF_renderer_fine.mask_reg = 0.01
 
-                if (iter_step+1) == 20000:
+                if (iter_step+1) == 15000:
                     self.R = 45
                     #self.sigma = 0.03
                     self.s_w = 1.0e-7
                     self.e_w = 1.0e-10
-                    self.tv_w = 1.0e-5
-                    self.end_iter_loc = 6000
+                    self.tv_w = 1.0e-6
+                    self.end_iter_loc = 5000
                     self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 3.0e-5
+                    self.learning_rate_sdf = 5.0e-5
                     self.learning_rate_feat = 1.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 0.01
                     
-                if (iter_step+1) == 26000:
-                    self.R = 35
+                if (iter_step+1) == 20000:
+                    self.R = 30
                     #self.sigma = 0.02
                     self.sigma_feat = 0.02
-                    self.s_w = 1.0e-8
+                    self.s_w = 1.0e-7
                     self.e_w = 1.0e-10
                     self.tv_w = 1.0e-7
-                    self.end_iter_loc = 6000
+                    self.end_iter_loc = 5000
                     self.learning_rate = 5e-4
-                    self.learning_rate_sdf = 2.0e-5
+                    self.learning_rate_sdf = 5.0e-5
                     self.learning_rate_feat = 1.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 0.0
                     
@@ -819,10 +820,11 @@ class Runner:
             #    with torch.no_grad():
             #        self.sdf[:] = self.sdf[:] * 4.0
                 
-            #if iter_step == 15000:
-            #    self.s_w = 1.0e-6
+            if self.loc_iter > 0.8*self.end_iter_loc: # iter_step == 22000:
+                self.tv_w = 1.0e-4
+                #self.s_w = 1.0e-6
                 
-            if iter_step == 23000 or iter_step == 30000: # or iter_step == 25000:     
+            if iter_step == 17000 or iter_step == 22000: # or iter_step == 25000:     
                 sdf_smooth_lapl = self.tet32.smooth_sdf(self.sdf.detach().cpu().numpy().reshape(-1))
                 with torch.no_grad():
                     self.sdf[:] = sdf_smooth_lapl[:]
@@ -980,6 +982,7 @@ class Runner:
         img = img.reshape(self.dataset.H // resolution_level, self.dataset.W // resolution_level, 3)
         img = img.cpu().numpy()
         cv2.imwrite('Exp/synt.png', 255*img[:,:])
+        cv2.imwrite('Exp/Rendering/img_{}.png'.format(img_idx), 255*img[:,:])
         
         img_coarse = img_coarse.reshape(self.dataset.H // resolution_level, self.dataset.W // resolution_level, 3)
         img_coarse = img_coarse.cpu().numpy()
@@ -1179,3 +1182,8 @@ if __name__=='__main__':
     
     if args.mode == 'train':
         runner.train(args.data_name, 24, False)
+    """elif args.mode == 'render_images':
+        #runner.prep_CVT(args.data_name, [-0.6,-0.6,-0.6,0.6,0.6,0.6])
+        #for id_im in tqdm(range(args.nb_images)):
+        #    runner.render_image(cam_ids, img_idx = id_im)
+        #    #runner.validate_image_hybrid(1000.0, idx=id_im)"""
