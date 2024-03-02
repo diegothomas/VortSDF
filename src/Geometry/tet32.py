@@ -462,9 +462,11 @@ class Tet32(Process):
             self.lvl_sites[lvl_curr][:] = idx[:]
 
         _, idx = prev_kdtree.query(self.sites, k=1)
-        #out_sdf = np.zeros(self.sites.shape[0])
-        #out_sdf[:] = in_sdf[idx[:]]
+        """out_sdf = np.zeros(self.sites.shape[0])
+        out_sdf[:] = in_sdf[idx[:]]
         
+        lap_sdf = -f(self.sites)
+        out_sdf[abs(out_sdf[:]) > radius] = lap_sdf[abs(out_sdf[:]) > radius]"""
         out_sdf = -f(self.sites)
         print("out_sdf => ", out_sdf.sum())
         print("out_sdf => ", out_sdf.min())

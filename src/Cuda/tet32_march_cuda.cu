@@ -17,7 +17,7 @@
 #endif
 
 #define DIM_L_FEAT 12
-#define CLIP_ALPHA 30.0
+#define CLIP_ALPHA 60.0
 
 /** Device functions **/
 /** Device functions **/
