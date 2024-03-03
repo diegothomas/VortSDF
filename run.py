@@ -709,7 +709,7 @@ class Runner:
             ##### Optimize sites positions #########
             ########################################
             if (iter_step+1) == 5000 or (iter_step+1) == 15000 or (iter_step+1) == 25000 or (iter_step+1) == 35000 or (iter_step+1) == 45000:
-                self.sigma = self.sigma / 1.5
+                self.sigma = self.sigma / 2.0
                 #if (iter_step+1) == 20000:
                 #    self.batch_size = 10240
 
@@ -812,7 +812,7 @@ class Runner:
                     self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-3
                     self.end_iter_loc = 10000
-                    self.vortSDF_renderer_fine.mask_reg = 0.01
+                    self.vortSDF_renderer_fine.mask_reg = 0.001
                     #self.learning_rate_alpha = 1.0e-4
 
                 if (iter_step+1) == 35000:
@@ -829,7 +829,7 @@ class Runner:
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-3
-                    self.vortSDF_renderer_fine.mask_reg = 0.01
+                    self.vortSDF_renderer_fine.mask_reg = 0.001
                     
                 if (iter_step+1) == 45000:
                     self.R = 20
