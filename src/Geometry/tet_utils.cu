@@ -37,7 +37,7 @@ __global__ void upsample_counter_kernel(
                                (sites[3*edge[2*idx]+1] - sites[3*edge[2*idx+1]+1]) * (sites[3*edge[2*idx]+1] - sites[3*edge[2*idx+1]+1]) + 
                                (sites[3*edge[2*idx]+2] - sites[3*edge[2*idx+1]+2]) * (sites[3*edge[2*idx]+2] - sites[3*edge[2*idx+1]+2])); 
 
-    if (sdf[edge[2*idx]]*sdf[edge[2*idx+1]] <= 0.0f || fmin(fabs(sdf[edge[2*idx]]), fabs(sdf[edge[2*idx+1]])) < edge_length)
+    if (sdf[edge[2*idx]] < 0.1f || sdf[edge[2*idx + 1]] < 0.1 || sdf[edge[2*idx]]*sdf[edge[2*idx+1]] <= 0.0f || fmin(fabs(sdf[edge[2*idx]]), fabs(sdf[edge[2*idx+1]])) < 1.0*edge_length)
         atomicAdd(counter, 1);
 
 }
@@ -64,7 +64,8 @@ __global__ void upsample_kernel(
                                (sites[3*edge[2*idx]+1] - sites[3*edge[2*idx+1]+1]) * (sites[3*edge[2*idx]+1] - sites[3*edge[2*idx+1]+1]) + 
                                (sites[3*edge[2*idx]+2] - sites[3*edge[2*idx+1]+2]) * (sites[3*edge[2*idx]+2] - sites[3*edge[2*idx+1]+2])); 
 
-    if (sdf[edge[2*idx]]*sdf[edge[2*idx+1]] <= 0.0f || fmin(fabs(sdf[edge[2*idx]]), fabs(sdf[edge[2*idx+1]])) < edge_length) {
+    if (sdf[edge[2*idx]] < 0.1f || sdf[edge[2*idx + 1]] < 0.1 || sdf[edge[2*idx]]*sdf[edge[2*idx+1]] <= 0.0f || 
+            fmin(fabs(sdf[edge[2*idx]]), fabs(sdf[edge[2*idx+1]])) < 1.0*edge_length) {
         int new_idx = atomicAdd(counter, 1);
         new_sites[3*new_idx] = (sites[3*edge[2*idx]] + sites[3*edge[2*idx+1]]) / 2.0f;
         new_sites[3*new_idx + 1] = (sites[3*edge[2*idx] + 1] + sites[3*edge[2*idx+1] + 1]) / 2.0f;
