@@ -222,19 +222,22 @@ __global__ void knn_smooth_kernel(
             // add bilateral smooth term with grad
             //length_o = fabs(curr_edge[0]*curr_grad[0] + curr_edge[1]*curr_grad[1] + curr_edge[2]*curr_grad[2]);
 
+            //if (dim_sdf == 1)
+            //    length_o = (sdf[idx] - sdf[dim_sdf*knn_id + i])*(sdf[idx] - sdf[dim_sdf*knn_id + i]);
+
             // add bilateral smooth term with features
             length_feat = 0.0f;
-            for (int i = 0; i < DIM_L_FEAT; i++) {
+            /*for (int i = 0; i < DIM_L_FEAT; i++) {
                 length_feat = length_feat +  (feat[DIM_L_FEAT*idx+ i] - feat[DIM_L_FEAT*knn_id+ i])*
                                                 (feat[DIM_L_FEAT*idx+ i] - feat[DIM_L_FEAT*knn_id+ i]);
-            }
+            }*/
 
             if (length_edge > max_dist)
                 max_dist = length_edge;
             
             for (int i = 0; i < dim_sdf; i++) {
-                total_sdf = total_sdf + exp(-length_edge/(sigma*sigma) - length_feat/(0.05f) - (length_o*length_o)/(sigma*sigma)) * sdf[dim_sdf*knn_id + i];
-                total_weight = total_weight + exp(-length_edge/(sigma*sigma) - length_feat/(0.05f) - (length_o*length_o)/(sigma*sigma));
+                total_sdf = total_sdf + exp(-length_edge/(sigma*sigma) - length_feat/(0.05f) - length_o/(sigma*sigma)) * sdf[dim_sdf*knn_id + i];
+                total_weight = total_weight + exp(-length_edge/(sigma*sigma) - length_feat/(0.05f) - length_o/(sigma*sigma));
             }
         }
         radius = 2.0f*radius;
@@ -315,23 +318,25 @@ __global__ void smooth_kernel(
 
     // add bilateral smooth term with features
     float length_feat = 0.0f;
-    /*for (int i = 0; i < DIM_L_FEAT; i++) {
-        length_feat = length_feat +  (feat[DIM_L_FEAT*edges[2*idx]+ i] - feat[DIM_L_FEAT*edges[2*idx+1]+ i])*
-                                        (feat[DIM_L_FEAT*edges[2*idx]+ i] - feat[DIM_L_FEAT*edges[2*idx+1]+ i]);
-    }*/
+    if (dim_sdf > 1) {
+        for (int i = 0; i < DIM_L_FEAT; i++) {
+            length_feat = length_feat +  (feat[DIM_L_FEAT*edges[2*idx]+ i] - feat[DIM_L_FEAT*edges[2*idx+1]+ i])*
+                                            (feat[DIM_L_FEAT*edges[2*idx]+ i] - feat[DIM_L_FEAT*edges[2*idx+1]+ i]);
+        }
+    }
               
     for (int i = 0; i < dim_sdf; i++) {
         if (sdf[dim_sdf*edges[2*idx + 1] + i] != 0.0f)
-            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx] + i], exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)) * sdf[dim_sdf*edges[2*idx + 1] + i]);          
+            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx] + i], exp(-length_edge/(sigma*sigma) - length_feat/(0.01f)) * sdf[dim_sdf*edges[2*idx + 1] + i]);          
         
         if (sdf[dim_sdf*edges[2*idx] + i] != 0.0f)
-            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx + 1] + i], exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)) * sdf[dim_sdf*edges[2*idx] + i]);
+            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx + 1] + i], exp(-length_edge/(sigma*sigma) - length_feat/(0.01f)) * sdf[dim_sdf*edges[2*idx] + i]);
     }
 
     if (sdf[dim_sdf*edges[2*idx + 1]] != 0.0f)
-        atomicAdd(&counter[edges[2*idx]], exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)));
+        atomicAdd(&counter[edges[2*idx]], exp(-length_edge/(sigma*sigma) - length_feat/(0.01f)));
     if (sdf[dim_sdf*edges[2*idx]] != 0.0f)
-        atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)));
+        atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/(sigma*sigma) - length_feat/(0.01f)));
 
     return;
 }

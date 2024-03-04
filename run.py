@@ -78,6 +78,7 @@ class Runner:
         self.s_w = 1.0e-2
         self.e_w = 1.0e-2
         self.tv_w = 1.0e-2
+        self.tv_f = 1.0e-5
 
         self.report_freq = self.conf.get_int('train.report_freq')
         self.val_freq = self.conf.get_int('train.val_freq')
@@ -597,10 +598,12 @@ class Runner:
             self.counter_smooth[:] = 1.0
             backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, self.dim_feats, self.sites, self.grad_features, 
                                  self.tet32.edges, self.grad_feat_smooth, self.counter_smooth)"""
-            #self.grad_feat_smooth[:] = 0.0
-            #backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.dim_feats, self.sites, self.grad_sdf_space, self.grad_features, self.fine_features, self.tet32.knn_sites, self.grad_feat_smooth) 
-            #self.grad_features[:] = self.grad_feat_smooth[:]
-            #self.grad_features[outside_flag[:] == 1.0] = 0.0  
+            
+            """self.grad_feat_smooth[:] = 0.0
+            backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.sigma_feat, self.dim_feats, self.sites, self.activated,
+                                     self.grad_sdf_space, self.grad_features, self.fine_features, self.tet32.knn_sites, self.grad_feat_smooth) 
+            self.grad_features[:] = self.grad_feat_smooth[:]
+            self.grad_features[outside_flag[:] == 1.0] = 0.0  """
             
             ############ Compute spatial SDF gradients
             start = timer()   
@@ -685,13 +688,13 @@ class Runner:
             ########################################
             
             self.optimizer_feat.zero_grad()
-            self.fine_features.grad = self.grad_features + 1.0e-4*self.tv_w*self.grad_feat_smooth #+ 1.0e+5*self.grad_feat_reg / (mask_sum + 1.0e-5)
+            self.fine_features.grad = self.grad_features + self.tv_f*self.tv_w*self.grad_feat_smooth #+ 1.0e+5*self.grad_feat_reg / (mask_sum + 1.0e-5)
             self.optimizer_feat.step()
 
-            """if iter_step > 5000 and self.loc_iter < 1000:
+            if iter_step > 5000 and self.loc_iter < 1000:
                 self.update_learning_rate(self.loc_iter)
                 self.loc_iter = self.loc_iter + 1
-                continue"""
+                continue
 
             ########################################
             ####### Optimize sdf values ############
@@ -699,14 +702,14 @@ class Runner:
 
             #grad_sdf = (0.5*self.voro_renderer_coarse.grads_sdf[:,0] + 1.0*self.voro_renderer_fine.grads_sdf[:,0]) / (mask_sum + 1.0e-5)
            
-            #norm_grad = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1)
+            norm_grad = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1)
 
             if (iter_step+1) > 10000:
                 self.grad_norm_smooth[abs(self.sdf) > 3.0*self.sigma] = 0.0
                 self.grad_eik[abs(self.sdf) > 3.0*self.sigma] = 0.0
                 self.grad_sdf_smooth[abs(self.sdf) > 3.0*self.sigma] = 0.0
             self.optimizer_sdf.zero_grad() # 0.00001*self.grad_mean_curve +\
-            self.sdf.grad = grad_sdf +\
+            self.sdf.grad = norm_grad*grad_sdf +\
                         self.s_w*self.grad_norm_smooth + self.e_w*self.grad_eik +\
                         self.tv_w*self.grad_sdf_smooth #+ 1.0e-3*self.grad_sdf_reg / (mask_sum + 1.0e-5) #self.grad_sdf_net #
             self.optimizer_sdf.step()
@@ -754,7 +757,7 @@ class Runner:
                     delta_sites[:] = self.sites[:]
                 
                 if False: #(iter_step+1) == 45000:
-                    self.conf['model.color_network']['rgbnet_depth'] = 4
+                    #self.conf['model.color_network']['rgbnet_depth'] = 4
                     self.color_network = ColorNetwork(**self.conf['model.color_network']).to(self.device)
                     params_to_train = []
                     params_to_train += list(self.color_network.parameters())
@@ -782,8 +785,8 @@ class Runner:
                     """self.s_w = 1.0e-4
                     self.e_w = 5.0e-6
                     self.tv_w = 1.0e-5"""
-                    self.s_w = 5.0e-2
-                    self.e_w = 5.0e-3
+                    self.s_w = 1.0e-2
+                    self.e_w = 0.0 #5.0e-3
                     self.tv_w = 1.0e-1
                     self.s_start = 50.0
                     self.learning_rate = 1e-3
@@ -797,8 +800,8 @@ class Runner:
                     """self.s_w = 1.0e-3
                     self.e_w = 5.0e-4
                     self.tv_w = 1.0e-5"""
-                    self.s_w = 5.0e-2
-                    self.e_w = 5.0e-3
+                    self.s_w = 5.0e-3
+                    self.e_w = 0.0 #5.0e-3
                     self.tv_w = 1.0e-1
                     self.learning_rate = 1e-3
                     self.learning_rate_sdf = 1.0e-4
@@ -813,11 +816,12 @@ class Runner:
                     """self.s_w = 1.0e-3
                     self.e_w = 5.0e-4
                     self.tv_w = 1.0e-5"""
-                    self.s_w = 5.0e-2
-                    self.e_w = 5.0e-3
+                    self.s_w = 2.0e-3
+                    self.e_w = 0.0 #5.0e-3
                     self.tv_w = 1.0e-1
+                    self.tv_f = 1.0e-6
                     self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 2.0e-5
+                    self.learning_rate_sdf = 5.0e-5
                     self.learning_rate_feat = 1.0e-3
                     self.end_iter_loc = 10000
                     self.vortSDF_renderer_fine.mask_reg = 0.001
@@ -831,11 +835,12 @@ class Runner:
                     self.e_w = 5.0e-5
                     self.tv_w = 1.0e-6"""
                     self.s_w = 5.0e-2
-                    self.e_w = 5.0e-3
+                    self.e_w = 0.0 #5.0e-3
                     self.tv_w = 1.0e-1
+                    self.tv_f = 1.0e-7
                     self.end_iter_loc = 10000
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 1.0e-5
+                    self.learning_rate_sdf = 2.0e-5
                     self.learning_rate_feat = 5.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 0.001
                     
@@ -920,9 +925,9 @@ class Runner:
                 self.s_w = 0.1*self.s_w
                 self.e_w = 0.1*self.e_w"""
 
-            if self.loc_iter == round(0.8*self.end_iter_loc):
+            """if self.loc_iter == round(0.8*self.end_iter_loc):
                 self.s_w = 0.1*self.s_w
-                #self.s_w = 0.5*self.s_w
+                #self.s_w = 0.5*self.s_w"""
 
             if self.loc_iter == round(0.2*self.end_iter_loc): #iter_step == 10000:# or iter_step == 13000 or iter_step == 20000:   
                 sdf_smooth_lapl = self.tet32.smooth_sdf(self.sdf.detach().cpu().numpy().reshape(-1))
