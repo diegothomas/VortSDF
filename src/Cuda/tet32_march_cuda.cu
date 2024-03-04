@@ -16,7 +16,7 @@
 #define FAKEINIT
 #endif
 
-#define DIM_L_FEAT 12
+#define DIM_L_FEAT 6
 #define CLIP_ALPHA 60.0
 
 /** Device functions **/

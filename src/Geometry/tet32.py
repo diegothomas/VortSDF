@@ -293,6 +293,33 @@ class Tet32(Process):
         print(self.cam_tets[:10])
         input()"""
 
+    def move_sites(self,  outside_flag, cam_ids, sdf, fine_features):
+        delta = sdf - self.sdf_init
+
+        delta_sites = torch.zeros([self.sites.shape[0], 3]).float().cuda().contiguous()
+        grad_sdf_space = torch.zeros([self.sites.shape[0], 3]).float().cuda().contiguous()
+        grad_feat_space = torch.zeros([self.sites.shape[0], 3, fine_features.shape[1]]).float().cuda().contiguous()
+        weights_grad = torch.zeros([3*self.KNN*self.sites.shape[0]]).float().cuda().contiguous()
+        activated = torch.ones([self.sites.shape[0]]).int().cuda().contiguous()
+
+        ############ Compute spatial SDF gradients
+        grad_sdf_space[:] = 0.0
+        grad_feat_space[:] = 0.0
+        weights_grad[:] = 0.0
+        cvt_grad_cuda.knn_sdf_space_grad(self.sites.shape[0], self.KNN, self.knn_sites, self.sites, activated, sdf, fine_features, grad_sdf_space, grad_feat_space, weights_grad)
+
+        for i in range(3):
+            delta_sites[:,i] = delta[:]*grad_sdf_space[:,i]
+        delta_sites[cam_ids, :] = 0.0
+        delta_sites[outside_flag == 1.0] = 0.0
+
+        self.sites = self.sites + delta_sites
+
+        for i in range(fine_features.shape[1]):
+            fine_features[:, i] = fine_features[:, i] + (delta_sites*grad_feat_space[:, :, i]).sum(dim = 1)[:] # self.feat_diff[:]
+
+
+
 
     def CVT(self, outside_flag, cam_ids, sdf, fine_features, nb_iter = 1000, sdf_weight = 0.0, lr = 1.0e-4):
         self.make_knn()
@@ -399,13 +426,13 @@ class Tet32(Process):
         self.tri_faces = np.asarray(tri_mesh.triangles)
         f = SDF(np.asarray(self.tri_vertices), np.asarray(self.tri_faces))
         
-        nb_new_sites = tet_utils.upsample_counter(self.edges.shape[0], self.edges, self.sites, torch.from_numpy(sdf).float().cuda())
+        nb_new_sites = tet_utils.upsample_counter(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(sdf).float().cuda())
                 
         new_sites = torch.zeros([nb_new_sites,3]).float().cuda().contiguous()
         new_sdf = torch.zeros([nb_new_sites]).float().cuda().contiguous()
         new_feat = torch.zeros([nb_new_sites,feat.shape[1]]).float().cuda().contiguous()
 
-        tet_utils.upsample(self.edges.shape[0], self.edges, self.sites, torch.from_numpy(sdf).float().cuda().contiguous(), torch.from_numpy(feat).float().cuda().contiguous(),
+        tet_utils.upsample(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(sdf).float().cuda().contiguous(), torch.from_numpy(feat).float().cuda().contiguous(),
                            new_sites, new_sdf, new_feat)
         
         new_sites = new_sites.cpu().numpy()
@@ -476,6 +503,8 @@ class Tet32(Process):
         out_feat[:] = in_feat[idx[:]]
         
         self.lvl = self.lvl + 1
+
+        self.sdf_init = torch.from_numpy(out_sdf).float().cuda()
 
         return torch.from_numpy(out_sdf).float().cuda(), torch.from_numpy(out_feat).float().cuda()
 

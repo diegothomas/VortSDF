@@ -9,6 +9,7 @@ using namespace std;
 
 int upsample_counter_cuda(
     size_t nb_edges,
+    float sigma,
     torch::Tensor edges,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sdf
@@ -16,6 +17,7 @@ int upsample_counter_cuda(
 
 void upsample_cuda(
     size_t nb_edges,
+    float sigma,
     torch::Tensor edges,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
@@ -68,6 +70,7 @@ int count_cam_neighbors_cuda(
 // ***************************
 int upsample_counter(
     size_t nb_edges,
+    float sigma,
     torch::Tensor edges,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sdf
@@ -75,6 +78,7 @@ int upsample_counter(
     //std::cout << "Backprop feature gradients" << std::endl; 
     return upsample_counter_cuda(
         nb_edges,
+        sigma,
         edges,    // [N_sites, 3] for each voxel => it's vertices
         sites,    // [N_sites, 3] for each voxel => it's vertices
         sdf);
@@ -83,6 +87,7 @@ int upsample_counter(
 
 void upsample(
     size_t nb_edges,
+    float sigma,
     torch::Tensor edges,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
@@ -94,6 +99,7 @@ void upsample(
     //std::cout << "Backprop feature gradients" << std::endl; 
     upsample_cuda(
         nb_edges,
+        sigma,
         edges,    // [N_sites, 3] for each voxel => it's vertices
         sites,    // [N_sites, 3] for each voxel => it's vertices
         sdf,
