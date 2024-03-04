@@ -141,7 +141,7 @@ __global__ void smooth_grad_kernel(
                             (vertices[3*edges[2*idx] + 1] - vertices[3*edges[2*idx+1] + 1])*(vertices[3*edges[2*idx] + 1] - vertices[3*edges[2*idx+1] + 1]) +
                             (vertices[3*edges[2*idx] + 2] - vertices[3*edges[2*idx+1] + 2])*(vertices[3*edges[2*idx] + 2] - vertices[3*edges[2*idx+1] + 2]);
               
-    /*atomicAdd(&sdf_grad[edges[2*idx]], exp(-length_edge/(sigma*sigma)) * (sdf[edges[2*idx]] - sdf[edges[2*idx+1]]));          
+    atomicAdd(&sdf_grad[edges[2*idx]], exp(-length_edge/(sigma*sigma)) * (sdf[edges[2*idx]] - sdf[edges[2*idx+1]]));          
     atomicAdd(&sdf_grad[edges[2*idx + 1]], -exp(-length_edge/(sigma*sigma)) * (sdf[edges[2*idx]] - sdf[edges[2*idx+1]]));
 
     for (int i = 0; i < DIM_L_FEAT; i++) {
@@ -150,9 +150,9 @@ __global__ void smooth_grad_kernel(
     }
     
     atomicAdd(&counter[edges[2*idx]], exp(-length_edge/(sigma*sigma)));
-    atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/(sigma*sigma)));*/
+    atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/(sigma*sigma)));
     
-    atomicAdd(&sdf_grad[edges[2*idx]], (sdf[edges[2*idx]] - sdf[edges[2*idx+1]]));          
+    /*atomicAdd(&sdf_grad[edges[2*idx]], (sdf[edges[2*idx]] - sdf[edges[2*idx+1]]));          
     atomicAdd(&sdf_grad[edges[2*idx + 1]], -(sdf[edges[2*idx]] - sdf[edges[2*idx+1]]));
 
     for (int i = 0; i < DIM_L_FEAT; i++) {
@@ -161,7 +161,7 @@ __global__ void smooth_grad_kernel(
     }
     
     atomicAdd(&counter[edges[2*idx]], 1.0f);
-    atomicAdd(&counter[edges[2*idx + 1]], 1.0f);
+    atomicAdd(&counter[edges[2*idx + 1]], 1.0f);*/
 
     return;
 }
