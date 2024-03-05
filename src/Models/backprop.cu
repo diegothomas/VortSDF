@@ -23,8 +23,6 @@
 
 __global__ void backprop_feat_kernel(
     const size_t num_samples,
-    float *__restrict__ grad_sdf,
-    const float *__restrict__ grad_sdf_samples,
     float *__restrict__ grad_feat,
     const float *__restrict__ grad_samples,
     const int *__restrict__ cell_ids,
@@ -74,6 +72,35 @@ __global__ void backprop_feat_kernel(
             atomicAdd(&grad_feat[DIM_L_FEAT * id + k], grad_samples[2*DIM_L_FEAT * idx + 6 + k]);       
         }
     }*/
+
+    return;
+}
+
+
+__global__ void backprop_sdf_kernel(
+    const size_t num_samples,
+    float *__restrict__ grad_sdf,
+    const float *__restrict__ grad_sdf_samples,
+    const int *__restrict__ cell_ids,
+    const float *__restrict__ cell_weights)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_samples)
+    {
+        return;
+    }
+
+    int id_prev, id;
+    ////////////////////////Linear interpolation//////////////////////////
+    //////////////////////////////////////////////////////////////
+    float lamda = cell_weights[13*idx + 12] ;
+    for (int i = 0; i < 3; i++) {
+        id_prev = cell_ids[12 * idx + 6 + i];
+        id = cell_ids[12 * idx + 9 + i];
+
+        atomicAdd(&grad_sdf[id_prev], cell_weights[13*idx + i] * grad_sdf_samples[2 * idx]);       
+        atomicAdd(&grad_sdf[id], cell_weights[13*idx + 6 + i] * grad_sdf_samples[2 * idx + 1]);    
+    }
 
     return;
 }
@@ -327,16 +354,16 @@ __global__ void smooth_kernel(
               
     for (int i = 0; i < dim_sdf; i++) {
         if (sdf[dim_sdf*edges[2*idx + 1] + i] != 0.0f)
-            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx] + i], exp(-length_edge/(sigma*sigma) - length_feat/(0.01f)) * sdf[dim_sdf*edges[2*idx + 1] + i]);          
+            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx] + i], exp(-length_edge/(sigma*sigma) - length_feat/(0.02f)) * sdf[dim_sdf*edges[2*idx + 1] + i]);          
         
         if (sdf[dim_sdf*edges[2*idx] + i] != 0.0f)
-            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx + 1] + i], exp(-length_edge/(sigma*sigma) - length_feat/(0.01f)) * sdf[dim_sdf*edges[2*idx] + i]);
+            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx + 1] + i], exp(-length_edge/(sigma*sigma) - length_feat/(0.02f)) * sdf[dim_sdf*edges[2*idx] + i]);
     }
 
     if (sdf[dim_sdf*edges[2*idx + 1]] != 0.0f)
-        atomicAdd(&counter[edges[2*idx]], exp(-length_edge/(sigma*sigma) - length_feat/(0.01f)));
+        atomicAdd(&counter[edges[2*idx]], exp(-length_edge/(sigma*sigma) - length_feat/(0.02f)));
     if (sdf[dim_sdf*edges[2*idx]] != 0.0f)
-        atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/(sigma*sigma) - length_feat/(0.01f)));
+        atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/(sigma*sigma) - length_feat/(0.02f)));
 
     return;
 }
@@ -502,8 +529,6 @@ __global__ void activate_knn_kernel(
 // *************************
 void backprop_feat_cuda(
     size_t num_samples,
-    torch::Tensor grad_sdf,
-    torch::Tensor grad_sdf_samples,
     torch::Tensor grad_feat,
     torch::Tensor grad_samples,
     torch::Tensor cell_ids,
@@ -512,16 +537,38 @@ void backprop_feat_cuda(
 {
     const int threads = 512;
     const int blocks = (num_samples + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
-    AT_DISPATCH_FLOATING_TYPES( grad_feat.type(),"render_cuda", ([&] {  
+    AT_DISPATCH_FLOATING_TYPES( grad_feat.type(),"backprop_feat_kernel", ([&] {  
         backprop_feat_kernel CUDA_KERNEL(blocks,threads) (
             num_samples,
-            grad_sdf.data_ptr<float>(),
-            grad_sdf_samples.data_ptr<float>(),
             grad_feat.data_ptr<float>(),
             grad_samples.data_ptr<float>(),
             cell_ids.data_ptr<int>(),
             cell_weights.data_ptr<float>());
     }));
+    cudaDeviceSynchronize();
+}
+
+
+// *************************
+void backprop_sdf_cuda(
+    size_t num_samples,
+    torch::Tensor grad_sdf,
+    torch::Tensor grad_sdf_samples,
+    torch::Tensor cell_ids,
+    torch::Tensor cell_weights 
+)
+{
+    const int threads = 512;
+    const int blocks = (num_samples + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+    AT_DISPATCH_FLOATING_TYPES( grad_sdf.type(),"backprop_sdf_kernel", ([&] {  
+        backprop_sdf_kernel CUDA_KERNEL(blocks,threads) (
+            num_samples,
+            grad_sdf.data_ptr<float>(),
+            grad_sdf_samples.data_ptr<float>(),
+            cell_ids.data_ptr<int>(),
+            cell_weights.data_ptr<float>());
+    }));
+    cudaDeviceSynchronize();
 }
 
 // *************************
@@ -588,6 +635,7 @@ void smooth_cuda(
             feat_grad.data_ptr<float>(),
             counter.data_ptr<float>());
     }));
+    cudaDeviceSynchronize();
     
 }
 
@@ -653,6 +701,7 @@ void smooth_sdf_cuda(
             sdf_smooth.data_ptr<float>(),     // [N_voxels, 4] for each voxel => it's vertices)
             counter.data_ptr<float>());
     }));
+    cudaDeviceSynchronize();
 
     const int threads2 = 1024;
     const int blocks2 = (num_sites + threads2 - 1) / threads2; // ceil for example 8192 + 255 / 256 = 32
@@ -664,6 +713,7 @@ void smooth_sdf_cuda(
             counter.data_ptr<float>());
     }));
     
+    cudaDeviceSynchronize();
 }
 
 void bnn_smooth_sdf_cuda(
@@ -724,6 +774,7 @@ void knn_smooth_sdf_cuda(
             neighbors.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)
             sdf_smooth.data_ptr<float>());
     }));
+    cudaDeviceSynchronize();
 }
 
 void activate_sites_cuda(
