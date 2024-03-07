@@ -163,6 +163,9 @@ class Runner:
             ##### 2. Load initial sites
             visual_hull = [-1.1, -1.1, -1.1, 1.1, 1.1, 1.1] #-> man
             #visual_hull = [-0.8, -1.0, -0.8, 0.7, 1.0, 0.8] #-> sculpture
+            #visual_hull = [-1.0,-1.2,-1.0,0.9,0.4,1.0] # -> dog
+            #visual_hull = [-1.2, -1.2, -1.2, 1.2, 1.2, 1.2] #-> stone
+            #visual_hull = [-1.2, -1.5, -1.5, 1.2, 1.3, 1.2] #-> durian
             import src.Geometry.sampling as sampler
             res = 16
             sites = sampler.sample_Bbox(visual_hull[0:3], visual_hull[3:6], res, perturb_f =  (visual_hull[3] - visual_hull[0])*0.02)
@@ -662,10 +665,10 @@ class Runner:
             self.fine_features.grad = self.grad_features + self.tv_f*self.tv_w*self.grad_feat_smooth #+ 1.0e+5*self.grad_feat_reg / (mask_sum + 1.0e-5)
             self.optimizer_feat.step()
 
-            """if iter_step > 5000 and self.loc_iter < 2000:
+            if iter_step > 5000 and self.loc_iter < 200:
                 self.update_learning_rate(self.loc_iter)
                 self.loc_iter = self.loc_iter + 1
-                continue"""
+                continue
 
             ########################################
             ####### Optimize sdf values ############
@@ -695,7 +698,7 @@ class Runner:
                 self.grad_sdf_smooth[:] = 0.0 
 
                 
-            if iter_step % 6 != 0 and (iter_step+1) > 15000: # or (iter_step+1) > 10000:   
+            if iter_step % 3 != 0 and (iter_step+1) > 15000: # or (iter_step+1) > 10000:   
                 self.grad_norm_smooth[:] = 0.0
                 self.grad_eik[:] = 0.0
                 self.grad_sdf_smooth[:] = 0.0 
@@ -714,6 +717,7 @@ class Runner:
                 
                 #if (iter_step+1) == 20000:
                 #    self.batch_size = 10240
+                self.learning_rate_cvt = self.learning_rate_cvt / 4.0
 
                 if self.sites.shape[0] > 500000:
                     self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, 0.0)
@@ -773,7 +777,6 @@ class Runner:
                 self.vortSDF_renderer_fine.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
 
                 step_size = step_size / 1.5
-                self.learning_rate_cvt = self.learning_rate_cvt / 2.0
                 self.e_w = self.e_w / 10.0
                 self.learning_rate_sdf = 1.0e-4
                 self.tv_w = self.tv_w / 2.0
@@ -864,7 +867,7 @@ class Runner:
                     self.e_w = 1.0e-5
                     self.tv_w = 1.0e-3
                     self.tv_f = 0.0 #1.0e-3
-                    self.end_iter_loc = 30000
+                    self.end_iter_loc = 10000
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-4
@@ -1307,6 +1310,8 @@ if __name__=='__main__':
     
     if args.mode == 'train':
         runner.train(args.data_name, 24, False)
+        for id_im in tqdm(range(args.nb_images)):
+            runner.render_image(runner.cam_ids, img_idx = id_im)
     """elif args.mode == 'render_images':
         #runner.prep_CVT(args.data_name, [-0.6,-0.6,-0.6,0.6,0.6,0.6])
         #for id_im in tqdm(range(args.nb_images)):

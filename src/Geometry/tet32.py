@@ -392,6 +392,13 @@ class Tet32(Process):
 
             with torch.no_grad():
                 sdf[:] = sdf[:] + (delta_sites*grad_sdf_space).sum(dim = 1)[:] #  + self.sdf_diff
+                grad_feat_space[abs(grad_feat_space) > 10.0*abs(grad_feat_space.mean())] = 0.0
+                """print(grad_feat_space.mean())
+                print(grad_feat_space.min())
+                print(grad_feat_space.max())
+                print(delta_sites.mean())
+                print(delta_sites.min())
+                print(delta_sites.max())"""
                 for i in range(fine_features.shape[1]):
                     fine_features[:, i] = fine_features[:, i] + (delta_sites*grad_feat_space[:, :, i]).sum(dim = 1)[:] # self.feat_diff[:]
 
@@ -476,7 +483,7 @@ class Tet32(Process):
         cam_ids = torch.from_numpy(cam_ids).int().cuda()
                 
         self.sites = torch.from_numpy(self.sites).float().cuda()
-        in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, 0.1, lr)
+        in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 100, 0.1, lr)
 
         #ply.save_ply("Exp/bmvs_man/testprevlvlv.ply", (self.sites[self.lvl_sites[0][:]]).transpose())
         prev_kdtree = scipy.spatial.KDTree(new_sites)
@@ -489,12 +496,12 @@ class Tet32(Process):
             self.lvl_sites[lvl_curr][:] = idx[:]
 
         _, idx = prev_kdtree.query(self.sites, k=1)
-        """out_sdf = np.zeros(self.sites.shape[0])
+        out_sdf = np.zeros(self.sites.shape[0])
         out_sdf[:] = in_sdf[idx[:]]
         
-        lap_sdf = -f(self.sites)
-        out_sdf[abs(out_sdf[:]) > radius] = lap_sdf[abs(out_sdf[:]) > radius]"""
-        out_sdf = -f(self.sites)
+        """lap_sdf = -f(self.sites)
+        out_sdf[abs(out_sdf[:]) > radius] = lap_sdf[abs(out_sdf[:]) > radius]
+        out_sdf = -f(self.sites)"""
         print("out_sdf => ", out_sdf.sum())
         print("out_sdf => ", out_sdf.min())
         print("out_sdf => ", out_sdf.max())
