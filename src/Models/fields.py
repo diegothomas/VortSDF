@@ -116,9 +116,9 @@ class ColorNetwork(nn.Module):
         
         self.scale = scale
         self.rgbnet = nn.Sequential(
-                nn.Linear(d_in, rgbnet_width), nn.LayerNorm(rgbnet_width), #nn.ReLU(inplace=True),
+                nn.Linear(d_in, rgbnet_width), nn.ReLU(inplace=True), #nn.LayerNorm(rgbnet_width), 
                 *[
-                    nn.Sequential(nn.Linear(rgbnet_width, rgbnet_width), nn.LayerNorm(rgbnet_width)) #, nn.ReLU(inplace=True))
+                    nn.Sequential(nn.Linear(rgbnet_width, rgbnet_width),  nn.ReLU(inplace=True)) #nn.LayerNorm(rgbnet_width),
                     for _ in range(rgbnet_depth-2)
                 ],
                 nn.Linear(rgbnet_width, 3),

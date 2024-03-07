@@ -744,6 +744,7 @@ __global__ void tet32_march_cuda_kernel(
     float *__restrict__ z_feat,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ z_ids,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ counter,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ activate,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ offset     // [N_voxels, 4] for each voxel => it's vertices
 )
 {
@@ -1061,6 +1062,11 @@ __global__ void tet32_march_cuda_kernel(
 					weights_ray[12 * s_id + 9] = next_weights[3];
 					weights_ray[12 * s_id + 10] = next_weights[4];
 					weights_ray[12 * s_id + 11] = next_weights[5];
+
+					// activate sites here
+					for (int l = 0; l < 6; l++) {
+						atomicExch(&activate[ids_s[l]], 1);
+					}
 
 					s_id++;
 					if (s_id > num_samples - 1) {
@@ -1391,11 +1397,13 @@ __global__ void fill_samples_kernel(
     float *__restrict__ in_sdf,       // [N_rays, 6]
     float *__restrict__ in_feat,       // [N_rays, 6]
     float *__restrict__ in_weights,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ in_grads,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ in_ids,       // [N_rays, 6]
     float *__restrict__ out_z,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ out_sdf,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ out_feat,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ out_weights,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ out_grads,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ out_ids,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ offset,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ samples,     // [N_voxels, 4] for each voxel => it's vertices
@@ -1429,6 +1437,16 @@ __global__ void fill_samples_kernel(
 
         out_sdf[2*i] = in_sdf_rays[2*s_id];
 		out_sdf[2*i + 1] = in_sdf_rays[2*s_id+1];
+
+		for (int l = 0; l < 3; l++) {
+			out_grads[6*i + l] = in_weights_rays[12 * s_id + 0]*in_grads[3*in_ids_rays[12 * s_id + 6 + 0] + l] +
+							in_weights_rays[12 * s_id + 1]*in_grads[3*in_ids_rays[12 * s_id + 6 + 1] + l] +
+							in_weights_rays[12 * s_id + 2]*in_grads[3*in_ids_rays[12 * s_id + 6 + 2] + l];
+							
+			out_grads[6*i + 3 + l] = in_weights_rays[12 * s_id + 6 + 0]*in_grads[3*in_ids_rays[12 * s_id + 9 + 0] + l] +
+							in_weights_rays[12 * s_id + 6 + 1]*in_grads[3*in_ids_rays[12 * s_id + 9 + 1] + l] +
+							in_weights_rays[12 * s_id + 6 + 2]*in_grads[3*in_ids_rays[12 * s_id + 9 + 2] + l];
+		}
 		
 		float lambda = 0.5f;
 		if (out_sdf[2*i]*out_sdf[2*i+1] <= 0.0f) {
@@ -1466,13 +1484,19 @@ __global__ void fill_samples_kernel(
 		}
 		out_weights[13*i + 12] = lambda;
 
-		if (out_sdf[2*i]*out_sdf[2*i+1] > 0.0f) {
-			lambda = 0.1f + 0.8f*float((i+idx)%1000)/1000.0f;
-		}
+		//if (out_sdf[2*i]*out_sdf[2*i+1] > 0.0f) {
+		//	lambda = 0.5f;//0.1f + 0.8f*float((i+idx)%1000)/1000.0f;
+		//}
 
-        samples[3 * i] = ray.origin[0] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[0];
-        samples[3 * i + 1] = ray.origin[1] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[1];
-        samples[3 * i + 2] = ray.origin[2] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[2];
+		if (lambda < 0.5f) {
+			samples[3 * i] = ray.origin[0] + (2.0f*lambda*out_z[2*i] + (1.0f-2.0f*lambda)*out_z[2*i+1])*ray.direction[0];
+			samples[3 * i + 1] = ray.origin[1] + (2.0f*lambda*out_z[2*i] + (1.0f-2.0f*lambda)*out_z[2*i+1])*ray.direction[1];
+			samples[3 * i + 2] = ray.origin[2] + (2.0f*lambda*out_z[2*i] + (1.0f-2.0f*lambda)*out_z[2*i+1])*ray.direction[2];
+		} else {
+			samples[3 * i] = ray.origin[0] + ((1.0-2.0f*lambda)*out_z[2*i] + (1.0f-(1.0-2.0f*lambda))*out_z[2*i+1])*ray.direction[0];
+			samples[3 * i + 1] = ray.origin[1] + ((1.0-2.0f*lambda)*out_z[2*i] + (1.0f-(1.0-2.0f*lambda))*out_z[2*i+1])*ray.direction[1];
+			samples[3 * i + 2] = ray.origin[2] + ((1.0-2.0f*lambda)*out_z[2*i] + (1.0f-(1.0-2.0f*lambda))*out_z[2*i+1])*ray.direction[2];	
+		}
 
         s_id++;
     }
@@ -1509,6 +1533,7 @@ int tet32_march_cuda(
     torch::Tensor z_sdfs,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor z_feat,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor z_ids,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor activate,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor offset     // [N_voxels, 4] for each voxel => it's vertices
 )   {
 	
@@ -1543,6 +1568,7 @@ int tet32_march_cuda(
                 z_feat.data_ptr<float>(),
                 z_ids.data_ptr<int>(),
                 counter,
+                activate.data_ptr<int>(),
                 offset.data_ptr<int>()); 
     	}));
 	
@@ -1565,11 +1591,13 @@ void fill_samples_cuda(
     torch::Tensor in_sdf,       // [N_rays, 6]
     torch::Tensor in_feat,       // [N_rays, 6]
     torch::Tensor in_weights,       // [N_rays, 6]
+    torch::Tensor in_grads,       // [N_rays, 6]
     torch::Tensor in_ids,       // [N_rays, 6]
     torch::Tensor out_z,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_sdf,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_feat,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_weights,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor out_grads,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_ids,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor offset,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor samples,     // [N_voxels, 4] for each voxel => it's vertices
@@ -1588,12 +1616,14 @@ void fill_samples_cuda(
                 in_z.data_ptr<float>(),
                 in_sdf.data_ptr<float>(),  
                 in_feat.data_ptr<float>(),    
-                in_weights.data_ptr<float>(),     
+                in_weights.data_ptr<float>(),    
+                in_grads.data_ptr<float>(),     
                 in_ids.data_ptr<int>(),       
                 out_z.data_ptr<float>(),    
                 out_sdf.data_ptr<float>(),    
                 out_feat.data_ptr<float>(),    
                 out_weights.data_ptr<float>(),     
+                out_grads.data_ptr<float>(),    
                 out_ids.data_ptr<int>(),    
                 offset.data_ptr<int>(),     
                 samples.data_ptr<float>(),   

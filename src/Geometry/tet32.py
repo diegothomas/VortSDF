@@ -420,7 +420,7 @@ class Tet32(Process):
 
         ## Smooth current mesh and build sdf        
         tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(sdf.astype(np.float64)),0.0)
-        tri_mesh.filter_smooth_laplacian(number_of_iterations=3)
+        #tri_mesh.filter_smooth_laplacian(number_of_iterations=3)
 
         self.tri_vertices = np.asarray(tri_mesh.vertices)
         self.tri_faces = np.asarray(tri_mesh.triangles)
@@ -623,12 +623,12 @@ class Tet32(Process):
 
 
     ## Sample points along a ray at the faces of Tet32 structure
-    def sample_rays_cuda(self, step_size, inv_s, sigma, cam_id, ray_d, sdf, fine_features, cam_ids, weights, in_z, in_sdf, in_feat, in_ids, offset, nb_samples = 256):
+    def sample_rays_cuda(self, step_size, inv_s, sigma, cam_id, ray_d, sdf, fine_features, cam_ids, weights, in_z, in_sdf, in_feat, in_ids, offset, activated, nb_samples = 256):
         #ply.save_ply("Exp/bmvs_man/cam.ply", (self.sites[cam_ids[cam_id]]).reshape(1,3).cpu().numpy().transpose())
         nb_rays = ray_d.shape[0]
         nb_samples = tet32_march_cuda.tet32_march(step_size, inv_s, sigma, nb_rays, 24, nb_samples, cam_id, ray_d, self.knn_sites, self.sites, sdf, fine_features, self.summits, self.neighbors,
                                                   cam_ids, self.offsets_cam, self.cam_tets, weights, in_z, in_sdf, in_feat, 
-                                                  in_ids, offset)
+                                                  in_ids, activated, offset)
         #for i in range(nb_rays):
         #    print(in_ids[3*nb_samples*i], ", ", in_ids[3*nb_samples*i + 1] , ", ", in_ids[3*nb_samples*i + 2])
 

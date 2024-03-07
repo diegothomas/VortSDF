@@ -26,6 +26,7 @@ int tet32_march_cuda(
     torch::Tensor z_sdfs,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor z_feat,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor z_ids,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor activate,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor offset     // [N_voxels, 4] for each voxel => it's vertices
 );
 
@@ -40,11 +41,13 @@ void fill_samples_cuda(
     torch::Tensor in_sdf,       // [N_rays, 6]
     torch::Tensor in_feat,       // [N_rays, 6]
     torch::Tensor in_weights,       // [N_rays, 6]
+    torch::Tensor in_grads,       // [N_rays, 6]
     torch::Tensor in_ids,       // [N_rays, 6]
     torch::Tensor out_z,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_sdf,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_feat,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_weights,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor out_grads,       // [N_rays, 6]
     torch::Tensor out_ids,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor offset,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor samples,     // [N_voxels, 4] for each voxel => it's vertices
@@ -80,6 +83,7 @@ int tet32_march(
     torch::Tensor z_sdfs,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor z_feat,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor z_ids,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor activate,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor offset     // [N_voxels, 4] for each voxel => it's vertices
 ) {
     //std::cout << "March through Tet32" << std::endl; 
@@ -107,6 +111,7 @@ int tet32_march(
         z_sdfs,     // [N_voxels, 4] for each voxel => it's vertices
         z_feat,
         z_ids,     // [N_voxels, 4] for each voxel => it's vertices
+        activate,     // [N_voxels, 4] for each voxel => it's vertices
         offset     // [N_voxels, 4] for each voxel => it's vertices
         );
 
@@ -123,11 +128,13 @@ void fill_samples(
     torch::Tensor in_sdf,       // [N_rays, 6]
     torch::Tensor in_feat,       // [N_rays, 6]
     torch::Tensor in_weights,       // [N_rays, 6]
+    torch::Tensor in_grads,       // [N_rays, 6]
     torch::Tensor in_ids,       // [N_rays, 6]
     torch::Tensor out_z,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_sdf,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_feat,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_weights,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor out_grads,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_ids,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor offset,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor samples,     // [N_voxels, 4] for each voxel => it's vertices
@@ -146,11 +153,13 @@ void fill_samples(
         in_sdf,  
         in_feat,  
         in_weights,    
+        in_grads,    
         in_ids,       
         out_z,     
         out_sdf,    
         out_feat, 
         out_weights,     
+        out_grads,     
         out_ids,     
         offset,     
         samples,    

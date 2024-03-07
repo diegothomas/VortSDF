@@ -15,7 +15,7 @@
 #define FAKEINIT
 #endif
 
-#define STOP_TRANS 1.0e-8
+#define STOP_TRANS 1.0e-12
 #define CLIP_ALPHA 60.0
 #define BACK_R 0.0f
 #define BACK_G 1.0f

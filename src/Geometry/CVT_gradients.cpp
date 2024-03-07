@@ -85,7 +85,7 @@ float eikonal_grad_cuda(
     size_t num_sites,                // number of rays
     torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
-    torch::Tensor  grad_sdf_o,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  activated,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sdf_smooth,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  feat,  // [N_voxels, 4] for each voxel => it's neighbors
@@ -279,7 +279,7 @@ void eikonal_grad(
     size_t num_sites,                // number of rays
     torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
-    torch::Tensor  grad_sdf_o,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  activated,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sdf_smooth,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  feat,  // [N_voxels, 4] for each voxel => it's neighbors
@@ -295,7 +295,7 @@ void eikonal_grad(
         num_sites,
         tets,
         sites, 
-        grad_sdf_o,
+        activated,
         sdf, 
         sdf_smooth, 
         feat, 
