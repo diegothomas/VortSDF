@@ -432,9 +432,7 @@ class Tet32(Process):
         self.tri_vertices = np.asarray(tri_mesh.vertices)
         self.tri_faces = np.asarray(tri_mesh.triangles)
         f = SDF(np.asarray(self.tri_vertices), np.asarray(self.tri_faces))
-        tmp_sdf = -f(self.sites.cpu().numpy())
-        tmp_sdf = torch.from_numpy(tmp_sdf).float().cuda()
-        sdf[:] = tmp_sdf[:]
+        sdf = -f(self.sites.cpu().numpy())
         
         nb_new_sites = tet_utils.upsample_counter(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(sdf).float().cuda())
                 

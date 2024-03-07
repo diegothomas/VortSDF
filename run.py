@@ -164,8 +164,11 @@ class Runner:
             #visual_hull = [-1.1, -1.1, -1.1, 1.1, 1.1, 1.1] #-> man
             #visual_hull = [-0.8, -1.0, -0.8, 0.7, 1.0, 0.8] #-> sculpture
             #visual_hull = [-1.0,-1.2,-1.0,0.9,0.4,1.0] # -> dog
-            visual_hull = [-1.2, -1.2, -1.2, 1.2, 1.2, 1.2] #-> stone
+            #visual_hull = [-1.2, -1.2, -1.2, 1.2, 1.2, 1.2] #-> stone
             #visual_hull = [-1.2, -1.5, -1.5, 1.2, 1.3, 1.2] #-> durian
+            #visual_hull = [-0.8, -0.8, -1.0, 1.0, 0.8, 0.6] #-> bear
+            visual_hull = [-1.2, -1.1, -1.2, 1.1, 1.1, 1.1] #-> clock
+            
             import src.Geometry.sampling as sampler
             res = 16
             sites = sampler.sample_Bbox(visual_hull[0:3], visual_hull[3:6], res, perturb_f =  (visual_hull[3] - visual_hull[0])*0.02)
@@ -687,33 +690,33 @@ class Runner:
             #self.grad_eik = self.grad_eik / self.sites.shape[0]
             self.grad_sdf_smooth = self.grad_sdf_smooth / self.sigma
                 
-            """if iter_step % 3 != 0 or (iter_step+1) < 10000:    
+            if True: #iter_step % 3 != 0 or (iter_step+1) < 10000:    
                 self.grad_norm_smooth[grad_sdf == 0.0] = 0.0
                 self.grad_eik[grad_sdf == 0.0] = 0.0
-                self.grad_sdf_smooth[grad_sdf == 0.0] = 0.0"""
+                self.grad_sdf_smooth[grad_sdf == 0.0] = 0.0
                 
-            if iter_step % 3 != 0 and (iter_step+1) > 5000: # or (iter_step+1) > 10000:   
+            """if iter_step % 3 != 0 and (iter_step+1) > 5000: # or (iter_step+1) > 10000:   
                 self.grad_norm_smooth[:] = 0.0
                 self.grad_eik[:] = 0.0
                 self.grad_sdf_smooth[:] = 0.0 
 
                 
-            if iter_step % 3 != 0 and (iter_step+1) > 15000: # or (iter_step+1) > 10000:   
+            if iter_step % 5 != 0 and (iter_step+1) > 15000: # or (iter_step+1) > 10000:   
                 self.grad_norm_smooth[:] = 0.0
                 self.grad_eik[:] = 0.0
-                self.grad_sdf_smooth[:] = 0.0 
+                self.grad_sdf_smooth[:] = 0.0""" 
 
 
             self.optimizer_sdf.zero_grad() # 0.00001*self.grad_mean_curve +\ # self.e_w*self.grad_eik +\
             self.sdf.grad = (grad_sdf +\
-                        self.s_w*self.grad_norm_smooth + self.e_w*self.grad_eik +\
+                        self.s_w*self.grad_norm_smooth +\
                         self.tv_w*self.grad_sdf_smooth) #+ 1.0e-3*self.grad_sdf_reg / (mask_sum + 1.0e-5) #self.grad_sdf_net # #+ self.grad_sdf_net  + self.f_w*self.grad_sdf_net
             self.optimizer_sdf.step()
 
             ########################################
             ##### Optimize sites positions #########
             ########################################
-            if (iter_step+1) == 2000 or (iter_step+1) == 5000 or (iter_step+1) == 10000 or (iter_step+1) == 20000 or (iter_step+1) == 25000:# or (iter_step+1) == 45000:
+            if (iter_step+1) == 2000 or (iter_step+1) == 5000 or (iter_step+1) == 10000 or (iter_step+1) == 20000:# or (iter_step+1) == 25000:# or (iter_step+1) == 45000:
                 
                 #if (iter_step+1) == 20000:
                 #    self.batch_size = 10240
@@ -823,9 +826,9 @@ class Runner:
                     """self.s_w = 5.0e-3
                     self.e_w = 1.0e-3
                     self.tv_w = 1.0e-3"""
-                    self.s_w = 2.0e-4 #2.0e-6
+                    self.s_w = 5.0e-4 #2.0e-6
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
-                    self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1
+                    self.tv_w = 1.0e-3 #1.0e-8 #1.0e-1
                     #self.tv_f = 1.0e-6
                     self.f_w = 1.0
                     self.learning_rate = 1e-3
@@ -848,12 +851,12 @@ class Runner:
                     self.tv_w = 1.0e-3 #1.0e-8 #1.0e-1
                     self.tv_f = 0.0 #1.0e-4
                     self.f_w = 1.0
-                    self.end_iter_loc = 5000
+                    self.end_iter_loc = 15000
                     self.learning_rate = 5e-3
                     self.learning_rate_sdf = 5.0e-3
                     self.learning_rate_feat = 5.0e-3
                     self.vortSDF_renderer_fine.mask_reg = 0.001
-                    self.learning_rate_alpha = 1.0e-1
+                    self.learning_rate_alpha = 1.0e-4
                     
                 if (iter_step+1) == 25000:
                     self.R = 10
@@ -897,9 +900,10 @@ class Runner:
                 #verbose = True
                 #self.tet32.save("Exp/bmvs_man/test_up.ply") 
                 self.tet32.save_multi_lvl("Exp/bmvs_man/multi_lvl")    
-                self.render_image(cam_ids, img_idx)
-                self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri_up_{}.ply".format(iter_step), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
-            
+                #self.render_image(cam_ids, img_idx)
+                self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri_up_{}.ply".format(iter_step), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])                          
+                torch.cuda.empty_cache()
+
             if iter_step % self.report_freq == 0:
                 print('iter:{:8>d} loss = {}, scale={}, lr={}'.format(iter_step, loss, self.inv_s, self.optimizer.param_groups[0]['lr']))
                 print('iter:{:8>d} s_w = {}, e_w = {}, tv_w = {}, lr={}'.format(iter_step, self.s_w, self.e_w, self.tv_w, self.optimizer_sdf.param_groups[0]['lr']))
@@ -1310,8 +1314,8 @@ if __name__=='__main__':
     
     if args.mode == 'train':
         runner.train(args.data_name, 24, False)
-        for id_im in tqdm(range(args.nb_images)):
-            runner.render_image(runner.cam_ids, img_idx = id_im)
+        #for id_im in tqdm(range(args.nb_images)):
+        #    runner.render_image(runner.cam_ids, img_idx = id_im)
     """elif args.mode == 'render_images':
         #runner.prep_CVT(args.data_name, [-0.6,-0.6,-0.6,0.6,0.6,0.6])
         #for id_im in tqdm(range(args.nb_images)):
