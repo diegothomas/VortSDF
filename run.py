@@ -161,10 +161,10 @@ class Runner:
         ##### 2. Load initial sites
         if not hasattr(self, 'tet32'):
             ##### 2. Load initial sites
-            visual_hull = [-1.1, -1.1, -1.1, 1.1, 1.1, 1.1] #-> man
+            #visual_hull = [-1.1, -1.1, -1.1, 1.1, 1.1, 1.1] #-> man
             #visual_hull = [-0.8, -1.0, -0.8, 0.7, 1.0, 0.8] #-> sculpture
             #visual_hull = [-1.0,-1.2,-1.0,0.9,0.4,1.0] # -> dog
-            #visual_hull = [-1.2, -1.2, -1.2, 1.2, 1.2, 1.2] #-> stone
+            visual_hull = [-1.2, -1.2, -1.2, 1.2, 1.2, 1.2] #-> stone
             #visual_hull = [-1.2, -1.5, -1.5, 1.2, 1.3, 1.2] #-> durian
             import src.Geometry.sampling as sampler
             res = 16
@@ -258,7 +258,7 @@ class Runner:
 
         with torch.no_grad():
             norm_sites = torch.linalg.norm(self.sites, ord=2, axis=-1, keepdims=True)
-            self.sdf[:] = norm_sites[:,0] - 0.5
+            self.sdf[:] = norm_sites[:,0] - 0.2
             self.tet32.sdf_init = self.sdf.detach().clone()
 
         #self.tet32.move_sites(outside_flag, cam_ids, self.sdf.detach(), self.fine_features.detach())
@@ -720,9 +720,9 @@ class Runner:
                 self.learning_rate_cvt = self.learning_rate_cvt / 4.0
 
                 if self.sites.shape[0] > 500000:
-                    self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, 0.0)
+                    self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, 0.0) #(iter_step+1) > 2000
                 else:
-                    self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, self.sigma)
+                    self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, self.sigma)
                 self.sdf = self.sdf.contiguous()
                 self.sdf.requires_grad_(True)
                 self.fine_features = self.fine_features.contiguous()
@@ -829,8 +829,8 @@ class Runner:
                     #self.tv_f = 1.0e-6
                     self.f_w = 1.0
                     self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 5.0e-4
-                    self.learning_rate_feat = 5.0e-4 #1.0e-2
+                    self.learning_rate_sdf = 1.0e-3
+                    self.learning_rate_feat = 5.0e-3 #1.0e-2
                     self.end_iter_loc = 10000
                     self.vortSDF_renderer_fine.mask_reg = 0.001
                     self.learning_rate_alpha = 1.0e-1
@@ -849,9 +849,9 @@ class Runner:
                     self.tv_f = 0.0 #1.0e-4
                     self.f_w = 1.0
                     self.end_iter_loc = 5000
-                    self.learning_rate = 5e-4
-                    self.learning_rate_sdf = 5.0e-4
-                    self.learning_rate_feat = 5.0e-4
+                    self.learning_rate = 5e-3
+                    self.learning_rate_sdf = 5.0e-3
+                    self.learning_rate_feat = 5.0e-3
                     self.vortSDF_renderer_fine.mask_reg = 0.001
                     self.learning_rate_alpha = 1.0e-1
                     
@@ -868,9 +868,9 @@ class Runner:
                     self.tv_w = 1.0e-3
                     self.tv_f = 0.0 #1.0e-3
                     self.end_iter_loc = 10000
-                    self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 1.0e-4
-                    self.learning_rate_feat = 1.0e-4
+                    self.learning_rate = 1e-3
+                    self.learning_rate_sdf = 1.0e-3
+                    self.learning_rate_feat = 1.0e-3
                     self.vortSDF_renderer_fine.mask_reg = 0.001
                     self.learning_rate_alpha = 1.0e-4
                     

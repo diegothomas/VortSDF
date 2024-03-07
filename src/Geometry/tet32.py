@@ -421,7 +421,7 @@ class Tet32(Process):
 
         return sdf.cpu().numpy(), fine_features.cpu().numpy()
 
-    def upsample(self, sdf, feat, visual_hull, res, cam_sites, lr, radius = 0.3):    
+    def upsample(self, sdf, feat, visual_hull, res, cam_sites, lr, flag = True, radius = 0.3):    
         self.lvl_sites.append(np.arange(self.sites.shape[0]))
         self.nb_pre_sites = self.sites.shape[0]
 
@@ -432,6 +432,9 @@ class Tet32(Process):
         self.tri_vertices = np.asarray(tri_mesh.vertices)
         self.tri_faces = np.asarray(tri_mesh.triangles)
         f = SDF(np.asarray(self.tri_vertices), np.asarray(self.tri_faces))
+        tmp_sdf = -f(self.sites)
+        tmp_sdf = torch.from_numpy(tmp_sdf).float().cuda()
+        sdf[:] = tmp_sdf[:]
         
         nb_new_sites = tet_utils.upsample_counter(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(sdf).float().cuda())
                 
@@ -497,11 +500,12 @@ class Tet32(Process):
 
         _, idx = prev_kdtree.query(self.sites, k=1)
         out_sdf = np.zeros(self.sites.shape[0])
-        out_sdf[:] = in_sdf[idx[:]]
-        
+        if flag:
+            out_sdf[:] = in_sdf[idx[:]]
+        else:
+            out_sdf = -f(self.sites)
         """lap_sdf = -f(self.sites)
-        out_sdf[abs(out_sdf[:]) > radius] = lap_sdf[abs(out_sdf[:]) > radius]
-        out_sdf = -f(self.sites)"""
+        out_sdf[abs(out_sdf[:]) > radius] = lap_sdf[abs(out_sdf[:]) > radius]"""
         print("out_sdf => ", out_sdf.sum())
         print("out_sdf => ", out_sdf.min())
         print("out_sdf => ", out_sdf.max())
