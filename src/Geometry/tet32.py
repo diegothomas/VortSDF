@@ -432,7 +432,7 @@ class Tet32(Process):
         self.tri_vertices = np.asarray(tri_mesh.vertices)
         self.tri_faces = np.asarray(tri_mesh.triangles)
         f = SDF(np.asarray(self.tri_vertices), np.asarray(self.tri_faces))
-        tmp_sdf = -f(self.sites)
+        tmp_sdf = -f(self.sites.cpu().numpy())
         tmp_sdf = torch.from_numpy(tmp_sdf).float().cuda()
         sdf[:] = tmp_sdf[:]
         
