@@ -162,12 +162,12 @@ class Runner:
         if not hasattr(self, 'tet32'):
             ##### 2. Load initial sites
             #visual_hull = [-1.1, -1.1, -1.1, 1.1, 1.1, 1.1] #-> man
-            #visual_hull = [-0.8, -1.0, -0.8, 0.7, 1.0, 0.8] #-> sculpture
+            visual_hull = [-0.8, -1.0, -0.8, 0.7, 1.0, 0.8] #-> sculpture
             #visual_hull = [-1.0,-1.2,-1.0,0.9,0.4,1.0] # -> dog
             #visual_hull = [-1.2, -1.2, -1.2, 1.2, 1.2, 1.2] #-> stone
             #visual_hull = [-1.2, -1.5, -1.5, 1.2, 1.3, 1.2] #-> durian
             #visual_hull = [-0.8, -0.8, -1.0, 1.0, 0.8, 0.6] #-> bear
-            visual_hull = [-1.2, -1.1, -1.2, 1.1, 1.1, 1.1] #-> clock
+            #visual_hull = [-1.2, -1.1, -1.2, 1.1, 1.1, 1.1] #-> clock
             
             import src.Geometry.sampling as sampler
             res = 16
@@ -480,11 +480,19 @@ class Runner:
             viewdirs_emb = torch.cat([self.samples_rays[:nb_samples,:], viewdirs_emb.sin(), viewdirs_emb.cos()], -1)
                         
             if self.double_net:
-                geo_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:]], -1)       
-                geo_feat.requires_grad_(True)
-                geo_feat.retain_grad()
 
-                colors_feat = self.color_coarse.rgb(geo_feat)   
+                self.geo_features[:] = 0.0
+                backprop_cuda.geo_feat(nb_samples, 96, samples, self.sites, self.grad_sdf_space, self.sdf.detach(), 
+                                self.geo_features, self.tet32.knn_sites, self.out_ids)
+                #print(self.geo_features[:2,:])
+                #input()
+                
+                coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.geo_features[:nb_samples,:]], -1)       
+                #coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:]], -1)       
+                coarse_feat.requires_grad_(True)
+                coarse_feat.retain_grad()
+
+                colors_feat = self.color_coarse.rgb(coarse_feat)   
                 self.colors = torch.sigmoid(colors_feat)
                 self.colors = self.colors.contiguous()         
             
@@ -547,10 +555,10 @@ class Runner:
                 if self.position_encoding:
                     fine_features_grad = rgb_feat.grad[:,51:]
                     norm_features_grad = rgb_feat.grad[:,45:51]
-                    sdf_features_grad = geo_feat.grad[:,42:]
+                    #sdf_features_grad = coarse_feat.grad[:,42:]
                 else:
                     fine_features_grad = rgb_feat.grad[:,36:]
-                    norm_features_grad = rgb_feat.grad[:,30:36] + 0.5*geo_feat.grad[:,42:]
+                    norm_features_grad = rgb_feat.grad[:,30:36] + 0.5*coarse_feat.grad[:,42:]
             else:
                 if self.position_encoding:
                     fine_features_grad = rgb_feat.grad[:,48:] # 44 <- view pose encoding = 1 rgb_feat.grad[:,62:]  <- view pose encoding = 4
@@ -572,8 +580,8 @@ class Runner:
             self.grad_sdf_norm[outside_flag[:] == 1.0] = 0.0   
 
             self.grad_sdf_net[:] = 0.0
-            backprop_cuda.backprop_sdf(nb_samples, self.grad_sdf_net, sdf_features_grad, self.out_ids, self.out_weights)    
-            #backprop_cuda.backprop_norm(nb_samples, self.grad_sdf_net, self.grad_norm_feat, self.weights_grad)  
+            #backprop_cuda.backprop_sdf(nb_samples, self.grad_sdf_net, sdf_features_grad, self.out_ids, self.out_weights)    
+            ##backprop_cuda.backprop_norm(nb_samples, self.grad_sdf_net, self.grad_norm_feat, self.weights_grad)  
             self.grad_sdf_net[outside_flag[:] == 1.0] = 0.0   
             
             if verbose:
@@ -794,7 +802,7 @@ class Runner:
                     self.e_w = 1.0e-5 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-1
                     self.s_start = 50.0
-                    self.learning_rate = 1e-3
+                    self.learning_rate = 1e-5
                     self.learning_rate_sdf = 1.0e-3 #5.0e-4
                     self.learning_rate_feat = 1.0e-3
                     self.end_iter_loc = 3000
@@ -812,7 +820,7 @@ class Runner:
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1
                     #self.tv_f = 1.0e-8
                     self.f_w = 1.0
-                    self.learning_rate = 1e-3
+                    self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-3 #3.0e-4 #5
                     self.learning_rate_feat = 1.0e-3
                     self.end_iter_loc = 5000
@@ -1044,8 +1052,12 @@ class Runner:
            
             
             if self.double_net:
-                geo_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:]], -1)
-                colors_feat = self.color_coarse.rgb(geo_feat)   
+                self.geo_features[:] = 0.0
+                backprop_cuda.geo_feat(nb_samples, 96, samples, self.sites, self.grad_sdf_space, self.sdf, 
+                                self.geo_features, self.tet32.knn_sites, self.out_ids)                
+                coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.geo_features[:nb_samples,:]], -1)      
+                #geo_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:]], -1)
+                colors_feat = self.color_coarse.rgb(coarse_feat)   
                 self.colors = torch.sigmoid(colors_feat)
                 self.colors = self.colors.contiguous()
 
@@ -1226,6 +1238,8 @@ class Runner:
         
         self.out_grads = torch.zeros([self.n_samples * self.batch_size, 6], dtype=torch.float32).cuda().contiguous()
         
+        self.geo_features = torch.zeros([self.n_samples * self.batch_size, 32], dtype=torch.float32).cuda().contiguous()
+
         self.offsets = torch.zeros([self.batch_size, 2], dtype=torch.int32).cuda()
         self.offsets = self.offsets.contiguous()
 

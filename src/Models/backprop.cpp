@@ -104,6 +104,17 @@ void knn_smooth_sdf_cuda(
     torch::Tensor sdf_smooth
 );
 
+void geo_feat_cuda(
+    size_t num_samples,
+    size_t num_knn,
+    torch::Tensor samples,
+    torch::Tensor vertices, 
+    torch::Tensor grads,
+    torch::Tensor sdf,
+    torch::Tensor geo_feat,
+    torch::Tensor neighbors,
+    torch::Tensor cell_ids
+);
 
 void activate_sites_cuda(
     size_t num_rays,
@@ -321,6 +332,30 @@ void knn_smooth(
         sdf_smooth);
 }
 
+void geo_feat(
+    size_t num_samples,
+    size_t num_knn,
+    torch::Tensor samples,
+    torch::Tensor vertices, 
+    torch::Tensor grads,
+    torch::Tensor sdf,
+    torch::Tensor geo_feat,
+    torch::Tensor neighbors,
+    torch::Tensor cell_ids
+) {
+    geo_feat_cuda(
+        num_samples,
+        num_knn,
+        samples,
+        vertices, 
+        grads,
+        sdf,
+        geo_feat,
+        neighbors,
+        cell_ids);
+}
+
+
 void activate_sites(
     size_t num_rays,
     size_t num_sites,
@@ -352,5 +387,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("smooth", &smooth, "smooth (CPP)");
     m.def("bnn_smooth", &bnn_smooth, "bnn_smooth (CPP)");
     m.def("knn_smooth", &knn_smooth, "knn_smooth (CPP)");
+    m.def("geo_feat", &geo_feat, "geo_feat (CPP)");
     m.def("activate_sites", &activate_sites, "activate_sites (CPP)");
 }
