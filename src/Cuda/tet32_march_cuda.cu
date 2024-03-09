@@ -128,36 +128,34 @@ __device__ float get_sdf32(float* weights, float p[3], float* sites, float* sdf,
 	int id1 = tets[4 * tet_id + 1];
 	int id2 = tets[4 * tet_id + 2];
 	int id3 = id0 ^ id1 ^ id2 ^ tets[4 * tet_id + 3];
-	float tot_vol = volume_tetrahedron_32(&sites[3 * id0], &sites[3 * id1],
-		&sites[3 * id2], &sites[3 * id3]);
+	float tot_vol = __double2float_rn(volume_tetrahedron_32(&sites[3 * id0], &sites[3 * id1],
+		&sites[3 * id2], &sites[3 * id3]));
 
-	float w_1 = tot_vol == 0.0f ? 0.25f : volume_tetrahedron_32(p, &sites[3 * id1],
-		&sites[3 * id2], &sites[3 * id3]) / tot_vol;
-	float w_2 = tot_vol == 0.0f ? 0.25f : volume_tetrahedron_32(p, &sites[3 * id0],
-		&sites[3 * id2], &sites[3 * id3]) / tot_vol;
-	float w_3 = tot_vol == 0.0f ? 0.25f : volume_tetrahedron_32(p, &sites[3 * id0],
-		&sites[3 * id1], &sites[3 * id3]) / tot_vol;
-	float w_4 = tot_vol == 0.0f ? 0.25f : volume_tetrahedron_32(p, &sites[3 * id0],
-		&sites[3 * id1], &sites[3 * id2]) / tot_vol;
+    weights[0] = tot_vol == 0.0f ? 0.25f : __double2float_rn(volume_tetrahedron_32(p, &sites[3 * id1],
+		&sites[3 * id2], &sites[3 * id3])) / tot_vol;
+    weights[1] = tot_vol == 0.0f ? 0.25f : __double2float_rn(volume_tetrahedron_32(p, &sites[3 * id0],
+		&sites[3 * id2], &sites[3 * id3])) / tot_vol;
+    weights[2] = tot_vol == 0.0f ? 0.25f : __double2float_rn(volume_tetrahedron_32(p, &sites[3 * id0],
+		&sites[3 * id1], &sites[3 * id3])) / tot_vol;
+    weights[3] = tot_vol == 0.0f ? 0.25f : __double2float_rn(volume_tetrahedron_32(p, &sites[3 * id0],
+		&sites[3 * id1], &sites[3 * id2])) / tot_vol;
 
-	float sum_weights = w_1 + w_2 + w_3 + w_4;
+    float sum_weights = weights[0] + weights[1] + weights[2] + weights[3];
 	if (sum_weights > 0.0f) {
-		w_1 = w_1 / sum_weights;
-		w_2 = w_2 / sum_weights;
-		w_3 = w_3 / sum_weights;
-		w_4 = w_4 / sum_weights;
+		weights[0] = weights[0] / sum_weights;
+		weights[1] = weights[1] / sum_weights;
+		weights[2] = weights[2] / sum_weights;
+		weights[3] = weights[3] / sum_weights;
 	}
 	else {
-		w_1 = 0.25f;
-		w_2 = 0.25f;
-		w_3 = 0.25f;
-		w_4 = 0.25f;
+		weights[0] = 0.25f;
+		weights[1] = 0.25f;
+		weights[2] = 0.25f;
+		weights[3] = 0.25f;
 	}
 
-	weights[0] = w_1; weights[1] = w_2; weights[2] = w_3; weights[3] = w_4;
-
-	return sdf[id0] * w_1 + sdf[id1] * w_2 +
-		sdf[id2] * w_3 + sdf[id3] * w_4;
+	return sdf[id0] * weights[0] + sdf[id1] * weights[1] +
+            sdf[id2] * weights[2] + sdf[id3] * weights[3];
 }
 
 __device__ void get_feat32(float *feat, float weights[4], float* vol_feat, int* tets, int tet_id) {
@@ -1027,7 +1025,7 @@ __global__ void tet32_march_cuda_kernel(
 					z_val_ray[2 * s_id] = prev_dist_tet;
 					z_val_ray[2 * s_id + 1] = curr_dist;
 
-					z_id_ray[12 * s_id] = prev_ids_s[0]; 
+					z_id_ray[12 * s_id] = prev_tet_id; //prev_ids_s[0]; 
 					z_id_ray[12 * s_id + 1] = prev_ids_s[1];
 					z_id_ray[12 * s_id + 2] = prev_ids_s[2]; 
 					z_id_ray[12 * s_id + 3] = prev_ids_s[3]; 

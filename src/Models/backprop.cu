@@ -3,6 +3,8 @@
 #include <vector>
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <curand.h>
+#include <curand_kernel.h>
 
 #include <device_launch_parameters.h>
 #include "cudaType.cuh"
@@ -22,6 +24,11 @@
 /** Device functions **/
 /** Device functions **/
 
+__global__ void setup_kernel(curandState* state, uint64_t seed)
+{
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    curand_init(seed, tid, 0, &state[tid]);
+}
 
 inline __device__ double dot3D_gpu_d(double a[3], double b[3]) {
 	return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -38,6 +45,43 @@ __device__ double volume_tetrahedron_32(float a[3], float b[3], float c[3], floa
 
 	double res = abs(dot3D_gpu_d(ad, n)) / 6.0;
 	return res;
+}
+
+
+__device__ float get_sdf_cvt(float weights[4], float p[3], float* sites, float* sdf, int* tets, int tet_id, float s_inv) {
+    int id0 = tets[4 * tet_id];
+	int id1 = tets[4 * tet_id + 1];
+	int id2 = tets[4 * tet_id + 2];
+	int id3 = id0 ^ id1 ^ id2 ^ tets[4 * tet_id + 3];
+    
+    float tot_vol = __double2float_rn(volume_tetrahedron_32(&sites[3 * id0], &sites[3 * id1],
+		&sites[3 * id2], &sites[3 * id3]));
+
+    weights[0] = tot_vol == 0.0f ? 0.25f : __double2float_rn(volume_tetrahedron_32(p, &sites[3 * id1],
+		&sites[3 * id2], &sites[3 * id3])) / tot_vol;
+    weights[1] = tot_vol == 0.0f ? 0.25f : __double2float_rn(volume_tetrahedron_32(p, &sites[3 * id0],
+		&sites[3 * id2], &sites[3 * id3])) / tot_vol;
+    weights[2] = tot_vol == 0.0f ? 0.25f : __double2float_rn(volume_tetrahedron_32(p, &sites[3 * id0],
+		&sites[3 * id1], &sites[3 * id3])) / tot_vol;
+    weights[3] = tot_vol == 0.0f ? 0.25f : __double2float_rn(volume_tetrahedron_32(p, &sites[3 * id0],
+		&sites[3 * id1], &sites[3 * id2])) / tot_vol;
+
+    float sum_weights = weights[0] + weights[1] + weights[2] + weights[3];
+	if (sum_weights > 0.0f) {
+		weights[0] = weights[0] / sum_weights;
+		weights[1] = weights[1] / sum_weights;
+		weights[2] = weights[2] / sum_weights;
+		weights[3] = weights[3] / sum_weights;
+	}
+	else {
+		weights[0] = 0.25f;
+		weights[1] = 0.25f;
+		weights[2] = 0.25f;
+		weights[3] = 0.25f;
+	}
+
+    return sdf[id0] * weights[0] + sdf[id1] * weights[1] +
+            sdf[id2] * weights[2] + sdf[id3] * weights[3];
 }
 
 __global__ void backprop_feat_kernel(
@@ -356,7 +400,7 @@ __global__ void smooth_grad_kernel(
     return;
 }
 
-__global__ void geo_feat_kernel(
+/*__global__ void geo_feat_kernel(
     const size_t num_samples,                // number of rays
     const size_t num_knn,  
     float *__restrict__ samples,     // [N_voxels, 4] for each voxel => it's vertices
@@ -453,8 +497,119 @@ __global__ void geo_feat_kernel(
     }
 
     return;
-}
+}*/
 
+__global__ void geo_feat_kernel(
+    const size_t num_samples,                // number of rays
+    const size_t num_knn,  
+    float *__restrict__ samples,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ grads,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ geo_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    curandState* my_curandstate, 
+    int *__restrict__ tets,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ neighbors,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ cell_ids
+    )
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_samples)
+    {
+        return;
+    }
+
+    float ref_p[3] = { samples[3 * idx], samples[3 * idx + 1], samples[3 * idx + 2] };
+    float data[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    float weights[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+    int size_feat = 21;
+    int curr_tet = cell_ids[12*idx];
+    if (curr_tet < 0) {
+        geo_feat[size_feat * idx] = 20.0f;
+        for (int i = 1; i < size_feat; i++)
+            geo_feat[size_feat * idx + i] = 0.0f;
+        return;
+    }
+
+    if ( neighbors[4 * curr_tet] == -1 || neighbors[4 * curr_tet + 1] == -1 || neighbors[4 * curr_tet + 2] == -1 || neighbors[4 * curr_tet + 3] == -1) {
+        geo_feat[size_feat * idx] = 20.0f;
+        for (int i = 1; i < size_feat; i++)
+            geo_feat[size_feat * idx + i] = 0.0f;
+        return;
+    }
+
+    float* curr_features = &geo_feat[size_feat * idx];
+
+    int tet_ids[4] = {tets[4*curr_tet], tets[4*curr_tet + 1], tets[4*curr_tet + 2], 
+                        tets[4*curr_tet] ^ tets[4*curr_tet+1] ^ tets[4*curr_tet+2] ^ tets[4*curr_tet+3]};
+
+    // first feature is sdf at sample location
+    curr_features[0] = get_sdf_cvt(weights, ref_p, vertices, sdf, tets, curr_tet, 0.0f);
+    /*sample_weights[4 * idx] = weights[0];
+    sample_weights[4 * idx + 1] = weights[1];
+    sample_weights[4 * idx + 2] = weights[2];
+    sample_weights[4 * idx + 3] = weights[3];*/
+
+    // 1-4 feature are sdf at summits of the tetrahedron
+    int id_list[4] = { 0,1,2,3 };
+    for (int i = 0; i < 4; i++) {
+        int curr_id = int(round(curand_uniform(my_curandstate + (idx + i) % 256) * (3.0f - float(i))));
+        int tmp = id_list[i];
+        id_list[i] = id_list[i + curr_id];
+        id_list[i + curr_id] = tmp;
+        curr_features[1 + id_list[i]] = sdf[tet_ids[i]];
+    }
+
+    // 5-8 feature are sdf at summits of the adjacent tetrahedra
+    // feat 5 + i corresponds to sdf on adjacent tet opposite to the ith summit, (feat[1+i])
+    int n_tet_ids[4] {};
+    int n_id[4] = {-1, -1, -1, -1};
+    for (int i = 0; i < 4; i++) {
+        int curr_id = int(round(curand_uniform(my_curandstate + (idx + 4 + i) % 256) * (3.0f - float(i))));
+        int tmp = id_list[i];
+        id_list[i] = id_list[i + curr_id];
+        id_list[i + curr_id] = tmp;
+
+        int n_tet = neighbors[4 * curr_tet + i];
+        n_tet_ids[0] = tets[4*n_tet]; n_tet_ids[1] = tets[4*n_tet + 1]; n_tet_ids[2] = tets[4*n_tet + 2]; 
+        n_tet_ids[3] = tets[4*n_tet] ^ tets[4*n_tet+1] ^ tets[4*n_tet+2] ^ tets[4*n_tet+3];
+        //search summit that is not in current tetrahedron
+        for (int j = 0; j < 4; j++) {
+            if (n_tet_ids[j] != tet_ids[0] && n_tet_ids[j] != tet_ids[1] &&
+                n_tet_ids[j] != tet_ids[2] && n_tet_ids[j] != tet_ids[3]) {
+                curr_features[5 + id_list[i]] = sdf[n_tet_ids[j]];
+                n_id[i] = n_tet_ids[j];
+                break;
+            }
+        }
+    }
+
+    if (n_id[0] == -1 || n_id[1] == -1 || n_id[2] == -1 || n_id[3] == -1) {
+        geo_feat[size_feat * idx] = 20.0f;
+        for (int i = 1; i < size_feat; i++)
+            geo_feat[size_feat * idx + i] = 0.0f;
+        return;
+    }
+
+    // 9-21 feature are 3D vectors difference of sdf at opposite summits
+
+    for (int i = 0; i < 4; i++) {
+        int curr_id = int(round(curand_uniform(my_curandstate + (idx + 8 + i) % 256) * (3.0f - float(i))));
+        int tmp = id_list[i];
+        id_list[i] = id_list[i + curr_id];
+        id_list[i + curr_id] = tmp;
+
+        float vec[3] = { vertices[3 * n_id[i]] - vertices[3 * tet_ids[i]],
+                        vertices[3 * n_id[i] + 1] - vertices[3 * tet_ids[i] + 1], 
+                        vertices[3 * n_id[i] + 2] - vertices[3 * tet_ids[i] + 2]};
+        float norm_2 = vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2];
+
+        curr_features[9 + 3 * id_list[i]] = (curr_features[5 + i] - curr_features[1 + i]) * vec[0]/norm_2;
+        curr_features[9 + 3 * id_list[i] + 1] = (curr_features[5 + i] - curr_features[1 + i]) * vec[1] / norm_2;
+        curr_features[9 + 3 * id_list[i] + 2] = (curr_features[5 + i] - curr_features[1 + i]) * vec[2] / norm_2;
+    }
+}
 
 __global__ void knn_smooth_kernel(
     const size_t num_sites,                // number of rays
@@ -1081,11 +1236,18 @@ void geo_feat_cuda(
     torch::Tensor grads,
     torch::Tensor sdf,
     torch::Tensor geo_feat,
+    torch::Tensor tets,
     torch::Tensor neighbors,
     torch::Tensor cell_ids
 )
 {
-    const int threads = 1024;
+    cudaStream_t computeStream;
+    curandState* d_state;
+    cudaMalloc(&d_state, 256 * sizeof(curandState));
+    setup_kernel << < 1, 256, 0, computeStream >> > (d_state, time(NULL));
+    cudaDeviceSynchronize();
+
+    const int threads = 512;
     const int blocks = (num_samples + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
     AT_DISPATCH_FLOATING_TYPES( sdf.type(),"geo_feat_kernel", ([&] {  
         geo_feat_kernel CUDA_KERNEL(blocks,threads) (
@@ -1096,10 +1258,14 @@ void geo_feat_cuda(
             grads.data_ptr<float>(),       // [N_rays, 6]
             sdf.data_ptr<float>(),       // [N_rays, 6]
             geo_feat.data_ptr<float>(),       // [N_rays, 6]
+            d_state,
+            tets.data_ptr<int>(),       // [N_rays, 6]
             neighbors.data_ptr<int>(),       // [N_rays, 6]
             cell_ids.data_ptr<int>());
     }));
     cudaDeviceSynchronize();
+
+    cudaFree(d_state);
 }
 
 

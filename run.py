@@ -483,9 +483,7 @@ class Runner:
 
                 self.geo_features[:] = 0.0
                 backprop_cuda.geo_feat(nb_samples, 96, samples, self.sites, self.grad_sdf_space, self.sdf.detach(), 
-                                self.geo_features, self.tet32.knn_sites, self.out_ids)
-                #print(self.geo_features[:2,:])
-                #input()
+                                self.geo_features, self.tet32.summits, self.tet32.neighbors, self.out_ids)
                 
                 coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.geo_features[:nb_samples,:]], -1)       
                 #coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:]], -1)       
@@ -802,7 +800,7 @@ class Runner:
                     self.e_w = 1.0e-5 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-1
                     self.s_start = 50.0
-                    self.learning_rate = 1e-5
+                    self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-3 #5.0e-4
                     self.learning_rate_feat = 1.0e-3
                     self.end_iter_loc = 3000
@@ -1053,8 +1051,8 @@ class Runner:
             
             if self.double_net:
                 self.geo_features[:] = 0.0
-                backprop_cuda.geo_feat(nb_samples, 96, samples, self.sites, self.grad_sdf_space, self.sdf, 
-                                self.geo_features, self.tet32.knn_sites, self.out_ids)                
+                backprop_cuda.geo_feat(nb_samples, 96, samples, self.sites, self.grad_sdf_space, self.sdf.detach(), 
+                                self.geo_features, self.tet32.summits, self.tet32.neighbors, self.out_ids)             
                 coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.geo_features[:nb_samples,:]], -1)      
                 #geo_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:]], -1)
                 colors_feat = self.color_coarse.rgb(coarse_feat)   
@@ -1238,7 +1236,7 @@ class Runner:
         
         self.out_grads = torch.zeros([self.n_samples * self.batch_size, 6], dtype=torch.float32).cuda().contiguous()
         
-        self.geo_features = torch.zeros([self.n_samples * self.batch_size, 32], dtype=torch.float32).cuda().contiguous()
+        self.geo_features = torch.zeros([self.n_samples * self.batch_size, 21], dtype=torch.float32).cuda().contiguous()
 
         self.offsets = torch.zeros([self.batch_size, 2], dtype=torch.int32).cuda()
         self.offsets = self.offsets.contiguous()

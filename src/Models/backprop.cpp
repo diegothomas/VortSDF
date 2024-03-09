@@ -112,6 +112,7 @@ void geo_feat_cuda(
     torch::Tensor grads,
     torch::Tensor sdf,
     torch::Tensor geo_feat,
+    torch::Tensor tets,
     torch::Tensor neighbors,
     torch::Tensor cell_ids
 );
@@ -340,6 +341,7 @@ void geo_feat(
     torch::Tensor grads,
     torch::Tensor sdf,
     torch::Tensor geo_feat,
+    torch::Tensor tets,
     torch::Tensor neighbors,
     torch::Tensor cell_ids
 ) {
@@ -351,6 +353,7 @@ void geo_feat(
         grads,
         sdf,
         geo_feat,
+        tets,
         neighbors,
         cell_ids);
 }
