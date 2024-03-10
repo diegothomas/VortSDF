@@ -689,36 +689,36 @@ class Runner:
            
             norm_grad = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1)
 
-            """if (iter_step+1) > 5000:
+            if (iter_step+1) > 5000:
                 self.grad_norm_smooth[abs(self.sdf) > 3.0*self.sigma] = 0.0
                 self.grad_eik[abs(self.sdf) > 3.0*self.sigma] = 0.0
-                self.grad_sdf_smooth[abs(self.sdf) > 3.0*self.sigma] = 0.0"""
+                self.grad_sdf_smooth[abs(self.sdf) > 3.0*self.sigma] = 0.0
             
             #self.grad_norm_smooth = self.grad_norm_smooth / self.sites.shape[0]
             #self.grad_eik = self.grad_eik / self.sites.shape[0]
             self.grad_sdf_smooth = self.grad_sdf_smooth / self.sigma
                 
-            if iter_step % 3 != 0: # or (iter_step+1) < 10000:    
+            if True: #iter_step % 3 != 0: # or (iter_step+1) < 10000:    
                 self.grad_norm_smooth[grad_sdf == 0.0] = 0.0
                 self.grad_eik[grad_sdf == 0.0] = 0.0
                 self.grad_sdf_smooth[grad_sdf == 0.0] = 0.0
                 
-            """if iter_step % 3 != 0 and (iter_step+1) > 5000: # or (iter_step+1) > 10000:   
+            """if iter_step % 3 != 0 or (iter_step+1) > 5000:# and (iter_step+1) > 5000: # or (iter_step+1) > 10000:   
                 self.grad_norm_smooth[:] = 0.0
                 self.grad_eik[:] = 0.0
-                self.grad_sdf_smooth[:] = 0.0 
+                self.grad_sdf_smooth[:] = 0.0""" 
 
                 
-            if iter_step % 5 != 0 and (iter_step+1) > 15000: # or (iter_step+1) > 10000:   
+            """if iter_step % 5 != 0 and (iter_step+1) > 15000: # or (iter_step+1) > 10000:   
                 self.grad_norm_smooth[:] = 0.0
                 self.grad_eik[:] = 0.0
                 self.grad_sdf_smooth[:] = 0.0""" 
 
 
             self.optimizer_sdf.zero_grad() # 0.00001*self.grad_mean_curve +\ # self.e_w*self.grad_eik +\
-            self.sdf.grad = (norm_grad*grad_sdf +\
-                        self.s_w*self.grad_norm_smooth +\
-                        self.tv_w*self.grad_sdf_smooth) #+ 1.0e-3*self.grad_sdf_reg / (mask_sum + 1.0e-5) #self.grad_sdf_net # #+ self.grad_sdf_net  + self.f_w*self.grad_sdf_net
+            self.sdf.grad = (norm_grad*grad_sdf + self.e_w*self.grad_eik)# +\
+                        #self.s_w*self.grad_norm_smooth +\
+                        #self.tv_w*self.grad_sdf_smooth) #+ 1.0e-3*self.grad_sdf_reg / (mask_sum + 1.0e-5) #self.grad_sdf_net # #+ self.grad_sdf_net  + self.f_w*self.grad_sdf_net
             self.optimizer_sdf.step()
 
             ########################################
