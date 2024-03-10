@@ -111,8 +111,8 @@ class VortSDFRenderingFunction(autograd.Function):
         mask_sum = mask.sum()
         grads_color.requires_grad_(True)
         grads_sdf_net.requires_grad_(True)
-        ctx.save_for_backward(grads_color, grads_sdf_net, torch.tensor([color_samples.shape[0]]))   
-            
+
+        ctx.save_for_backward(grads_color, grads_sdf_net, torch.tensor([color_samples.shape[0]]))               
         #ctx.save_for_backward(grads_color / (mask_sum + 1.0e-5), grads_sdf_net / (mask_sum + 1.0e-5), torch.tensor([color_samples.shape[0]]))   
             
         """norm = matplotlib.colors.Normalize(vmin=0.0, vmax=1.0 , clip = False)

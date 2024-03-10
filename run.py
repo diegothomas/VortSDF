@@ -482,10 +482,11 @@ class Runner:
             if self.double_net:
 
                 self.geo_features[:] = 0.0
-                backprop_cuda.geo_feat(nb_samples, 96, samples, self.sites, self.grad_sdf_space, self.sdf.detach(), 
-                                self.geo_features, self.tet32.summits, self.tet32.neighbors, self.out_ids)
+                backprop_cuda.geo_feat(nb_samples, 96, self.sigma, samples, self.sites, self.grad_sdf_space, self.sdf.detach(), 
+                                self.geo_features, self.tet32.summits, self.tet32.knn_sites, self.out_ids)
                 
-                coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.geo_features[:nb_samples,:]], -1)       
+                coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:], self.out_feat[:nb_samples,:]], -1)       
+                #coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.geo_features[:nb_samples,:]], -1)       
                 #coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:]], -1)       
                 coarse_feat.requires_grad_(True)
                 coarse_feat.retain_grad()
@@ -603,14 +604,15 @@ class Runner:
             ### SMOOTH SDF GRADIENT
             #lamda_c = 0.0
             #if iter_step > 10000:
-            #    lamda_c = 0.5
+            #    lamda_c = 0.2
             """if iter_step > 5000:
                 lamda_c = 0.00005
             if iter_step > 10000:
                 lamda_c = 0.0001"""
 
             if self.double_net:     
-                #grad_sdf =  ((1.0 - lamda_c)*self.vortSDF_renderer_fine.grads_sdf + lamda_c*self.vortSDF_renderer_coarse_net.grads_sdf) / (mask_sum + 1.0e-5)
+                #grad_sdf =  self.f_w*(self.grad_sdf_net + self.grad_sdf_norm) +\
+                #    ((1.0 - lamda_c)*self.vortSDF_renderer_fine.grads_sdf + lamda_c*self.vortSDF_renderer_coarse_net.grads_sdf)
                 grad_sdf =  self.f_w*(self.grad_sdf_net + self.grad_sdf_norm) +\
                              (self.vortSDF_renderer_fine.grads_sdf) # + lamda_c*self.vortSDF_renderer_coarse_net.grads_sdf)
             else:
@@ -685,18 +687,18 @@ class Runner:
 
             #grad_sdf = (0.5*self.voro_renderer_coarse.grads_sdf[:,0] + 1.0*self.voro_renderer_fine.grads_sdf[:,0]) / (mask_sum + 1.0e-5)
            
-            #norm_grad = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1)
+            norm_grad = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1)
 
-            if (iter_step+1) > 5000:
+            """if (iter_step+1) > 5000:
                 self.grad_norm_smooth[abs(self.sdf) > 3.0*self.sigma] = 0.0
                 self.grad_eik[abs(self.sdf) > 3.0*self.sigma] = 0.0
-                self.grad_sdf_smooth[abs(self.sdf) > 3.0*self.sigma] = 0.0
+                self.grad_sdf_smooth[abs(self.sdf) > 3.0*self.sigma] = 0.0"""
             
             #self.grad_norm_smooth = self.grad_norm_smooth / self.sites.shape[0]
             #self.grad_eik = self.grad_eik / self.sites.shape[0]
             self.grad_sdf_smooth = self.grad_sdf_smooth / self.sigma
                 
-            if True: #iter_step % 3 != 0 or (iter_step+1) < 10000:    
+            if iter_step % 3 != 0: # or (iter_step+1) < 10000:    
                 self.grad_norm_smooth[grad_sdf == 0.0] = 0.0
                 self.grad_eik[grad_sdf == 0.0] = 0.0
                 self.grad_sdf_smooth[grad_sdf == 0.0] = 0.0
@@ -714,7 +716,7 @@ class Runner:
 
 
             self.optimizer_sdf.zero_grad() # 0.00001*self.grad_mean_curve +\ # self.e_w*self.grad_eik +\
-            self.sdf.grad = (grad_sdf +\
+            self.sdf.grad = (norm_grad*grad_sdf +\
                         self.s_w*self.grad_norm_smooth +\
                         self.tv_w*self.grad_sdf_smooth) #+ 1.0e-3*self.grad_sdf_reg / (mask_sum + 1.0e-5) #self.grad_sdf_net # #+ self.grad_sdf_net  + self.f_w*self.grad_sdf_net
             self.optimizer_sdf.step()
@@ -722,11 +724,10 @@ class Runner:
             ########################################
             ##### Optimize sites positions #########
             ########################################
-            if (iter_step+1) == 2000 or (iter_step+1) == 5000 or (iter_step+1) == 10000 or (iter_step+1) == 20000:# or (iter_step+1) == 25000:# or (iter_step+1) == 45000:
+            if (iter_step+1) == 2000 or (iter_step+1) == 5000 or (iter_step+1) == 10000 or (iter_step+1) == 20000 or (iter_step+1) == 25000:# or (iter_step+1) == 45000:
                 
                 #if (iter_step+1) == 20000:
                 #    self.batch_size = 10240
-                self.learning_rate_cvt = self.learning_rate_cvt / 4.0
 
                 if self.sites.shape[0] > 500000:
                     self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, 0.0) #(iter_step+1) > 2000
@@ -789,6 +790,7 @@ class Runner:
                 self.e_w = self.e_w / 10.0
                 self.learning_rate_sdf = 1.0e-4
                 self.tv_w = self.tv_w / 2.0
+                self.learning_rate_cvt = self.learning_rate_cvt / 2.0
 
                 self.sigma = self.sigma / 2.0
 
@@ -857,10 +859,10 @@ class Runner:
                     self.tv_w = 1.0e-3 #1.0e-8 #1.0e-1
                     self.tv_f = 0.0 #1.0e-4
                     self.f_w = 1.0
-                    self.end_iter_loc = 15000
-                    self.learning_rate = 5e-3
-                    self.learning_rate_sdf = 5.0e-3
-                    self.learning_rate_feat = 5.0e-3
+                    self.end_iter_loc = 5000
+                    self.learning_rate = 5e-4
+                    self.learning_rate_sdf = 5.0e-4
+                    self.learning_rate_feat = 5.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 0.001
                     self.learning_rate_alpha = 1.0e-4
                     
@@ -877,9 +879,9 @@ class Runner:
                     self.tv_w = 1.0e-3
                     self.tv_f = 0.0 #1.0e-3
                     self.end_iter_loc = 10000
-                    self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 1.0e-3
-                    self.learning_rate_feat = 1.0e-3
+                    self.learning_rate = 1e-4
+                    self.learning_rate_sdf = 1.0e-4
+                    self.learning_rate_feat = 1.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 0.001
                     self.learning_rate_alpha = 1.0e-4
                     
@@ -1051,9 +1053,10 @@ class Runner:
             
             if self.double_net:
                 self.geo_features[:] = 0.0
-                backprop_cuda.geo_feat(nb_samples, 96, samples, self.sites, self.grad_sdf_space, self.sdf.detach(), 
-                                self.geo_features, self.tet32.summits, self.tet32.neighbors, self.out_ids)             
-                coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.geo_features[:nb_samples,:]], -1)      
+                backprop_cuda.geo_feat(nb_samples, 96, self.sigma, samples, self.sites, self.grad_sdf_space, self.sdf.detach(), 
+                                self.geo_features, self.tet32.summits, self.tet32.knn_sites, self.out_ids)          
+                coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:], self.out_feat[:nb_samples,:]], -1)      
+                #coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.geo_features[:nb_samples,:]], -1)      
                 #geo_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:]], -1)
                 colors_feat = self.color_coarse.rgb(coarse_feat)   
                 self.colors = torch.sigmoid(colors_feat)
@@ -1236,7 +1239,7 @@ class Runner:
         
         self.out_grads = torch.zeros([self.n_samples * self.batch_size, 6], dtype=torch.float32).cuda().contiguous()
         
-        self.geo_features = torch.zeros([self.n_samples * self.batch_size, 21], dtype=torch.float32).cuda().contiguous()
+        self.geo_features = torch.zeros([self.n_samples * self.batch_size, 32], dtype=torch.float32).cuda().contiguous()
 
         self.offsets = torch.zeros([self.batch_size, 2], dtype=torch.int32).cuda()
         self.offsets = self.offsets.contiguous()

@@ -107,6 +107,7 @@ void knn_smooth_sdf_cuda(
 void geo_feat_cuda(
     size_t num_samples,
     size_t num_knn,
+    float sigma,
     torch::Tensor samples,
     torch::Tensor vertices, 
     torch::Tensor grads,
@@ -336,6 +337,7 @@ void knn_smooth(
 void geo_feat(
     size_t num_samples,
     size_t num_knn,
+    float sigma,
     torch::Tensor samples,
     torch::Tensor vertices, 
     torch::Tensor grads,
@@ -348,6 +350,7 @@ void geo_feat(
     geo_feat_cuda(
         num_samples,
         num_knn,
+        sigma,
         samples,
         vertices, 
         grads,

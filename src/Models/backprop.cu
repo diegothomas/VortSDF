@@ -400,9 +400,10 @@ __global__ void smooth_grad_kernel(
     return;
 }
 
-/*__global__ void geo_feat_kernel(
+__global__ void geo_feat_kernel(
     const size_t num_samples,                // number of rays
     const size_t num_knn,  
+    const float sigma,  
     float *__restrict__ samples,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ grads,     // [N_voxels, 4] for each voxel => it's vertices
@@ -423,13 +424,15 @@ __global__ void smooth_grad_kernel(
 
     int nb_lvl = 1;//num_knn / 32; //fmin(2, num_knn / 32);
 
-    float theta, phi, length_edge, length_edge_2;
+    float theta, phi, length_edge, length_edge_2, diff_theta, diff_phi, w_r;
     int knn_id;
 
     float curr_point[3] {samples[3*idx], samples[3*idx + 1], samples[3*idx + 2]};
     float curr_edge[3] {};
     float counter_feat[8] {};
     int id[2] {};
+    float base_theta[2] {PI / 4.0f, 3.0f*PI / 4.0f};
+    float base_phi[4] {-3.0f*PI / 4.0f, -PI / 4.0f, PI / 4.0f, 3.0f*PI / 4.0f};
 
     //select closest site
     float min_dist = 1.0e32;
@@ -449,7 +452,7 @@ __global__ void smooth_grad_kernel(
     if (min_id == -1)
         return;
     
-    //float radius = 2.0f*sigma;
+    float radius = sigma;
     float max_dist = -1.0f;
     for (int lvl_curr = 0; lvl_curr < nb_lvl; lvl_curr++) {
         for (int i = 0; i < 32; i++) {
@@ -462,9 +465,10 @@ __global__ void smooth_grad_kernel(
             curr_edge[2] = (vertices[3*knn_id + 2] - curr_point[2]);
             length_edge = sqrt(curr_edge[0]*curr_edge[0] + curr_edge[1]*curr_edge[1] + curr_edge[2]*curr_edge[2]);
             
-            if (length_edge < 1.0e-10)
+            if (length_edge < 1.0e-10 /*|| length_edge > radius*/)
                 continue;
 
+            w_r = exp(-4.0f*(length_edge - sigma/2.0f)*(length_edge - sigma/2.0f) / (sigma*sigma));
             theta = acos(curr_edge[2]/length_edge);
             length_edge_2 = sqrt(curr_edge[0]*curr_edge[0] + curr_edge[1]*curr_edge[1]);
             if (length_edge_2 < 1.0e-10) {
@@ -477,29 +481,36 @@ __global__ void smooth_grad_kernel(
                 } 
             }
 
-            id[0] = int(floorf(2.0f * theta / PI));
-            id[1] = int(floorf(2.0f * (phi + PI) / PI));
+            for (int t_i = 0; t_i < 2; t_i++) {           
+                //diff_theta = max(0.0f, cos(theta - base_theta[t_i]));     
+                diff_theta = exp(-16.0f*(theta - base_theta[t_i])*(theta - base_theta[t_i])/(PI*PI)); //max(0.0f, cos(theta - base_theta[t_i]));     
+                for (int p_i = 0; p_i < 4; p_i++) {
+                    diff_phi = exp(-64.0f*(phi - base_phi[p_i])*(phi - base_phi[p_i])/(PI*PI));  //max(0.0f, cos(phi - base_phi[p_i]));     
 
-            geo_feat[32*idx + 4*(4*id[0] + id[1])] = geo_feat[32*idx + 4*(4*id[0] + id[1])] + sdf[knn_id];
-            geo_feat[32*idx + 4*(4*id[0] + id[1]) + 1] = geo_feat[32*idx + 4*(4*id[0] + id[1]) + 1] + grads[3*knn_id];
-            geo_feat[32*idx + 4*(4*id[0] + id[1]) + 2] = geo_feat[32*idx + 4*(4*id[0] + id[1]) + 2] + grads[3*knn_id + 1];
-            geo_feat[32*idx + 4*(4*id[0] + id[1]) + 3] = geo_feat[32*idx + 4*(4*id[0] + id[1]) + 3] + grads[3*knn_id + 2];
-            counter_feat[4*id[0] + id[1]] = counter_feat[4*id[0] + id[1]] + 1.0;
+                    id[0] = t_i;//int(floorf(2.0f * theta / PI));
+                    id[1] = p_i; //int(floorf(2.0f * (phi + PI) / PI));
 
+                    geo_feat[32*idx + (4*id[0] + id[1])] = geo_feat[32*idx + (4*id[0] + id[1])] + w_r*diff_theta*diff_phi*sdf[knn_id];
+                    geo_feat[32*idx + 8 + 3*(4*id[0] + id[1])] = geo_feat[32*idx + 8 + 3*(4*id[0] + id[1])] + w_r*diff_theta*diff_phi*grads[3*knn_id];
+                    geo_feat[32*idx + 8 + 3*(4*id[0] + id[1]) + 1] = geo_feat[32*idx + 8 + 3*(4*id[0] + id[1]) + 1] + w_r*diff_theta*diff_phi*grads[3*knn_id + 1];
+                    geo_feat[32*idx + 8 + 3*(4*id[0] + id[1]) + 2] = geo_feat[32*idx + 8 + 3*(4*id[0] + id[1]) + 2] + w_r*diff_theta*diff_phi*grads[3*knn_id + 2];
+                    counter_feat[4*id[0] + id[1]] = counter_feat[4*id[0] + id[1]] + w_r*diff_theta*diff_phi;
+                }
+            }
         }
     }
     
     for (int i = 0; i < 8; i++) {
-        geo_feat[32*idx + 4*i] = counter_feat[i] == 0.0f ? 0.0f : geo_feat[32*idx + 4*i] / counter_feat[i];
-        geo_feat[32*idx + 4*i + 1] = counter_feat[i] == 0.0f ? 0.0f : geo_feat[32*idx + 4*i+ 1] / counter_feat[i];
-        geo_feat[32*idx + 4*i + 2] = counter_feat[i] == 0.0f ? 0.0f : geo_feat[32*idx + 4*i + 2] / counter_feat[i];
-        geo_feat[32*idx + 4*i + 3] = counter_feat[i] == 0.0f ? 0.0f : geo_feat[32*idx + 4*i + 3] / counter_feat[i];
+        geo_feat[32*idx + i] = counter_feat[i] == 0.0f ? 0.0f : geo_feat[32*idx + i] / counter_feat[i];
+        geo_feat[32*idx + 8 + 3*i] = counter_feat[i] == 0.0f ? 0.0f : geo_feat[32*idx + 8 + 3*i] / counter_feat[i];
+        geo_feat[32*idx + 8 + 3*i + 1] = counter_feat[i] == 0.0f ? 0.0f : geo_feat[32*idx + 8 + 3*i + 1] / counter_feat[i];
+        geo_feat[32*idx + 8 + 3*i + 2] = counter_feat[i] == 0.0f ? 0.0f : geo_feat[32*idx + 8 + 3*i + 2] / counter_feat[i];
     }
 
     return;
-}*/
+}
 
-__global__ void geo_feat_kernel(
+/*__global__ void geo_feat_kernel(
     const size_t num_samples,                // number of rays
     const size_t num_knn,  
     float *__restrict__ samples,     // [N_voxels, 4] for each voxel => it's vertices
@@ -546,10 +557,6 @@ __global__ void geo_feat_kernel(
 
     // first feature is sdf at sample location
     curr_features[0] = get_sdf_cvt(weights, ref_p, vertices, sdf, tets, curr_tet, 0.0f);
-    /*sample_weights[4 * idx] = weights[0];
-    sample_weights[4 * idx + 1] = weights[1];
-    sample_weights[4 * idx + 2] = weights[2];
-    sample_weights[4 * idx + 3] = weights[3];*/
 
     // 1-4 feature are sdf at summits of the tetrahedron
     int id_list[4] = { 0,1,2,3 };
@@ -609,7 +616,7 @@ __global__ void geo_feat_kernel(
         curr_features[9 + 3 * id_list[i] + 1] = (curr_features[5 + i] - curr_features[1 + i]) * vec[1] / norm_2;
         curr_features[9 + 3 * id_list[i] + 2] = (curr_features[5 + i] - curr_features[1 + i]) * vec[2] / norm_2;
     }
-}
+}*/
 
 __global__ void knn_smooth_kernel(
     const size_t num_sites,                // number of rays
@@ -1231,6 +1238,7 @@ void knn_smooth_sdf_cuda(
 void geo_feat_cuda(
     size_t num_samples,
     size_t num_knn,
+    float sigma,
     torch::Tensor samples,
     torch::Tensor vertices, 
     torch::Tensor grads,
@@ -1241,11 +1249,11 @@ void geo_feat_cuda(
     torch::Tensor cell_ids
 )
 {
-    cudaStream_t computeStream;
+    /*cudaStream_t computeStream;
     curandState* d_state;
     cudaMalloc(&d_state, 256 * sizeof(curandState));
     setup_kernel << < 1, 256, 0, computeStream >> > (d_state, time(NULL));
-    cudaDeviceSynchronize();
+    cudaDeviceSynchronize();*/
 
     const int threads = 512;
     const int blocks = (num_samples + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
@@ -1253,19 +1261,18 @@ void geo_feat_cuda(
         geo_feat_kernel CUDA_KERNEL(blocks,threads) (
             num_samples,                // number of rays
             num_knn,
+            sigma,
             samples.data_ptr<float>(),       // [N_rays, 6]
             vertices.data_ptr<float>(),       // [N_rays, 6]
             grads.data_ptr<float>(),       // [N_rays, 6]
             sdf.data_ptr<float>(),       // [N_rays, 6]
             geo_feat.data_ptr<float>(),       // [N_rays, 6]
-            d_state,
-            tets.data_ptr<int>(),       // [N_rays, 6]
             neighbors.data_ptr<int>(),       // [N_rays, 6]
             cell_ids.data_ptr<int>());
     }));
     cudaDeviceSynchronize();
 
-    cudaFree(d_state);
+    //cudaFree(d_state);
 }
 
 
