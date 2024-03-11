@@ -360,13 +360,13 @@ class Tet32(Process):
             gammas = torch.from_numpy(np.random.rand(self.sites.shape[0])).float().cuda()
 
             ############ Compute spatial SDF gradients
-            """grad_sdf_space[:] = 0.0
+            grad_sdf_space[:] = 0.0
             grad_feat_space[:] = 0.0
             weights_grad[:] = 0.0
             cvt_grad_cuda.knn_sdf_space_grad(self.sites.shape[0], self.KNN, self.knn_sites, self.sites, activated, sdf, fine_features, grad_sdf_space, grad_feat_space, weights_grad)
-            """
+            
 
-            grad_sdf_space[:] = 0.0
+            """grad_sdf_space[:] = 0.0
             grad_feat_space[:] = 0.0
             grad_mean_curve[:] = 0.0
             weights_grad[:] = 0.0
@@ -376,7 +376,8 @@ class Tet32(Process):
             activated[:] = 1
             cvt_grad_cuda.eikonal_grad(self.nb_tets, self.sites.shape[0], self.summits, self.sites, activated, sdf, sdf, fine_features, 
                                         grad_eik, grad_norm_smooth, grad_sdf_space, grad_feat_space, weights_grad, eik_loss)
-            
+            """
+
             #cvt_grad_cuda.sdf_space_grad(self.nb_tets, self.sites.shape[0], self.summits, self.sites, sdf, fine_features, grad_sdf_space, grad_feat_space, weights_grad)
   
             ############ Compute approximated CVT gradients at sites
