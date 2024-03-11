@@ -330,7 +330,10 @@ class Tet32(Process):
         grad_sdf_space = torch.zeros([self.sites.shape[0], 3]).float().cuda().contiguous()
         grad_feat_space = torch.zeros([self.sites.shape[0], 3, fine_features.shape[1]]).float().cuda().contiguous()
         weights_grad = torch.zeros([3*self.KNN*self.sites.shape[0]]).float().cuda().contiguous()
-
+        grad_mean_curve = torch.zeros([self.sites.shape[0]]).float().cuda().contiguous()
+        grad_eik = torch.zeros([self.sites.shape[0]]).float().cuda().contiguous()
+        grad_norm_smooth = torch.zeros([self.sites.shape[0]]).float().cuda().contiguous()
+        eik_loss = torch.zeros([self.sites.shape[0]]).float().cuda().contiguous()
         activated = torch.ones([self.sites.shape[0]]).int().cuda().contiguous()
 
         grad_sites = torch.zeros(self.sites.shape).cuda()       
@@ -357,11 +360,23 @@ class Tet32(Process):
             gammas = torch.from_numpy(np.random.rand(self.sites.shape[0])).float().cuda()
 
             ############ Compute spatial SDF gradients
-            grad_sdf_space[:] = 0.0
+            """grad_sdf_space[:] = 0.0
             grad_feat_space[:] = 0.0
             weights_grad[:] = 0.0
             cvt_grad_cuda.knn_sdf_space_grad(self.sites.shape[0], self.KNN, self.knn_sites, self.sites, activated, sdf, fine_features, grad_sdf_space, grad_feat_space, weights_grad)
-  
+            """
+
+            grad_sdf_space[:] = 0.0
+            grad_feat_space[:] = 0.0
+            grad_mean_curve[:] = 0.0
+            weights_grad[:] = 0.0
+            grad_eik[:] = 0.0
+            grad_norm_smooth[:] = 0.0
+            eik_loss[:] = 0.0
+            activated[:] = 1
+            cvt_grad_cuda.eikonal_grad(self.nb_tets, self.sites.shape[0], self.summits, self.sites, activated, sdf, sdf, fine_features, 
+                                        grad_eik, grad_norm_smooth, grad_sdf_space, grad_feat_space, weights_grad, eik_loss)
+            
             #cvt_grad_cuda.sdf_space_grad(self.nb_tets, self.sites.shape[0], self.summits, self.sites, sdf, fine_features, grad_sdf_space, grad_feat_space, weights_grad)
   
             ############ Compute approximated CVT gradients at sites
@@ -522,6 +537,9 @@ class Tet32(Process):
 
         """lap_sdf = -f(self.sites)
         out_sdf[abs(out_sdf[:]) > radius] = lap_sdf[abs(out_sdf[:]) > radius]"""
+        print("in_sdf => ", in_sdf.sum())
+        print("in_sdf => ", in_sdf.min())
+        print("in_sdf => ", in_sdf.max())
         print("out_sdf => ", out_sdf.sum())
         print("out_sdf => ", out_sdf.min())
         print("out_sdf => ", out_sdf.max())

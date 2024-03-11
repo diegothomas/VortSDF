@@ -76,7 +76,7 @@ class Runner:
 
         self.end_iter_loc = 2000
         self.s_w = 2.0e-4
-        self.e_w = 1.0e-5
+        self.e_w = 1.0e-6
         self.tv_w = 1.0e-4
         """self.s_w = 1.0e-2
         self.e_w = 1.0e-3 
@@ -418,8 +418,8 @@ class Runner:
             cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, self.activated, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
                                         self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.weights_grad, self.eik_loss)
             
-            norm_grads = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1, 1)
-            self.grad_sdf_space = self.grad_sdf_space / norm_grads.expand(-1, 3)
+            #norm_grads = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1, 1)
+            #self.grad_sdf_space = self.grad_sdf_space / norm_grads.expand(-1, 3)
             
             self.grad_eik[outside_flag[:] == 1.0] = 0.0
             #self.grad_eik[:] = self.grad_eik[:] / self.sites.shape[0]
@@ -616,6 +616,7 @@ class Runner:
             if self.double_net:     
                 #grad_sdf =  self.f_w*(self.grad_sdf_net + self.grad_sdf_norm) +\
                 #    ((1.0 - lamda_c)*self.vortSDF_renderer_fine.grads_sdf + lamda_c*self.vortSDF_renderer_coarse_net.grads_sdf)
+                #grad_sdf =  (self.vortSDF_renderer_fine.grads_sdf)
                 grad_sdf =  self.f_w*(self.grad_sdf_net + self.grad_sdf_norm) +\
                              (self.vortSDF_renderer_fine.grads_sdf) # + lamda_c*self.vortSDF_renderer_coarse_net.grads_sdf)
             else:
@@ -719,8 +720,8 @@ class Runner:
 
 
             self.optimizer_sdf.zero_grad() # 0.00001*self.grad_mean_curve +\ # self.e_w*self.grad_eik +\
-            self.sdf.grad = (norm_grad*grad_sdf + self.e_w*self.grad_eik)# +\
-                        #self.s_w*self.grad_norm_smooth +\
+            self.sdf.grad = (norm_grad*grad_sdf + self.e_w*self.grad_eik+\
+                        self.s_w*self.grad_norm_smooth)#  +\
                         #self.tv_w*self.grad_sdf_smooth) #+ 1.0e-3*self.grad_sdf_reg / (mask_sum + 1.0e-5) #self.grad_sdf_net # #+ self.grad_sdf_net  + self.f_w*self.grad_sdf_net
             self.optimizer_sdf.step()
 
@@ -802,7 +803,7 @@ class Runner:
                     self.e_w = 5.0e-6
                     self.tv_w = 1.0e-5"""
                     self.s_w = 5.0e-4
-                    self.e_w = 1.0e-5 #5.0e-3
+                    self.e_w = 1.0e-6 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-1
                     self.s_start = 50.0
                     self.learning_rate = 1e-4
@@ -819,7 +820,7 @@ class Runner:
                     self.e_w = 5.0e-4
                     self.tv_w = 1.0e-5"""
                     self.s_w = 2.0e-4 #1e-6
-                    self.e_w = 1.0e-5 #5.0e-3
+                    self.e_w = 1.0e-6 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1
                     #self.tv_f = 1.0e-8
                     self.f_w = 1.0
@@ -838,7 +839,7 @@ class Runner:
                     self.e_w = 1.0e-3
                     self.tv_w = 1.0e-3"""
                     self.s_w = 5.0e-4 #2.0e-6
-                    self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
+                    self.e_w = 1.0e-6 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-3 #1.0e-8 #1.0e-1
                     #self.tv_f = 1.0e-6
                     self.f_w = 1.0
@@ -858,7 +859,7 @@ class Runner:
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
                     self.s_w = 5.0e-4 #2.0e-6
-                    self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
+                    self.e_w = 1.0e-6 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-3 #1.0e-8 #1.0e-1
                     self.tv_f = 0.0 #1.0e-4
                     self.f_w = 1.0
@@ -878,7 +879,7 @@ class Runner:
                     self.e_w = 1.0e-4
                     self.tv_w = 1.0e-2"""
                     self.s_w = 5.0e-4
-                    self.e_w = 1.0e-5
+                    self.e_w = 1.0e-6
                     self.tv_w = 1.0e-3
                     self.tv_f = 0.0 #1.0e-3
                     self.end_iter_loc = 10000
@@ -1001,12 +1002,24 @@ class Runner:
         img_mask = img_mask.contiguous()
         img_mask[:] = 0
         
-        self.grad_sdf_space[:] = 0.0
+        """self.grad_sdf_space[:] = 0.0
         self.grad_feat_space[:] = 0.0
         self.weights_grad_space[:] = 0.0
         self.activated[:] = 1
         cvt_grad_cuda.knn_sdf_space_grad(self.sites.shape[0], self.tet32.KNN, self.tet32.knn_sites, self.sites, self.activated,
                                             self.sdf, self.fine_features, self.grad_sdf_space, self.grad_feat_space, self.weights_grad_space)
+        """
+
+        self.grad_sdf_space[:] = 0.0
+        self.grad_feat_space[:] = 0.0
+        self.grad_mean_curve[:] = 0.0
+        self.weights_grad[:] = 0.0
+        self.grad_eik[:] = 0.0
+        self.grad_norm_smooth[:] = 0.0
+        self.eik_loss[:] = 0.0
+        self.activated[:] = 1
+        cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, self.activated, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
+                                    self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.weights_grad, self.eik_loss)
         
         norm_grads = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1, 1)
         self.grad_sdf_space = self.grad_sdf_space / norm_grads.expand(-1, 3)
