@@ -618,6 +618,58 @@ __global__ void geo_feat_kernel(
     }
 }*/
 
+
+__global__ void knn_interpolate_kernel(
+    const size_t num_sites,                // number of rays
+    const size_t num_knn,  
+    float sigma,
+    const size_t dim_sdf,
+    float *__restrict__ vertices_src,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ vertices_trg,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ neighbors,     // [N_voxels, 4] for each voxel => it's vertices)
+    float *__restrict__ sdf_out
+    )
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_sites)
+    {
+        return;
+    }
+
+    float total_weight = 0.0f;
+    float total_sdf = 0.0f;
+
+    float length_edge, length_feat, length_o = 0.0f;
+    int knn_id;
+
+    float curr_point[3] {vertices_trg[3*idx], vertices_trg[3*idx + 1], vertices_trg[3*idx + 2]};
+    float curr_edge[3] {};
+
+    for (int i = 0; i < num_knn; i++) {
+        knn_id = neighbors[num_knn*idx + i];
+        if (knn_id == -1)
+            continue;
+        
+        curr_edge[0] = (curr_point[0] - vertices_src[3*knn_id]);
+        curr_edge[1] = (curr_point[1] - vertices_src[3*knn_id + 1]);
+        curr_edge[2] = (curr_point[2] - vertices_src[3*knn_id + 2]);
+        length_edge = curr_edge[0]*curr_edge[0] + curr_edge[1]*curr_edge[1] + curr_edge[2]*curr_edge[2];
+        
+        for (int i = 0; i < dim_sdf; i++) {
+            total_sdf = total_sdf + exp(-length_edge/(sigma*sigma)) * sdf[dim_sdf*knn_id + i];
+            total_weight = total_weight + exp(-length_edge/(sigma*sigma));
+        }
+    }
+    
+    for (int i = 0; i < dim_sdf; i++) {
+        sdf_out[dim_sdf*idx + i] = total_weight == 0.0f ? 0.0f : total_sdf / total_weight;
+    }
+
+    return;
+}
+
+
 __global__ void knn_smooth_kernel(
     const size_t num_sites,                // number of rays
     const size_t num_knn,  
@@ -1197,6 +1249,35 @@ void bnn_smooth_sdf_cuda(
             bnn_offset.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)
             sdf_smooth.data_ptr<float>());
     }));
+}
+
+void knn_interpolate_cuda(
+    size_t num_sites,
+    size_t num_knn,
+    float sigma,
+    size_t dim_sdf,
+    torch::Tensor vertices_src,
+    torch::Tensor vertices_trg, 
+    torch::Tensor sdf,
+    torch::Tensor neighbors,
+    torch::Tensor sdf_out
+)
+{
+    const int threads = 1024;
+    const int blocks = (num_sites + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+    AT_DISPATCH_FLOATING_TYPES( sdf.type(),"knn_interpolate_kernel", ([&] {  
+        knn_interpolate_kernel CUDA_KERNEL(blocks,threads) (
+            num_sites,                // number of rays
+            num_knn,
+            sigma,
+            dim_sdf,
+            vertices_src.data_ptr<float>(),       // [N_rays, 6]
+            vertices_trg.data_ptr<float>(),       // [N_rays, 6]
+            sdf.data_ptr<float>(),       // [N_rays, 6]
+            neighbors.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)
+            sdf_out.data_ptr<float>());
+    }));
+    cudaDeviceSynchronize();
 }
 
 void knn_smooth_sdf_cuda(

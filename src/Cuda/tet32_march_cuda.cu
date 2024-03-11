@@ -16,6 +16,7 @@
 #define FAKEINIT
 #endif
 
+#define STOP_TRANS 1.0e-8
 #define DIM_L_FEAT 6
 #define CLIP_ALPHA 60.0
 
@@ -1184,6 +1185,10 @@ __global__ void tet32_march_cuda_kernel(
 		}
 		
 		Tpartial = Tpartial * alpha_tet;
+
+		if (Tpartial < STOP_TRANS) {// stop if the transmittance is low
+            break;
+        }
 
 		prev_dist_tet = curr_dist;
 		prev_sdf_tet = next_sdf;

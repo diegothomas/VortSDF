@@ -418,6 +418,9 @@ class Runner:
             cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, self.activated, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
                                         self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.weights_grad, self.eik_loss)
             
+            norm_grads = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1, 1)
+            self.grad_sdf_space = self.grad_sdf_space / norm_grads.expand(-1, 3)
+            
             self.grad_eik[outside_flag[:] == 1.0] = 0.0
             #self.grad_eik[:] = self.grad_eik[:] / self.sites.shape[0]
             self.grad_norm_smooth[outside_flag[:] == 1.0] = 0.0
@@ -806,7 +809,7 @@ class Runner:
                     self.learning_rate_sdf = 1.0e-3 #5.0e-4
                     self.learning_rate_feat = 1.0e-3
                     self.end_iter_loc = 3000
-                    self.learning_rate_alpha = 0.1 #1.0e-4
+                    self.learning_rate_alpha = 1.0e-4
 
                 if (iter_step+1) == 5000:
                     self.R = 30
@@ -824,7 +827,7 @@ class Runner:
                     self.learning_rate_sdf = 1.0e-3 #3.0e-4 #5
                     self.learning_rate_feat = 1.0e-3
                     self.end_iter_loc = 5000
-                    self.learning_rate_alpha = 1.0e-1
+                    self.learning_rate_alpha = 1.0e-4
                     
                 if (iter_step+1) == 10000:
                     self.R = 20
@@ -844,7 +847,7 @@ class Runner:
                     self.learning_rate_feat = 5.0e-3 #1.0e-2
                     self.end_iter_loc = 10000
                     self.vortSDF_renderer_fine.mask_reg = 0.001
-                    self.learning_rate_alpha = 1.0e-1
+                    self.learning_rate_alpha = 1.0e-4
 
                 if (iter_step+1) == 20000:
                     self.R = 20
@@ -883,7 +886,7 @@ class Runner:
                     self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 0.001
-                    self.learning_rate_alpha = 1.0e-4
+                    self.learning_rate_alpha = 1.0e-8
                     
                 if (iter_step+1) == 36000:
                     self.R = 25
@@ -1005,6 +1008,9 @@ class Runner:
         cvt_grad_cuda.knn_sdf_space_grad(self.sites.shape[0], self.tet32.KNN, self.tet32.knn_sites, self.sites, self.activated,
                                             self.sdf, self.fine_features, self.grad_sdf_space, self.grad_feat_space, self.weights_grad_space)
         
+        norm_grads = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1, 1)
+        self.grad_sdf_space = self.grad_sdf_space / norm_grads.expand(-1, 3)
+
         colors_out = torch.zeros([self.batch_size*3]).to(torch.device('cuda')).contiguous()
         colors_out_coarse = torch.zeros([self.batch_size*3]).to(torch.device('cuda')).contiguous() 
         mask_out = torch.zeros([self.batch_size]).to(torch.device('cuda')).contiguous()
@@ -1095,8 +1101,9 @@ class Runner:
             ########################################
             ####### Render the image ###############
             ########################################
+            norm_map = (1.0+(self.out_grads[:nb_samples,:3] + self.out_grads[:nb_samples,3:6])/2.0)/2.0
             renderer_cuda.render_no_grad(rays_o_batch.shape[0], self.inv_s, self.out_sdf, self.colors_fine, self.offsets, colors_out, mask_out)
-            renderer_cuda.render_no_grad(rays_o_batch.shape[0], self.inv_s, self.out_sdf, self.colors, self.offsets, colors_out_coarse, mask_out)
+            renderer_cuda.render_no_grad(rays_o_batch.shape[0], self.inv_s, self.out_sdf, norm_map, self.offsets, colors_out_coarse, mask_out)
 
             start = 3*it*self.batch_size
             end = min(3*(it+1)*self.batch_size, 3*(self.dataset.H // resolution_level) * (self.dataset.W // resolution_level))

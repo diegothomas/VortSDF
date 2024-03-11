@@ -104,6 +104,18 @@ void knn_smooth_sdf_cuda(
     torch::Tensor sdf_smooth
 );
 
+void knn_interpolate_cuda(
+    size_t num_sites,
+    size_t num_knn,
+    float sigma,
+    size_t dim_sdf,
+    torch::Tensor vertices_src,
+    torch::Tensor vertices_trg, 
+    torch::Tensor sdf,
+    torch::Tensor neighbors,
+    torch::Tensor sdf_out
+);
+
 void geo_feat_cuda(
     size_t num_samples,
     size_t num_knn,
@@ -334,6 +346,29 @@ void knn_smooth(
         sdf_smooth);
 }
 
+void knn_interpolate(
+    size_t num_sites,
+    size_t num_knn,
+    float sigma,
+    size_t dim_sdf,
+    torch::Tensor vertices_src,
+    torch::Tensor vertices_trg, 
+    torch::Tensor sdf,
+    torch::Tensor neighbors,
+    torch::Tensor sdf_out
+) {
+    knn_interpolate_cuda(
+        num_sites,
+        num_knn,
+        sigma,
+        dim_sdf,
+        vertices_src,
+        vertices_trg, 
+        sdf,
+        neighbors,
+        sdf_out);
+}
+
 void geo_feat(
     size_t num_samples,
     size_t num_knn,
@@ -393,6 +428,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("smooth", &smooth, "smooth (CPP)");
     m.def("bnn_smooth", &bnn_smooth, "bnn_smooth (CPP)");
     m.def("knn_smooth", &knn_smooth, "knn_smooth (CPP)");
+    m.def("knn_interpolate", &knn_interpolate, "knn_interpolate (CPP)");
     m.def("geo_feat", &geo_feat, "geo_feat (CPP)");
     m.def("activate_sites", &activate_sites, "activate_sites (CPP)");
 }

@@ -25,6 +25,9 @@ cvt_grad_cuda = load(
 tet_utils = load(
     'tet_utils', ['src/Geometry/tet_utils.cpp', 'src/Geometry/tet_utils.cu'], verbose=True)
 
+backprop_cuda = load(
+    'backprop_cuda', ['src/Models/backprop.cpp', 'src/Models/backprop.cu'], verbose=True)
+
 def get_faces_list_from_tetrahedron(tetrahedron):
     """
     Gets the faces from the given tetrahedron.
@@ -488,7 +491,9 @@ class Tet32(Process):
 
         #ply.save_ply("Exp/bmvs_man/testprevlvlv.ply", (self.sites[self.lvl_sites[0][:]]).transpose())
         prev_kdtree = scipy.spatial.KDTree(new_sites)
+
         self.run(radius)
+
         #new_sites = np.asarray(self.vertices)  
         self.KDtree = scipy.spatial.KDTree(self.sites)
         
@@ -496,21 +501,41 @@ class Tet32(Process):
             _, idx = self.KDtree.query(new_sites[self.lvl_sites[lvl_curr][:]], k=1)
             self.lvl_sites[lvl_curr][:] = idx[:]
 
-        _, idx = prev_kdtree.query(self.sites, k=1)
-        out_sdf = np.zeros(self.sites.shape[0])
-        if flag:
+        #_, idx = prev_kdtree.query(self.sites, k=1)
+        #out_sdf = np.zeros(self.sites.shape[0])
+        
+        
+        knn_sites = -1 * np.ones((self.sites.shape[0], 32))
+        _, idx = prev_kdtree.query(self.sites, k=32)
+        knn_sites[:,:32] = np.asarray(idx[:,:])
+        out_sdf = torch.zeros(self.sites.shape[0]).float().cuda().contiguous()
+        backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius, 1, torch.from_numpy(new_sites).float().cuda().contiguous(), 
+                                        torch.from_numpy(self.sites).float().cuda().contiguous(), torch.from_numpy(in_sdf).float().cuda().contiguous(), 
+                                        torch.from_numpy(knn_sites).int().cuda().contiguous(), out_sdf)
+        out_sdf = out_sdf.cpu().numpy()
+        
+
+        """if flag:
             out_sdf[:] = in_sdf[idx[:]]
         else:
-            out_sdf = -f(self.sites)
+            out_sdf = -f(self.sites)"""
+
         """lap_sdf = -f(self.sites)
         out_sdf[abs(out_sdf[:]) > radius] = lap_sdf[abs(out_sdf[:]) > radius]"""
         print("out_sdf => ", out_sdf.sum())
         print("out_sdf => ", out_sdf.min())
         print("out_sdf => ", out_sdf.max())
         
-        out_feat = np.zeros([self.sites.shape[0],feat.shape[1]])
-        out_feat[:] = in_feat[idx[:]]
+        #out_feat = np.zeros([self.sites.shape[0],feat.shape[1]])
+        #out_feat[:] = in_feat[idx[:]]
+
         
+        out_feat = torch.zeros(self.sites.shape[0],feat.shape[1]).float().cuda().contiguous()
+        backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius, feat.shape[1], torch.from_numpy(new_sites).float().cuda().contiguous(), 
+                                        torch.from_numpy(self.sites).float().cuda().contiguous(), torch.from_numpy(in_feat).float().cuda().contiguous(), 
+                                        torch.from_numpy(knn_sites).int().cuda().contiguous(), out_feat)
+        out_feat = out_feat.cpu().numpy()
+                
         self.lvl = self.lvl + 1
 
         self.sdf_init = torch.from_numpy(out_sdf).float().cuda()
