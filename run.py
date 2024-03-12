@@ -76,7 +76,7 @@ class Runner:
 
         self.end_iter_loc = 2000
         self.s_w = 2.0e-4
-        self.e_w = 1.0e-6
+        self.e_w = 1.0e-8
         self.tv_w = 1.0e-4
         """self.s_w = 1.0e-2
         self.e_w = 1.0e-3 
@@ -721,8 +721,8 @@ class Runner:
 
             self.optimizer_sdf.zero_grad() # 0.00001*self.grad_mean_curve +\ # self.e_w*self.grad_eik +\
             self.sdf.grad = (norm_grad*grad_sdf + self.e_w*self.grad_eik+\
-                        self.s_w*self.grad_norm_smooth)#  +\
-                        #self.tv_w*self.grad_sdf_smooth) #+ 1.0e-3*self.grad_sdf_reg / (mask_sum + 1.0e-5) #self.grad_sdf_net # #+ self.grad_sdf_net  + self.f_w*self.grad_sdf_net
+                        self.s_w*self.grad_norm_smooth  +\
+                        self.tv_w*self.grad_sdf_smooth) #+ 1.0e-3*self.grad_sdf_reg / (mask_sum + 1.0e-5) #self.grad_sdf_net # #+ self.grad_sdf_net  + self.f_w*self.grad_sdf_net
             self.optimizer_sdf.step()
 
             ########################################
@@ -733,10 +733,10 @@ class Runner:
                 #if (iter_step+1) == 20000:
                 #    self.batch_size = 10240
 
-                if self.sites.shape[0] > 500000:
-                    self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, 0.0) #(iter_step+1) > 2000
-                else:
-                    self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, self.sigma)
+                #if self.sites.shape[0] > 500000:
+                #    self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, 0.0) #(iter_step+1) > 2000
+                #else:
+                self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, self.sigma)
                 self.sdf = self.sdf.contiguous()
                 self.sdf.requires_grad_(True)
                 self.fine_features = self.fine_features.contiguous()
@@ -803,7 +803,7 @@ class Runner:
                     self.e_w = 5.0e-6
                     self.tv_w = 1.0e-5"""
                     self.s_w = 5.0e-4
-                    self.e_w = 1.0e-6 #5.0e-3
+                    self.e_w = 1.0e-8 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-1
                     self.s_start = 50.0
                     self.learning_rate = 1e-4
@@ -820,7 +820,7 @@ class Runner:
                     self.e_w = 5.0e-4
                     self.tv_w = 1.0e-5"""
                     self.s_w = 2.0e-4 #1e-6
-                    self.e_w = 1.0e-6 #5.0e-3
+                    self.e_w = 1.0e-8 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1
                     #self.tv_f = 1.0e-8
                     self.f_w = 1.0
@@ -839,7 +839,7 @@ class Runner:
                     self.e_w = 1.0e-3
                     self.tv_w = 1.0e-3"""
                     self.s_w = 5.0e-4 #2.0e-6
-                    self.e_w = 1.0e-6 #1.0e-7 #5.0e-3
+                    self.e_w = 1.0e-8 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-3 #1.0e-8 #1.0e-1
                     #self.tv_f = 1.0e-6
                     self.f_w = 1.0
@@ -859,7 +859,7 @@ class Runner:
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
                     self.s_w = 5.0e-4 #2.0e-6
-                    self.e_w = 1.0e-6 #1.0e-7 #5.0e-3
+                    self.e_w = 1.0e-8 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-3 #1.0e-8 #1.0e-1
                     self.tv_f = 0.0 #1.0e-4
                     self.f_w = 1.0
@@ -879,7 +879,7 @@ class Runner:
                     self.e_w = 1.0e-4
                     self.tv_w = 1.0e-2"""
                     self.s_w = 5.0e-4
-                    self.e_w = 1.0e-6
+                    self.e_w = 1.0e-8
                     self.tv_w = 1.0e-3
                     self.tv_f = 0.0 #1.0e-3
                     self.end_iter_loc = 10000

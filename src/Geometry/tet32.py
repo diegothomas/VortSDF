@@ -324,8 +324,9 @@ class Tet32(Process):
 
 
 
-    def CVT(self, outside_flag, cam_ids, sdf, fine_features, nb_iter = 1000, sdf_weight = 0.0, lr = 1.0e-4):
+    def CVT(self, outside_flag, cam_ids, sdf, fine_features, nb_iter = 1000, radius = 0.1, sdf_weight = 0.0, lr = 1.0e-4):
         self.make_knn()
+        
 
         grad_sdf_space = torch.zeros([self.sites.shape[0], 3]).float().cuda().contiguous()
         grad_feat_space = torch.zeros([self.sites.shape[0], 3, fine_features.shape[1]]).float().cuda().contiguous()
@@ -335,6 +336,11 @@ class Tet32(Process):
         grad_norm_smooth = torch.zeros([self.sites.shape[0]]).float().cuda().contiguous()
         eik_loss = torch.zeros([self.sites.shape[0]]).float().cuda().contiguous()
         activated = torch.ones([self.sites.shape[0]]).int().cuda().contiguous()
+
+        in_sdf = torch.zeros([self.sites.shape[0]]).float().cuda().contiguous()        
+        out_sdf = torch.zeros([self.sites.shape[0]]).float().cuda().contiguous()
+        in_feat = torch.zeros([self.sites.shape[0], fine_features.shape[1]]).float().cuda().contiguous()
+        out_feat = torch.zeros([self.sites.shape[0], fine_features.shape[1]]).float().cuda().contiguous()
 
         grad_sites = torch.zeros(self.sites.shape).cuda()       
         grad_sites = grad_sites.contiguous()
@@ -346,8 +352,18 @@ class Tet32(Process):
         mask_grad = mask_grad.contiguous()
 
         delta_sites = torch.zeros(self.sites.shape).float().cuda()
+        init_sites = torch.zeros(self.sites.shape).float().cuda()
         with torch.no_grad():  
             delta_sites[:] = self.sites[:]
+            init_sites[:] = self.sites[:] 
+            in_sdf[:] = sdf[:]
+            in_feat[:] = fine_features[:]
+            
+        init_sites = init_sites.cpu().numpy()
+        prev_kdtree = scipy.spatial.KDTree(init_sites)
+        knn_sites = -1 * np.ones((self.sites.shape[0], 32))
+        _, idx = prev_kdtree.query(self.sites.cpu().numpy(), k=32)
+        knn_sites[:,:32] = np.asarray(idx[:,:])
             
         self.sites.requires_grad_(True)
         learning_rate_cvt = lr
@@ -360,11 +376,11 @@ class Tet32(Process):
             gammas = torch.from_numpy(np.random.rand(self.sites.shape[0])).float().cuda()
 
             ############ Compute spatial SDF gradients
-            grad_sdf_space[:] = 0.0
+            """grad_sdf_space[:] = 0.0
             grad_feat_space[:] = 0.0
             weights_grad[:] = 0.0
             cvt_grad_cuda.knn_sdf_space_grad(self.sites.shape[0], self.KNN, self.knn_sites, self.sites, activated, sdf, fine_features, grad_sdf_space, grad_feat_space, weights_grad)
-            
+            """
 
             """grad_sdf_space[:] = 0.0
             grad_feat_space[:] = 0.0
@@ -410,20 +426,35 @@ class Tet32(Process):
                     print('iter:{:8>d} loss CVT = {} lr={}'.format(iter_step, loss_cvt, optimizer_cvt.param_groups[0]['lr']))
 
             with torch.no_grad():
-                sdf[:] = sdf[:] + (delta_sites*grad_sdf_space).sum(dim = 1)[:] #  + self.sdf_diff
+                out_sdf[:] = 0
+                backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius, 1, torch.from_numpy(init_sites).float().cuda().contiguous(), 
+                                        self.sites, in_sdf, 
+                                        torch.from_numpy(knn_sites).int().cuda().contiguous(), out_sdf)
+                sdf[:] = out_sdf[:]
+                
+                out_feat[:] = 0
+                backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius, fine_features.shape[1], torch.from_numpy(init_sites).float().cuda().contiguous(), 
+                                                self.sites, in_feat, 
+                                                torch.from_numpy(knn_sites).int().cuda().contiguous(), out_feat)
+                fine_features[:] = out_feat[:]
+                
+
+                """sdf[:] = sdf[:] + (delta_sites*grad_sdf_space).sum(dim = 1)[:] #  + self.sdf_diff
                 grad_feat_space[abs(grad_feat_space) > 10.0*abs(grad_feat_space.mean())] = 0.0
-                """print(grad_feat_space.mean())
+                print(grad_feat_space.mean())
                 print(grad_feat_space.min())
                 print(grad_feat_space.max())
                 print(delta_sites.mean())
                 print(delta_sites.min())
-                print(delta_sites.max())"""
+                print(delta_sites.max())
                 for i in range(fine_features.shape[1]):
-                    fine_features[:, i] = fine_features[:, i] + (delta_sites*grad_feat_space[:, :, i]).sum(dim = 1)[:] # self.feat_diff[:]
+                    fine_features[:, i] = fine_features[:, i] + (delta_sites*grad_feat_space[:, :, i]).sum(dim = 1)[:] # self.feat_diff[:]"""
 
             if iter_step % 100 == 0:
                 with torch.no_grad():
                     self.make_knn()
+                    _, idx = prev_kdtree.query(self.sites.detach().cpu().numpy(), k=32)
+                knn_sites[:,:32] = np.asarray(idx[:,:])
 
             with torch.no_grad():
                 delta_sites[:] = self.sites[:]
@@ -503,7 +534,7 @@ class Tet32(Process):
         cam_ids = torch.from_numpy(cam_ids).int().cuda()
                 
         self.sites = torch.from_numpy(self.sites).float().cuda()
-        in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, 0.1, lr)
+        in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, radius, 0.1, lr)
 
         #ply.save_ply("Exp/bmvs_man/testprevlvlv.ply", (self.sites[self.lvl_sites[0][:]]).transpose())
         prev_kdtree = scipy.spatial.KDTree(new_sites)
@@ -538,9 +569,6 @@ class Tet32(Process):
 
         """lap_sdf = -f(self.sites)
         out_sdf[abs(out_sdf[:]) > radius] = lap_sdf[abs(out_sdf[:]) > radius]"""
-        print("in_sdf => ", in_sdf.sum())
-        print("in_sdf => ", in_sdf.min())
-        print("in_sdf => ", in_sdf.max())
         print("out_sdf => ", out_sdf.sum())
         print("out_sdf => ", out_sdf.min())
         print("out_sdf => ", out_sdf.max())

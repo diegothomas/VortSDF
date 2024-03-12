@@ -663,7 +663,7 @@ __global__ void knn_interpolate_kernel(
     }
     
     for (int i = 0; i < dim_sdf; i++) {
-        sdf_out[dim_sdf*idx + i] = total_weight == 0.0f ? 0.0f : total_sdf / total_weight;
+        sdf_out[dim_sdf*idx + i] = total_weight < 1.0e-12 ? 20.0f : total_sdf / total_weight;
     }
 
     return;
