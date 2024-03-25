@@ -17,7 +17,7 @@
 #endif
 
 #define STOP_TRANS 1.0e-8
-#define DIM_L_FEAT 6
+#define DIM_L_FEAT 32
 #define CLIP_ALPHA 60.0
 
 /** Device functions **/

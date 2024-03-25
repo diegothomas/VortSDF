@@ -29,6 +29,18 @@ void backprop_norm_cuda(
     torch::Tensor activated 
 );
 
+void  backprop_unit_norm_cuda(
+    size_t num_tets,
+    torch::Tensor tets,
+    torch::Tensor sites,
+    torch::Tensor norm_grad,
+    torch::Tensor grad_unormed,
+    torch::Tensor weights_tot,
+    torch::Tensor grad_norm ,
+    torch::Tensor grad_sdf,
+    torch::Tensor activated 
+);
+
 float eikonal_loss_cuda(
     size_t num_sites,
     size_t num_knn,
@@ -194,6 +206,29 @@ void backprop_norm(
     backprop_norm_cuda(num_tets,
     tets,
     sites,
+    weights_tot,
+    grad_norm,
+    grad_sdf,
+    activated);
+}
+
+void  backprop_unit_norm(
+    size_t num_tets,
+    torch::Tensor tets,
+    torch::Tensor sites,
+    torch::Tensor norm_grad,
+    torch::Tensor grad_unormed,
+    torch::Tensor weights_tot,
+    torch::Tensor grad_norm ,
+    torch::Tensor grad_sdf,
+    torch::Tensor activated 
+){
+    //std::cout << "Backprop feature gradients" << std::endl; 
+    backprop_unit_norm_cuda(num_tets,
+    tets,
+    sites,
+    norm_grad,
+    grad_unormed,
     weights_tot,
     grad_norm,
     grad_sdf,
@@ -424,6 +459,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("backprop_feat", &backprop_feat, "backprop_feat (CPP)");
     m.def("backprop_sdf", &backprop_sdf, "backprop_sdf (CPP)");
     m.def("backprop_norm", &backprop_norm, "backprop_norm (CPP)");
+    m.def("backprop_unit_norm", &backprop_unit_norm, "backprop_unit_norm (CPP)");
     m.def("space_reg", &space_reg, "space_reg (CPP)");
     m.def("smooth", &smooth, "smooth (CPP)");
     m.def("bnn_smooth", &bnn_smooth, "bnn_smooth (CPP)");

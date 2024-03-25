@@ -17,7 +17,7 @@
 #define FAKEINIT
 #endif
 
-#define DIM_L_FEAT 6
+#define DIM_L_FEAT 32
 #define PI 3.141592653589793238462643383279502884197
 
 /** Device functions **/
@@ -295,6 +295,160 @@ __global__ void backprop_norm_kernel(
         grad_curr[1] = (volume_tet/(4.0*weights_tot[ids[3]])) * (3.0*Weights_curr[3*3+1]);
         grad_curr[2] = (volume_tet/(4.0*weights_tot[ids[3]])) * (3.0*Weights_curr[3*3+2]);
         atomicAdd(&grad_sdf[ids[3]], grad_norm[3*ids[3]]*grad_curr[0] + grad_norm[3*ids[3]+1]*grad_curr[1] + grad_norm[3*ids[3]+2]*grad_curr[2]);
+    }
+}
+
+__global__ void backprop_unit_norm_kernel(
+    const size_t num_tets,                // number of rays
+    const int *__restrict__ tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    float *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices,
+    float *__restrict__ norm_grad,
+    float *__restrict__ grad_unornmed,
+    float *__restrict__ weights_tot, 
+    float *__restrict__ grad_norm,
+    float *__restrict__ grad_sdf,
+    int *__restrict__ activated
+    )
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_tets)
+    {
+        return;
+    }
+
+    int ids[4] = {0, 0, 0, 0,};
+    ids[0] = tets[4*idx];  ids[1] = tets[4*idx + 1];  ids[2] = tets[4*idx + 2];
+    ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[4*idx + 3];
+
+    
+    if (activated[ids[0]] == 0 && 
+        activated[ids[1]] == 0 && 
+        activated[ids[2]] == 0 && 
+        activated[ids[3]] == 0)
+        return;
+
+    float center_point[3] {0.0, 0.0, 0.0};
+    for (int i = 0; i < 3; i++) {
+        center_point[i] = (sites[3*ids[0] + i] + sites[3*ids[1] + i] + sites[3*ids[2] + i] + sites[3*ids[3] + i])/4.0f;
+    }
+
+    float volume_tet = volume_tetrahedron_32(&sites[3*ids[0]], &sites[3*ids[1]], &sites[3*ids[2]], &sites[3*ids[3]]);
+    
+    float curr_n[3] {0.0, 0.0, 0.0};
+    float dX[12] {};
+    float G[9] {0.0, 0.0, 0.0, 
+                0.0, 0.0, 0.0, 
+                0.0, 0.0, 0.0}; //dXT dX
+    float G_inv[9] {0.0, 0.0, 0.0, 
+                0.0, 0.0, 0.0, 
+                0.0, 0.0, 0.0};
+
+    float Weights_curr[12] {0.0, 0.0, 0.0, 0.0,
+                            0.0, 0.0, 0.0, 0.0,
+                            0.0, 0.0, 0.0, 0.0};   
+
+    for (int r_id = 0; r_id < 4; r_id++) {
+        curr_n[0] = sites[3*ids[r_id]];
+        curr_n[1] = sites[3*ids[r_id] + 1];
+        curr_n[2] = sites[3*ids[r_id] + 2];
+
+        // Calculate coefficients
+        dX[3*r_id] = curr_n[0] - center_point[0];
+        dX[3*r_id + 1] = curr_n[1] - center_point[1];
+        dX[3*r_id + 2] = curr_n[2] - center_point[2];
+        
+        G[0] = G[0] + dX[3*r_id]*dX[3*r_id]; G[1] = G[1] + dX[3*r_id]*dX[3*r_id+1];  G[2] = G[2] + dX[3*r_id]*dX[3*r_id+2];
+        G[3] = G[3] + dX[3*r_id+1]*dX[3*r_id]; G[4] = G[4] + dX[3*r_id+1]*dX[3*r_id + 1]; G[5] = G[5] + dX[3*r_id+1]*dX[3*r_id + 2];
+        G[6] = G[6] + dX[3*r_id+2]*dX[3*r_id]; G[7] = G[7] + dX[3*r_id+2]*dX[3*r_id + 1]; G[8] = G[8] + dX[3*r_id+2]*dX[3*r_id + 2];
+    }
+
+    // Compute inverse of G
+    // det = a11 (a22 a33 – a23 a32) – a12 (a21 a33 – a23 a31) + a13 (a21 a32 – a22 a31)
+    float det = G[0] * (G[4]*G[8] - G[5]*G[7]) - G[1]*(G[3]*G[8] - G[5]*G[6]) + G[2] * (G[3]*G[7] - G[4] * G[6]);
+    if (det == 0.0f) { 
+        return;
+    }
+    
+    G_inv[0] = (G[4]*G[8] - G[5]*G[7])/det; 
+    G_inv[3] = -(G[3]*G[8] - G[5]*G[6])/det; 
+    G_inv[6] = (G[3]*G[7] - G[4]*G[6])/det;
+    G_inv[1] = -(G[1]*G[8] - G[2]*G[7])/det; 
+    G_inv[4] = (G[0]*G[8] - G[2]*G[6])/det; 
+    G_inv[7] = -(G[0]*G[7] - G[1]*G[6])/det; 
+    G_inv[2] = (G[1]*G[5] - G[2]*G[4])/det; 
+    G_inv[5] = -(G[0]*G[5] - G[2]*G[3])/det; 
+    G_inv[8] = (G[0]*G[4] - G[1]*G[3])/det; 
+
+    // Matrix multiplication
+    for (int i = 0; i < 4; i++) {
+        Weights_curr[3*i] = G_inv[0] * dX[3*i] + G_inv[1] * dX[3*i + 1] + G_inv[2] * dX[3*i + 2];
+        Weights_curr[3*i + 1] = G_inv[3] * dX[3*i] + G_inv[4] * dX[3*i + 1] + G_inv[5] * dX[3*i + 2];
+        Weights_curr[3*i + 2] = G_inv[6] * dX[3*i] + G_inv[7] * dX[3*i + 1] + G_inv[8] * dX[3*i + 2];
+    }
+    
+    float grad_curr[3] {};
+    if (weights_tot[ids[0]] > 0.0f) {
+        grad_curr[0] = (volume_tet/(4.0*weights_tot[ids[0]])) * (3.0*Weights_curr[0]);
+        grad_curr[1] = (volume_tet/(4.0*weights_tot[ids[0]])) * (3.0*Weights_curr[1]);
+        grad_curr[2] = (volume_tet/(4.0*weights_tot[ids[0]])) * (3.0*Weights_curr[2]);
+
+        float scale = norm_grad[ids[0]] == 0.0f ? 0.0f : 1.0f/(norm_grad[ids[0]]*norm_grad[ids[0]]);
+        float A = (grad_norm[3*ids[0]]*grad_curr[0] + grad_norm[3*ids[0]+1]*grad_curr[1] + grad_norm[3*ids[0]+2]*grad_curr[2]);
+        float B = norm_grad[ids[0]] == 0.0f ? 0.0f : 
+                    (grad_unornmed[3*ids[0]]*grad_norm[3*ids[0]] + 
+                    grad_unornmed[3*ids[0] + 1]*grad_norm[3*ids[0] + 1] + 
+                    grad_unornmed[3*ids[0] + 2]*grad_norm[3*ids[0] + 2]) / norm_grad[ids[0]];
+        float C = B*(grad_unornmed[3*ids[0]]*grad_curr[0] + grad_unornmed[3*ids[0]+1]*grad_curr[1] + grad_unornmed[3*ids[0]+2]*grad_curr[2]);
+
+        atomicAdd(&grad_sdf[ids[0]], scale * (norm_grad[ids[0]] * A - C));
+    }
+
+    if (weights_tot[ids[1]] > 0.0f) {
+        grad_curr[0] = (volume_tet/(4.0*weights_tot[ids[1]])) * (3.0*Weights_curr[3*1]);
+        grad_curr[1] = (volume_tet/(4.0*weights_tot[ids[1]])) * (3.0*Weights_curr[3*1+1]);
+        grad_curr[2] = (volume_tet/(4.0*weights_tot[ids[1]])) * (3.0*Weights_curr[3*1+2]);
+
+        float scale = norm_grad[ids[1]] == 0.0f ? 0.0f : 1.0f/(norm_grad[ids[1]]*norm_grad[ids[1]]);
+        float A = (grad_norm[3*ids[1]]*grad_curr[0] + grad_norm[3*ids[1]+1]*grad_curr[1] + grad_norm[3*ids[1]+2]*grad_curr[2]);
+        float B = norm_grad[ids[1]] == 0.0f ? 0.0f : 
+                    (grad_unornmed[3*ids[1]]*grad_norm[3*ids[1]] + 
+                    grad_unornmed[3*ids[1] + 1]*grad_norm[3*ids[1] + 1] + 
+                    grad_unornmed[3*ids[1] + 2]*grad_norm[3*ids[1] + 2]) / norm_grad[ids[1]];
+        float C = B*(grad_unornmed[3*ids[1]]*grad_curr[0] + grad_unornmed[3*ids[1]+1]*grad_curr[1] + grad_unornmed[3*ids[1]+2]*grad_curr[2]);
+
+        atomicAdd(&grad_sdf[ids[1]], scale * (norm_grad[ids[1]] * A - C));
+    }
+
+    if (weights_tot[ids[2]] > 0.0f) {
+        grad_curr[0] = (volume_tet/(4.0*weights_tot[ids[2]])) * (3.0*Weights_curr[3*2]);
+        grad_curr[1] = (volume_tet/(4.0*weights_tot[ids[2]])) * (3.0*Weights_curr[3*2+1]);
+        grad_curr[2] = (volume_tet/(4.0*weights_tot[ids[2]])) * (3.0*Weights_curr[3*2+2]);
+
+        float scale = norm_grad[ids[2]] == 0.0f ? 0.0f : 1.0f/(norm_grad[ids[2]]*norm_grad[ids[2]]);
+        float A = (grad_norm[3*ids[2]]*grad_curr[0] + grad_norm[3*ids[2]+1]*grad_curr[1] + grad_norm[3*ids[2]+2]*grad_curr[2]);
+        float B = norm_grad[ids[2]] == 0.0f ? 0.0f : 
+                    (grad_unornmed[3*ids[2]]*grad_norm[3*ids[2]] + 
+                    grad_unornmed[3*ids[2] + 1]*grad_norm[3*ids[2] + 1] + 
+                    grad_unornmed[3*ids[2] + 2]*grad_norm[3*ids[2] + 2]) / norm_grad[ids[2]];
+        float C = B*(grad_unornmed[3*ids[2]]*grad_curr[0] + grad_unornmed[3*ids[2]+1]*grad_curr[1] + grad_unornmed[3*ids[2]+2]*grad_curr[2]);
+
+        atomicAdd(&grad_sdf[ids[2]], scale * (norm_grad[ids[2]] * A - C));
+    }
+    
+    if (weights_tot[ids[3]] > 0.0f) {
+        grad_curr[0] = (volume_tet/(4.0*weights_tot[ids[3]])) * (3.0*Weights_curr[3*3]);
+        grad_curr[1] = (volume_tet/(4.0*weights_tot[ids[3]])) * (3.0*Weights_curr[3*3+1]);
+        grad_curr[2] = (volume_tet/(4.0*weights_tot[ids[3]])) * (3.0*Weights_curr[3*3+2]);
+
+        float scale = norm_grad[ids[3]] == 0.0f ? 0.0f : 1.0f/(norm_grad[ids[3]]*norm_grad[ids[3]]);
+        float A = (grad_norm[3*ids[3]]*grad_curr[0] + grad_norm[3*ids[3]+1]*grad_curr[1] + grad_norm[3*ids[3]+2]*grad_curr[2]);
+        float B = norm_grad[ids[3]] == 0.0f ? 0.0f : 
+                    (grad_unornmed[3*ids[3]]*grad_norm[3*ids[3]] + 
+                    grad_unornmed[3*ids[3] + 1]*grad_norm[3*ids[3] + 1] + 
+                    grad_unornmed[3*ids[3] + 2]*grad_norm[3*ids[3] + 2]) / norm_grad[ids[3]];
+        float C = B*(grad_unornmed[3*ids[3]]*grad_curr[0] + grad_unornmed[3*ids[3]+1]*grad_curr[1] + grad_unornmed[3*ids[3]+2]*grad_curr[2]);
+
+        atomicAdd(&grad_sdf[ids[3]], scale * (norm_grad[ids[3]] * A - C));
     }
 }
 
@@ -1072,6 +1226,36 @@ void  backprop_norm_cuda(
             num_tets,
             tets.data_ptr<int>(),
             sites.data_ptr<float>(),
+            weights_tot.data_ptr<float>(),
+            grad_norm.data_ptr<float>(),
+            grad_sdf.data_ptr<float>(),
+            activated.data_ptr<int>());
+    }));
+    cudaDeviceSynchronize();
+}
+
+
+void  backprop_unit_norm_cuda(
+    size_t num_tets,
+    torch::Tensor tets,
+    torch::Tensor sites,
+    torch::Tensor norm_grad,
+    torch::Tensor grad_unormed,
+    torch::Tensor weights_tot,
+    torch::Tensor grad_norm ,
+    torch::Tensor grad_sdf,
+    torch::Tensor activated 
+)
+{
+    const int threads = 256;
+    const int blocks = (num_tets + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+    AT_DISPATCH_FLOATING_TYPES( grad_sdf.type(),"backprop_unit_norm_kernel", ([&] {  
+        backprop_unit_norm_kernel CUDA_KERNEL(blocks,threads) (
+            num_tets,
+            tets.data_ptr<int>(),
+            sites.data_ptr<float>(),
+            norm_grad.data_ptr<float>(),
+            grad_unormed.data_ptr<float>(),
             weights_tot.data_ptr<float>(),
             grad_norm.data_ptr<float>(),
             grad_sdf.data_ptr<float>(),

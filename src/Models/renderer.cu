@@ -474,7 +474,7 @@ __global__ void normalize_grads_kernel(
         return;
     }
     
-    grads_sdf[idx] = counter[idx] == 0.0f ? 0.0f : grads_sdf[idx] / 2.0f;//counter[idx];
+    grads_sdf[idx] = counter[idx] == 0.0f ? 0.0f : grads_sdf[idx] / counter[idx];
 
     return;
 }
@@ -558,6 +558,14 @@ void render_cuda(
         }));
 
         // Need normalization ??
+        /*const int threads_n = 1024;
+        const int blocks_n = (num_sites + threads_n - 1) / threads_n; 
+        AT_DISPATCH_FLOATING_TYPES( grads_sdf.type(),"normalize_grads_kernel", ([&] {  
+            normalize_grads_kernel CUDA_KERNEL(blocks_n,threads_n) (
+                num_sites,
+                grads_sdf.data_ptr<float>(),
+                counter.data_ptr<float>());
+        }));*/
 }
 
 void normalize_grads_cuda(

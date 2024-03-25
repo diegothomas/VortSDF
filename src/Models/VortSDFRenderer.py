@@ -69,9 +69,10 @@ class VortSDFRenderer:
        
 
     def render_gpu(self, num_rays, inv_s, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, cell_ids, offsets):   
-        #self.grads_color[:, :] = 0
-        #self.grads_sdf[:] = 0
-        #self.grads_sdf_net[:] = 0
+        self.grads_color[:, :] = 0
+        self.grads_sdf[:] = 0
+        self.grads_sdf_net[:] = 0
+        self.counter[:] = 0
         
         renderer_cuda.render(num_rays, inv_s, self.mask_reg, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, 
                              cell_ids, offsets, self.grads_sdf, self.grads_color, self.grads_sdf_net, self.counter, self.colors_loss, self.mask_loss)
