@@ -821,9 +821,9 @@ class Runner:
                     """self.s_w = 1.0e-3
                     self.e_w = 5.0e-4
                     self.tv_w = 1.0e-5"""
-                    self.s_w = 2.0e-4 #1e-6
+                    self.s_w = 2.0e-5 #1e-6
                     self.e_w = 1.0e-10 #5.0e-3
-                    self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1
+                    self.tv_w = 1.0e-5 #1.0e-8 #1.0e-1
                     #self.tv_f = 1.0e-8
                     self.f_w = 1.0
                     self.learning_rate = 1e-4
