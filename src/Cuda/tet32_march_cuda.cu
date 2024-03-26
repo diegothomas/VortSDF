@@ -1474,9 +1474,13 @@ __global__ void fill_samples_kernel(
 			out_feat[2*DIM_L_FEAT*i+ DIM_L_FEAT + l] = in_feat_rays[2*DIM_L_FEAT*s_id + DIM_L_FEAT + l];
 		}
 
-        samples_loc[3 * i] = ray.origin[0]; //samples[3 * i] - sites[3*out_ids[6*i+1]];
-        samples_loc[3 * i + 1] = ray.origin[1]; //samples[3 * i + 1] - sites[3*out_ids[6*i+1] + 1];
-        samples_loc[3 * i + 2] = ray.origin[2]; //samples[3 * i + 2] - sites[3*out_ids[6*i+1] + 2];
+        samples_loc[6 * i] = ray.origin[0] + out_z[2*i]*ray.direction[0]; //samples[3 * i] - sites[3*out_ids[6*i+1]];
+        samples_loc[6 * i + 1] = ray.origin[1] + out_z[2*i]*ray.direction[1]; //samples[3 * i + 1] - sites[3*out_ids[6*i+1] + 1];
+        samples_loc[6 * i + 2] = ray.origin[2] + out_z[2*i]*ray.direction[2]; //samples[3 * i + 2] - sites[3*out_ids[6*i+1] + 2];
+
+        samples_loc[6 * i + 3] = ray.origin[0] + out_z[2*i + 1]*ray.direction[0]; //samples[3 * i] - sites[3*out_ids[6*i+1]];
+        samples_loc[6 * i + 4] = ray.origin[1] + out_z[2*i + 1]*ray.direction[1]; //samples[3 * i + 1] - sites[3*out_ids[6*i+1] + 1];
+        samples_loc[6 * i + 5] = ray.origin[2] + out_z[2*i + 1]*ray.direction[2]; //samples[3 * i + 2] - sites[3*out_ids[6*i+1] + 2];
 
         sample_rays[3 * i] = ray.direction[0];
         sample_rays[3 * i + 1] = ray.direction[1];

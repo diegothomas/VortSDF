@@ -104,13 +104,13 @@ class Runner:
 
         self.color_network = ColorNetwork(**self.conf['model.color_network']).to(self.device)
 
-        #self.sdf_network = SDFNetwork(**self.conf['model.sdf_network']).to(self.device)
+        self.sdf_network = SDFNetwork(**self.conf['model.sdf_network']).to(self.device)
         
         params_to_train = []
         params_to_train += list(self.color_network.parameters())
         if self.double_net:
             params_to_train += list(self.color_coarse.parameters())
-        #params_to_train += list(self.sdf_network.parameters())
+        params_to_train += list(self.sdf_network.parameters())
         self.optimizer = torch.optim.Adam(params_to_train, lr=self.learning_rate)
         
         posbase_pe = 5
@@ -485,6 +485,33 @@ class Runner:
             viewdirs_emb = torch.cat([self.samples_rays[:nb_samples,:], viewdirs_emb.sin(), viewdirs_emb.cos()], -1)
                         
             if self.double_net:
+                """xyz_emb_in = (self.samples_loc[:nb_samples,:3].unsqueeze(-1) * self.posfreq).flatten(-2)
+                xyz_emb_in = torch.cat([self.samples_loc[:nb_samples,:3], xyz_emb_in.sin(), xyz_emb_in.cos()], -1)
+
+                xyz_emb_out = (self.samples_loc[:nb_samples,3:6].unsqueeze(-1) * self.posfreq).flatten(-2)
+                xyz_emb_out = torch.cat([self.samples_loc[:nb_samples,3:6], xyz_emb_out.sin(), xyz_emb_out.cos()], -1)
+
+                geo_feat_in = torch.cat([xyz_emb_in, self.out_feat[:nb_samples,:32]], -1)
+                geo_feat_out = torch.cat([xyz_emb_out, self.out_feat[:nb_samples,32:64]], -1)
+               
+                coarse_feat_in = self.sdf_network(geo_feat_in)
+                self.out_sdf[:nb_samples,0] = coarse_feat_in[:,:1]
+                coarse_feat_out = self.sdf_network(geo_feat_out)
+                self.out_sdf[:nb_samples,1] = coarse_feat_out[:,:1]
+
+                print(self.samples_loc[:100,:3])
+                print(self.out_sdf[:100,0])
+                input()
+
+                self.out_grads[:nb_samples,:3] = self.sdf_network.gradient(geo_feat_in).squeeze()
+                self.out_grads[:nb_samples,3:6] = self.sdf_network.gradient(geo_feat_out).squeeze()
+
+                gradient_error = (torch.linalg.norm(self.out_grads[:nb_samples,:3], ord=2, dim=-1) - 1.0) ** 2 +\
+                                    (torch.linalg.norm(self.out_grads[:nb_samples,3:6], ord=2, dim=-1) - 1.0) ** 2
+
+                backprop_sdf(self.sdf, self.out_sdf, self.out_ids)
+
+                coarse_feat = (coarse_feat_in[:,1:] + coarse_feat_out[:,1:])/2.0"""
 
                 self.geo_features[:] = 0.0
                 backprop_cuda.geo_feat(nb_samples, 96, self.sigma, samples, self.sites, self.grad_sdf_space, self.sdf.detach(), 
@@ -731,7 +758,7 @@ class Runner:
             ########################################
             ##### Optimize sites positions #########
             ########################################
-            if (iter_step+1) == 2000 or (iter_step+1) == 5000: # or (iter_step+1) == 10000 or (iter_step+1) == 20000 or (iter_step+1) == 25000:# or (iter_step+1) == 45000:
+            if (iter_step+1) == 2000 or (iter_step+1) == 10000 or (iter_step+1) == 30000:# or (iter_step+1) == 20000 or (iter_step+1) == 25000:# or (iter_step+1) == 45000:
                 
                 #if (iter_step+1) == 20000:
                 #    self.batch_size = 10240
@@ -816,7 +843,7 @@ class Runner:
                     self.end_iter_loc = 3000
                     self.learning_rate_alpha = 1.0e-4
 
-                if (iter_step+1) == 5000:
+                if (iter_step+1) == 10000:
                     self.R = 30
                     self.s_start = 50.0
                     self.s_max = 400
@@ -831,10 +858,10 @@ class Runner:
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-4 #3.0e-4 #5
                     self.learning_rate_feat = 1.0e-4
-                    self.end_iter_loc = 30000
+                    self.end_iter_loc = 20000
                     self.learning_rate_alpha = 1.0e-4
                     
-                if (iter_step+1) == 10000:
+                if (iter_step+1) == 30000:
                     warm_up = 1000
                     self.R = 20
                     self.s_start = 200.0
@@ -851,7 +878,7 @@ class Runner:
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 5.0e-4 #1.0e-2
-                    self.end_iter_loc = 10000
+                    self.end_iter_loc = 20000
                     self.vortSDF_renderer_fine.mask_reg = 0.001
                     self.learning_rate_alpha = 1.0e-4
 
@@ -930,7 +957,7 @@ class Runner:
             if iter_step % self.val_freq == 0:
                 #self.inv_s = 1000     
                 #self.render_image(cam_ids, img_idx)
-                self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri.ply", self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
+                self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/meshes/test_tri_{}.ply".format(iter_step), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
                 #self.tet32.surface_from_sdf(self.sdf_smooth.cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri_smooth.ply", self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])                
                 #self.tet32.marching_tets(self.sdf.detach(), "Exp/bmvs_man/test_MT.ply")
                 #if iter_step > 1000:
@@ -1222,7 +1249,7 @@ class Runner:
         self.colors_fine = torch.zeros([self.n_samples * self.batch_size, 3], dtype=torch.float32).cuda()
         self.colors_fine = self.colors_fine.contiguous()
         
-        self.samples_loc = torch.zeros([self.n_samples * self.batch_size, 3], dtype=torch.float32).cuda()
+        self.samples_loc = torch.zeros([self.n_samples * self.batch_size, 6], dtype=torch.float32).cuda()
         self.samples_loc = self.samples_loc.contiguous()
         
         self.samples_rays = torch.zeros([self.n_samples * self.batch_size, 3], dtype=torch.float32).cuda()
@@ -1339,7 +1366,7 @@ if __name__=='__main__':
     parser.add_argument('--data_name', type=str, default='bmvs_man')
     parser.add_argument('--mode', type=str, default='train')
     parser.add_argument('--is_continue', default=False, action="store_true")
-    parser.add_argument('--checkpoint', type=str, default='coarse_ckpt_010000.pth')
+    parser.add_argument('--checkpoint', type=str, default='ckpt_000000.pth')
     parser.add_argument('--resolution', type=int, default=16)
     parser.add_argument('--output', type=str, default='')
     parser.add_argument('--nb_images', type=int, default=1)
