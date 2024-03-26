@@ -537,7 +537,7 @@ class Runner:
                 print('RenderingFunction time:', timer() - start)
 
             #print(self.vortSDF_renderer_fine.counter.max())
-            self.vortSDF_renderer_fine.normalize_grads(self.sites.shape[0])
+            #self.vortSDF_renderer_fine.normalize_grads(self.sites.shape[0])
 
             # Total loss   
             mask_sum = mask.sum()
