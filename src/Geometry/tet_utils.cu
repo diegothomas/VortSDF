@@ -15,7 +15,7 @@
 #endif
 
 #define DIM_ADJ 128
-#define DIM_L_FEAT 6
+#define DIM_L_FEAT 32
 
 /** Device functions **/
 /** Device functions **/

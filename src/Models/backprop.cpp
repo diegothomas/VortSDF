@@ -4,8 +4,10 @@
 // *************************
 void backprop_feat_cuda(
     size_t num_samples,
-    const size_t dim_feats,
+    size_t num_sites,
+    size_t dim_feats,
     torch::Tensor grad_feat,
+    torch::Tensor counter,
     torch::Tensor grad_samples,
     torch::Tensor cell_ids,
     torch::Tensor cell_weights 
@@ -162,16 +164,20 @@ void activate_sites_cuda(
 // ***************************
 void backprop_feat(
     size_t num_samples,
-    const size_t dim_feats,
+    size_t num_sites,
+    size_t dim_feats,
     torch::Tensor grad_feat,
+    torch::Tensor counter,
     torch::Tensor grad_samples,
     torch::Tensor cell_ids,
-    torch::Tensor cell_weights       //***************
+    torch::Tensor cell_weights 
 ) {
     //std::cout << "Backprop feature gradients" << std::endl; 
     backprop_feat_cuda(num_samples,
+    num_sites,
     dim_feats,
     grad_feat,
+    counter,
     grad_samples,
     cell_ids,
     cell_weights);

@@ -88,6 +88,7 @@ __global__ void backprop_feat_kernel(
     const size_t num_samples,
     const size_t dim_feats,
     float *__restrict__ grad_feat,
+    float *__restrict__ counter,
     const float *__restrict__ grad_samples,
     const int *__restrict__ cell_ids,
     const float *__restrict__ cell_weights)
@@ -112,6 +113,8 @@ __global__ void backprop_feat_kernel(
             //atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[13*idx + i] * lamda * grad_samples[DIM_L_FEAT * idx + k]);              
             //atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[13*idx + 6 + i] * (1.0f - lamda) * grad_samples[DIM_L_FEAT * idx + k]);
         }
+        //atomicAdd(&counter[id_prev], cell_weights[13*idx + i]);       
+        //atomicAdd(&counter[id], cell_weights[13*idx + 6 + i]);  
     }
     /*for (int i = 0; i < 6; i++) {
         id_prev = cell_ids[12 * idx + i];
@@ -856,7 +859,7 @@ __global__ void knn_smooth_kernel(
     float total_weight = 0.0f;
     float total_sdf = 0.0f;
 
-    int nb_lvl = fmin(2, num_knn / 32); //num_knn / 32; //fmin(2, num_knn / 32);
+    int nb_lvl = num_knn / 32; //fmin(2, num_knn / 32);
 
     float length_edge, length_feat, length_o = 0.0f;
     int knn_id;
@@ -878,7 +881,7 @@ __global__ void knn_smooth_kernel(
             curr_edge[2] = (curr_point[2] - vertices[3*knn_id + 2]);
             length_edge = curr_edge[0]*curr_edge[0] + curr_edge[1]*curr_edge[1] + curr_edge[2]*curr_edge[2];
             
-            if (length_edge < max_dist || sdf[dim_sdf*knn_id] == 0.0f || sqrt(length_edge) > radius 
+            if (length_edge < max_dist || activated[knn_id] == -1/*sdf[dim_sdf*knn_id] == 0.0f*/ || sqrt(length_edge) > radius 
             /*|| (dim_sdf > 1 && activated[knn_id] == 0)*/)
                 continue;
 
@@ -1017,7 +1020,7 @@ __global__ void normalize_kernel(
         return;
     }
 
-    if (weights[idx] == 0.0f)
+    if (weights[idx] < 0.3f)
         return;
 
     for (int i = 0; i < dim_sdf; i++) 
@@ -1165,25 +1168,39 @@ __global__ void activate_knn_kernel(
 // *************************
 void backprop_feat_cuda(
     size_t num_samples,
+    size_t num_sites,
     size_t dim_feats,
     torch::Tensor grad_feat,
+    torch::Tensor counter,
     torch::Tensor grad_samples,
     torch::Tensor cell_ids,
     torch::Tensor cell_weights 
 )
 {
-    const int threads = 512;
+    const int threads = 1024;
     const int blocks = (num_samples + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
     AT_DISPATCH_FLOATING_TYPES( grad_feat.type(),"backprop_feat_kernel", ([&] {  
         backprop_feat_kernel CUDA_KERNEL(blocks,threads) (
             num_samples,
             dim_feats,
             grad_feat.data_ptr<float>(),
+            counter.data_ptr<float>(),
             grad_samples.data_ptr<float>(),
             cell_ids.data_ptr<int>(),
             cell_weights.data_ptr<float>());
     }));
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
+    
+    /*const int threads2 = 512;
+    const int blocks2 = (num_sites + threads2 - 1) / threads2; // ceil for example 8192 + 255 / 256 = 32
+    AT_DISPATCH_FLOATING_TYPES( grad_feat.type(),"normalize_kernel", ([&] {  
+        normalize_kernel CUDA_KERNEL(blocks2,threads2) (
+            num_sites,
+            dim_feats,
+            grad_feat.data_ptr<float>(),
+            counter.data_ptr<float>());
+    }));
+    cudaDeviceSynchronize();*/
 }
 
 
@@ -1247,7 +1264,7 @@ void  backprop_unit_norm_cuda(
     torch::Tensor activated 
 )
 {
-    const int threads = 256;
+    const int threads = 512;
     const int blocks = (num_tets + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
     AT_DISPATCH_FLOATING_TYPES( grad_sdf.type(),"backprop_unit_norm_kernel", ([&] {  
         backprop_unit_norm_kernel CUDA_KERNEL(blocks,threads) (
@@ -1261,7 +1278,7 @@ void  backprop_unit_norm_cuda(
             grad_sdf.data_ptr<float>(),
             activated.data_ptr<int>());
     }));
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
 }
 
 // *************************
@@ -1291,7 +1308,7 @@ float eikonal_loss_cuda(
             loss);
     }));
     
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
     float res = 0.0f;
     cudaMemcpy(&res, loss, sizeof(float), cudaMemcpyDeviceToHost);
     cudaFree(loss);
@@ -1496,7 +1513,7 @@ void knn_smooth_sdf_cuda(
             neighbors.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)
             sdf_smooth.data_ptr<float>());
     }));
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
 }
 
 

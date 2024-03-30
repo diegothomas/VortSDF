@@ -644,8 +644,8 @@ __global__ void cvt_grad_cuda_kernel(
             nmle[2] = nmle[2] / nmle_length;
             
             alpha = 0.5f;
-            if (sdf[idx]*sdf[knn_id] < 0.0f)
-                alpha = fabs(sdf[idx])/(fabs(sdf[idx]) + fabs(sdf[knn_id]));
+            //if (sdf[idx]*sdf[knn_id] < 0.0f)
+            //    alpha = fabs(sdf[idx])/(fabs(sdf[idx]) + fabs(sdf[knn_id]));
 
             // Compute middle point
             b_point[0] = (alpha*sites[3*knn_id] + (1.0f-alpha)*curr_site[0]);

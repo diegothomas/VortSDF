@@ -415,7 +415,7 @@ class Tet32(Process):
             #grad_sites[:self.nb_pre_sites,:] = 0.0
             #grad_sites_sdf[:self.nb_pre_sites,:] = 0.0
             optimizer_cvt.zero_grad()
-            self.sites.grad = grad_sites*mask_grad + sdf_weight*grad_sites_sdf
+            self.sites.grad = grad_sites*mask_grad #+ sdf_weight*grad_sites_sdf
             optimizer_cvt.step()
 
             with torch.no_grad():
@@ -534,7 +534,7 @@ class Tet32(Process):
         cam_ids = torch.from_numpy(cam_ids).int().cuda()
                 
         self.sites = torch.from_numpy(self.sites).float().cuda()
-        in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, radius, 0.1, lr)
+        in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 1000, radius, 0.1, lr)
 
         #ply.save_ply("Exp/bmvs_man/testprevlvlv.ply", (self.sites[self.lvl_sites[0][:]]).transpose())
         prev_kdtree = scipy.spatial.KDTree(new_sites)
@@ -555,12 +555,13 @@ class Tet32(Process):
         knn_sites = -1 * np.ones((self.sites.shape[0], 32))
         _, idx = prev_kdtree.query(self.sites, k=32)
         knn_sites[:,:32] = np.asarray(idx[:,:])
-        out_sdf = torch.zeros(self.sites.shape[0]).float().cuda().contiguous()
-        backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius, 1, torch.from_numpy(new_sites).float().cuda().contiguous(), 
+        """out_sdf = torch.zeros(self.sites.shape[0]).float().cuda().contiguous()
+        backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius/2.0, 1, torch.from_numpy(new_sites).float().cuda().contiguous(), 
                                         torch.from_numpy(self.sites).float().cuda().contiguous(), torch.from_numpy(in_sdf).float().cuda().contiguous(), 
                                         torch.from_numpy(knn_sites).int().cuda().contiguous(), out_sdf)
-        out_sdf = out_sdf.cpu().numpy()
+        out_sdf = out_sdf.cpu().numpy()"""
         
+        out_sdf = -f(self.sites)
 
         """if flag:
             out_sdf[:] = in_sdf[idx[:]]
@@ -578,7 +579,7 @@ class Tet32(Process):
 
         
         out_feat = torch.zeros(self.sites.shape[0],feat.shape[1]).float().cuda().contiguous()
-        backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius, feat.shape[1], torch.from_numpy(new_sites).float().cuda().contiguous(), 
+        backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius/2.0, feat.shape[1], torch.from_numpy(new_sites).float().cuda().contiguous(), 
                                         torch.from_numpy(self.sites).float().cuda().contiguous(), torch.from_numpy(in_feat).float().cuda().contiguous(), 
                                         torch.from_numpy(knn_sites).int().cuda().contiguous(), out_feat)
         out_feat = out_feat.cpu().numpy()

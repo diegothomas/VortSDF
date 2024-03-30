@@ -1064,7 +1064,8 @@ __global__ void tet32_march_cuda_kernel(
 
 					// activate sites here
 					for (int l = 0; l < 6; l++) {
-						atomicExch(&activate[ids_s[l]], 1);
+						activate[ids_s[l]] = 1;
+						//atomicExch(&activate[ids_s[l]], 1);
 					}
 
 					s_id++;
