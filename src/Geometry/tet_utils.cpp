@@ -15,6 +15,14 @@ int upsample_counter_cuda(
     torch::Tensor sdf
 );
 
+int upsample_counter_tet_cuda(
+    size_t nb_tets,
+    float sigma,
+    torch::Tensor tets,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor sdf
+);
+
 void upsample_cuda(
     size_t nb_edges,
     float sigma,
@@ -27,6 +35,17 @@ void upsample_cuda(
     torch::Tensor new_feats
 );
 
+void upsample_tet_cuda(
+    size_t nb_tets,
+    float sigma,
+    torch::Tensor tets,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor feats,
+    torch::Tensor new_sites,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor new_sdf,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor new_feats
+);
 
 void vertex_adjacencies_cuda(
     size_t nb_tets,
@@ -84,6 +103,22 @@ int upsample_counter(
         sdf);
 }
 
+int upsample_counter_tet(
+    size_t nb_tets,
+    float sigma,
+    torch::Tensor tets,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor sdf
+)  {
+    //std::cout << "Backprop feature gradients" << std::endl; 
+    return upsample_counter_tet_cuda(
+        nb_tets,
+        sigma,
+        tets,    // [N_sites, 3] for each voxel => it's vertices
+        sites,    // [N_sites, 3] for each voxel => it's vertices
+        sdf);
+}
+
 
 void upsample(
     size_t nb_edges,
@@ -101,6 +136,30 @@ void upsample(
         nb_edges,
         sigma,
         edges,    // [N_sites, 3] for each voxel => it's vertices
+        sites,    // [N_sites, 3] for each voxel => it's vertices
+        sdf,
+        feats,    // [N_sites, 3] for each voxel => it's vertices
+        new_sites,    // [N_sites, 3] for each voxel => it's vertices
+        new_sdf,
+        new_feats);
+}
+
+void upsample_tet(
+    size_t nb_tets,
+    float sigma,
+    torch::Tensor tets,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor feats,
+    torch::Tensor new_sites,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor new_sdf,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor new_feats
+)  {
+    //std::cout << "Backprop feature gradients" << std::endl; 
+    upsample_tet_cuda(
+        nb_tets,
+        sigma,
+        tets,    // [N_sites, 3] for each voxel => it's vertices
         sites,    // [N_sites, 3] for each voxel => it's vertices
         sdf,
         feats,    // [N_sites, 3] for each voxel => it's vertices
@@ -220,6 +279,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("compute_neighbors", &compute_neighbors, "compute_neighbors (CPP)");
     m.def("upsample_counter", &upsample_counter, "upsample_counter (CPP)");
     m.def("upsample", &upsample, "upsample (CPP)");
+    m.def("upsample_counter_tet", &upsample_counter_tet, "upsample_counter_tet (CPP)");
+    m.def("upsample_tet", &upsample_tet, "upsample_tet (CPP)");
     m.def("count_cam_neighbors", &count_cam_neighbors, "count_cam_neighbors (CPP)");
     m.def("compute_cam_neighbors", &compute_cam_neighbors, "compute_cam_neighbors (CPP)");
 }

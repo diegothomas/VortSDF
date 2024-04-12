@@ -84,6 +84,49 @@ __device__ float get_sdf_cvt(float weights[4], float p[3], float* sites, float* 
             sdf[id2] * weights[2] + sdf[id3] * weights[3];
 }
 
+__global__ void backprop_multi_kernel(
+    const size_t num_sites, 
+    const size_t num_knn,  
+    const size_t dim_feat,
+    float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ activated,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ grad_norm,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ grad_norm_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ neighbors)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_sites)
+    {
+        return;
+    }
+
+    if (activated[idx] != 2)
+        return;
+
+    int nb_lvl = num_knn / 32;
+    int knn_id; 
+
+    for (int lvl_curr = 0; lvl_curr < nb_lvl; lvl_curr++) {
+        for (int i = 0; i < 32; i++) {
+            knn_id = neighbors[num_knn*idx + lvl_curr*32 + i];
+            if (knn_id == -1)
+                return;
+            
+            for (int i = 0; i < dim_feat; i++) {
+                atomicAdd(&grad_feat[4*dim_feat*knn_id + i], grad_feat[dim_feat*(4*idx+lvl_curr+1) + i]/32.0f);
+            }  
+            for (int i = 0; i < 3; i++) {
+                atomicAdd(&grad_norm[3*knn_id + i], grad_norm_feat[3*(4*idx+lvl_curr+1) + i]/32.0f);
+            }                       
+        }
+    }
+
+    return;
+}
+
+
+
 __global__ void backprop_feat_kernel(
     const size_t num_samples,
     const size_t dim_feats,
@@ -102,43 +145,16 @@ __global__ void backprop_feat_kernel(
     int id_prev, id;
     ////////////////////////Linear interpolation//////////////////////////
     //////////////////////////////////////////////////////////////
-    float lamda = cell_weights[13*idx + 12] ;
+    float lamda = cell_weights[7*idx + 6] ;
     for (int i = 0; i < 3; i++) {
-        id_prev = cell_ids[12 * idx +6+ i];
-        id = cell_ids[12 * idx + 9 + i];
-
-        for (int k = 0; k < dim_feats; k++) { 
-            atomicAdd(&grad_feat[dim_feats * id_prev + k], cell_weights[13*idx + i] * grad_samples[2*dim_feats * idx + k]);       
-            atomicAdd(&grad_feat[dim_feats * id + k], cell_weights[13*idx + 6 + i] *grad_samples[2*dim_feats * idx + dim_feats + k]);     
-            //atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[13*idx + i] * lamda * grad_samples[DIM_L_FEAT * idx + k]);              
-            //atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[13*idx + 6 + i] * (1.0f - lamda) * grad_samples[DIM_L_FEAT * idx + k]);
-        }
-        //atomicAdd(&counter[id_prev], cell_weights[13*idx + i]);       
-        //atomicAdd(&counter[id], cell_weights[13*idx + 6 + i]);  
-    }
-    /*for (int i = 0; i < 6; i++) {
-        id_prev = cell_ids[12 * idx + i];
-        id = cell_ids[12 * idx + 6 + i];
-
-        for (int k = 0; k < DIM_L_FEAT; k++) { 
-            atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[13*idx + i] * grad_samples[2*DIM_L_FEAT * idx + k]);       
-            atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[13*idx + 6 + i] *grad_samples[2*DIM_L_FEAT * idx + DIM_L_FEAT + k]);     
-            //atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], cell_weights[13*idx + i] * lamda * grad_samples[DIM_L_FEAT * idx + k]);              
-            //atomicAdd(&grad_feat[DIM_L_FEAT * id + k], cell_weights[13*idx + 6 + i] * (1.0f - lamda) * grad_samples[DIM_L_FEAT * idx + k]);
-        }
-    }*/
-    ////////////////////////Network interpolation//////////////////////////
-    //////////////////////////////////////////////////////////////
-    /*for (int i = 0; i < 3; i++) {
         id_prev = cell_ids[6 * idx + i];
         id = cell_ids[6 * idx + 3 + i];
-        //atomicAdd(&grad_sdf[id_prev], grad_sdf_samples[6*idx + i]);       
-        //atomicAdd(&grad_sdf[id], grad_sdf_samples[6*idx + 3 + i]);  
-        for (int k = 0; k < DIM_L_FEAT; k++) {  
-            atomicAdd(&grad_feat[DIM_L_FEAT * id_prev + k], grad_samples[2*DIM_L_FEAT * idx + k]);       
-            atomicAdd(&grad_feat[DIM_L_FEAT * id + k], grad_samples[2*DIM_L_FEAT * idx + 6 + k]);       
+
+        for (int k = 0; k < dim_feats; k++) {    
+            atomicAdd(&grad_feat[dim_feats * id_prev + k], cell_weights[7*idx + i] * lamda * grad_samples[dim_feats * idx + k]);              
+            atomicAdd(&grad_feat[dim_feats * id + k], cell_weights[7*idx + 3 + i] * (1.0f - lamda) * grad_samples[dim_feats * idx + k]);
         }
-    }*/
+    }
 
     return;
 }
@@ -160,13 +176,13 @@ __global__ void backprop_sdf_kernel(
     int id_prev, id;
     ////////////////////////Linear interpolation//////////////////////////
     //////////////////////////////////////////////////////////////
-    float lamda = cell_weights[13*idx + 12] ;
+    float lamda = cell_weights[7*idx + 6] ;
     for (int i = 0; i < 3; i++) {
-        id_prev = cell_ids[12 * idx + 6 + i];
-        id = cell_ids[12 * idx + 9 + i];
+        id_prev = cell_ids[6 * idx + i];
+        id = cell_ids[6 * idx + 3 + i];
 
-        atomicAdd(&grad_sdf[id_prev], cell_weights[13*idx + i] * grad_sdf_samples[2 * idx]);       
-        atomicAdd(&grad_sdf[id], cell_weights[13*idx + 6 + i] * grad_sdf_samples[2 * idx + 1]);    
+        atomicAdd(&grad_sdf[id_prev], cell_weights[7*idx + i] * grad_sdf_samples[2 * idx]);       
+        atomicAdd(&grad_sdf[id], cell_weights[7*idx + 3 + i] * grad_sdf_samples[2 * idx + 1]);    
     }
 
     return;
@@ -177,7 +193,9 @@ __global__ void backprop_norm_kernel(
     const size_t num_tets,                // number of rays
     const int *__restrict__ tets,  // [N_voxels, 4] for each voxel => it's neighbors
     float *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices,
-    float *__restrict__ weights_tot, 
+    float *__restrict__ vol,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ weights,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ grad_norm,
     float *__restrict__ grad_sdf,
     int *__restrict__ activated
@@ -200,76 +218,9 @@ __global__ void backprop_norm_kernel(
         activated[ids[3]] == 0)
         return;
 
-    /*if ((grad_norm[3*ids[0]]*grad_norm[3*ids[0]] + grad_norm[3*ids[0]+1]*grad_norm[3*ids[0]+1] + grad_norm[3*ids[0]+2]*grad_norm[3*ids[0]+2]) == 0.0f && 
-        (grad_norm[3*ids[1]]*grad_norm[3*ids[1]] + grad_norm[3*ids[1]+1]*grad_norm[3*ids[1]+1] + grad_norm[3*ids[1]+2]*grad_norm[3*ids[1]+2]) == 0.0f && 
-        (grad_norm[3*ids[2]]*grad_norm[3*ids[2]] + grad_norm[3*ids[2]+1]*grad_norm[3*ids[2]+1] + grad_norm[3*ids[2]+2]*grad_norm[3*ids[2]+2]) == 0.0f && 
-        (grad_norm[3*ids[3]]*grad_norm[3*ids[3]] + grad_norm[3*ids[3]+1]*grad_norm[3*ids[3]+1] + grad_norm[3*ids[3]+2]*grad_norm[3*ids[3]+2]) == 0.0f)
-        return;*/
-
-    float center_point[3] {0.0, 0.0, 0.0};
-    for (int i = 0; i < 3; i++) {
-        center_point[i] = (sites[3*ids[0] + i] + sites[3*ids[1] + i] + sites[3*ids[2] + i] + sites[3*ids[3] + i])/4.0f;
-    }
-    /*float center_sdf = (sdf[ids[0]] + sdf[ids[1]] + sdf[ids[2]] + sdf[ids[3]])/4.0f;
-    float center_sdf_smooth = (sdf_smooth[ids[0]] + sdf_smooth[ids[1]] + sdf_smooth[ids[2]] + sdf_smooth[ids[3]])/4.0f;
-    /*float center_feat[6] {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-    for (int i = 0; i < 6; i++) {
-        center_feat[i] = (feat[6*ids[0] + i] + feat[6*ids[1] + i] + feat[6*ids[2] + i] + feat[6*ids[3] + i])/4.0f;
-    }*/
-
-    float volume_tet = volume_tetrahedron_32(&sites[3*ids[0]], &sites[3*ids[1]], &sites[3*ids[2]], &sites[3*ids[3]]);
+    float volume_tet = vol[idx];
     
-    float curr_n[3] {0.0, 0.0, 0.0};
-    float dX[12] {};
-    float G[9] {0.0, 0.0, 0.0, 
-                0.0, 0.0, 0.0, 
-                0.0, 0.0, 0.0}; //dXT dX
-    float G_inv[9] {0.0, 0.0, 0.0, 
-                0.0, 0.0, 0.0, 
-                0.0, 0.0, 0.0};
-
-    float Weights_curr[12] {0.0, 0.0, 0.0, 0.0,
-                            0.0, 0.0, 0.0, 0.0,
-                            0.0, 0.0, 0.0, 0.0};   
-
-    for (int r_id = 0; r_id < 4; r_id++) {
-        curr_n[0] = sites[3*ids[r_id]];
-        curr_n[1] = sites[3*ids[r_id] + 1];
-        curr_n[2] = sites[3*ids[r_id] + 2];
-
-        // Calculate coefficients
-        dX[3*r_id] = curr_n[0] - center_point[0];
-        dX[3*r_id + 1] = curr_n[1] - center_point[1];
-        dX[3*r_id + 2] = curr_n[2] - center_point[2];
-        
-        G[0] = G[0] + dX[3*r_id]*dX[3*r_id]; G[1] = G[1] + dX[3*r_id]*dX[3*r_id+1];  G[2] = G[2] + dX[3*r_id]*dX[3*r_id+2];
-        G[3] = G[3] + dX[3*r_id+1]*dX[3*r_id]; G[4] = G[4] + dX[3*r_id+1]*dX[3*r_id + 1]; G[5] = G[5] + dX[3*r_id+1]*dX[3*r_id + 2];
-        G[6] = G[6] + dX[3*r_id+2]*dX[3*r_id]; G[7] = G[7] + dX[3*r_id+2]*dX[3*r_id + 1]; G[8] = G[8] + dX[3*r_id+2]*dX[3*r_id + 2];
-    }
-
-    // Compute inverse of G
-    // det = a11 (a22 a33 – a23 a32) – a12 (a21 a33 – a23 a31) + a13 (a21 a32 – a22 a31)
-    float det = G[0] * (G[4]*G[8] - G[5]*G[7]) - G[1]*(G[3]*G[8] - G[5]*G[6]) + G[2] * (G[3]*G[7] - G[4] * G[6]);
-    if (det == 0.0f) { 
-        return;
-    }
-    
-    G_inv[0] = (G[4]*G[8] - G[5]*G[7])/det; 
-    G_inv[3] = -(G[3]*G[8] - G[5]*G[6])/det; 
-    G_inv[6] = (G[3]*G[7] - G[4]*G[6])/det;
-    G_inv[1] = -(G[1]*G[8] - G[2]*G[7])/det; 
-    G_inv[4] = (G[0]*G[8] - G[2]*G[6])/det; 
-    G_inv[7] = -(G[0]*G[7] - G[1]*G[6])/det; 
-    G_inv[2] = (G[1]*G[5] - G[2]*G[4])/det; 
-    G_inv[5] = -(G[0]*G[5] - G[2]*G[3])/det; 
-    G_inv[8] = (G[0]*G[4] - G[1]*G[3])/det; 
-
-    // Matrix multiplication
-    for (int i = 0; i < 4; i++) {
-        Weights_curr[3*i] = G_inv[0] * dX[3*i] + G_inv[1] * dX[3*i + 1] + G_inv[2] * dX[3*i + 2];
-        Weights_curr[3*i + 1] = G_inv[3] * dX[3*i] + G_inv[4] * dX[3*i + 1] + G_inv[5] * dX[3*i + 2];
-        Weights_curr[3*i + 2] = G_inv[6] * dX[3*i] + G_inv[7] * dX[3*i + 1] + G_inv[8] * dX[3*i + 2];
-    }
+    float *Weights_curr = &weights[12*idx];   
     
     float grad_curr[3] {};
     if (weights_tot[ids[0]] > 0.0f) {
@@ -307,7 +258,9 @@ __global__ void backprop_unit_norm_kernel(
     float *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices,
     float *__restrict__ norm_grad,
     float *__restrict__ grad_unornmed,
-    float *__restrict__ weights_tot, 
+    float *__restrict__ vol,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ weights,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ grad_norm,
     float *__restrict__ grad_sdf,
     int *__restrict__ activated
@@ -330,72 +283,18 @@ __global__ void backprop_unit_norm_kernel(
         activated[ids[3]] == 0)
         return;
 
-    float center_point[3] {0.0, 0.0, 0.0};
-    for (int i = 0; i < 3; i++) {
-        center_point[i] = (sites[3*ids[0] + i] + sites[3*ids[1] + i] + sites[3*ids[2] + i] + sites[3*ids[3] + i])/4.0f;
-    }
 
-    float volume_tet = volume_tetrahedron_32(&sites[3*ids[0]], &sites[3*ids[1]], &sites[3*ids[2]], &sites[3*ids[3]]);
+    float volume_tet = vol[idx];
     
-    float curr_n[3] {0.0, 0.0, 0.0};
-    float dX[12] {};
-    float G[9] {0.0, 0.0, 0.0, 
-                0.0, 0.0, 0.0, 
-                0.0, 0.0, 0.0}; //dXT dX
-    float G_inv[9] {0.0, 0.0, 0.0, 
-                0.0, 0.0, 0.0, 
-                0.0, 0.0, 0.0};
-
-    float Weights_curr[12] {0.0, 0.0, 0.0, 0.0,
-                            0.0, 0.0, 0.0, 0.0,
-                            0.0, 0.0, 0.0, 0.0};   
-
-    for (int r_id = 0; r_id < 4; r_id++) {
-        curr_n[0] = sites[3*ids[r_id]];
-        curr_n[1] = sites[3*ids[r_id] + 1];
-        curr_n[2] = sites[3*ids[r_id] + 2];
-
-        // Calculate coefficients
-        dX[3*r_id] = curr_n[0] - center_point[0];
-        dX[3*r_id + 1] = curr_n[1] - center_point[1];
-        dX[3*r_id + 2] = curr_n[2] - center_point[2];
-        
-        G[0] = G[0] + dX[3*r_id]*dX[3*r_id]; G[1] = G[1] + dX[3*r_id]*dX[3*r_id+1];  G[2] = G[2] + dX[3*r_id]*dX[3*r_id+2];
-        G[3] = G[3] + dX[3*r_id+1]*dX[3*r_id]; G[4] = G[4] + dX[3*r_id+1]*dX[3*r_id + 1]; G[5] = G[5] + dX[3*r_id+1]*dX[3*r_id + 2];
-        G[6] = G[6] + dX[3*r_id+2]*dX[3*r_id]; G[7] = G[7] + dX[3*r_id+2]*dX[3*r_id + 1]; G[8] = G[8] + dX[3*r_id+2]*dX[3*r_id + 2];
-    }
-
-    // Compute inverse of G
-    // det = a11 (a22 a33 – a23 a32) – a12 (a21 a33 – a23 a31) + a13 (a21 a32 – a22 a31)
-    float det = G[0] * (G[4]*G[8] - G[5]*G[7]) - G[1]*(G[3]*G[8] - G[5]*G[6]) + G[2] * (G[3]*G[7] - G[4] * G[6]);
-    if (det == 0.0f) { 
-        return;
-    }
-    
-    G_inv[0] = (G[4]*G[8] - G[5]*G[7])/det; 
-    G_inv[3] = -(G[3]*G[8] - G[5]*G[6])/det; 
-    G_inv[6] = (G[3]*G[7] - G[4]*G[6])/det;
-    G_inv[1] = -(G[1]*G[8] - G[2]*G[7])/det; 
-    G_inv[4] = (G[0]*G[8] - G[2]*G[6])/det; 
-    G_inv[7] = -(G[0]*G[7] - G[1]*G[6])/det; 
-    G_inv[2] = (G[1]*G[5] - G[2]*G[4])/det; 
-    G_inv[5] = -(G[0]*G[5] - G[2]*G[3])/det; 
-    G_inv[8] = (G[0]*G[4] - G[1]*G[3])/det; 
-
-    // Matrix multiplication
-    for (int i = 0; i < 4; i++) {
-        Weights_curr[3*i] = G_inv[0] * dX[3*i] + G_inv[1] * dX[3*i + 1] + G_inv[2] * dX[3*i + 2];
-        Weights_curr[3*i + 1] = G_inv[3] * dX[3*i] + G_inv[4] * dX[3*i + 1] + G_inv[5] * dX[3*i + 2];
-        Weights_curr[3*i + 2] = G_inv[6] * dX[3*i] + G_inv[7] * dX[3*i + 1] + G_inv[8] * dX[3*i + 2];
-    }
+    float *Weights_curr = &weights[12*idx];    
     
     float grad_curr[3] {};
-    if (weights_tot[ids[0]] > 0.0f) {
+    if (weights_tot[ids[0]] > 1.0e-10) {
         grad_curr[0] = (volume_tet/(4.0*weights_tot[ids[0]])) * (3.0*Weights_curr[0]);
         grad_curr[1] = (volume_tet/(4.0*weights_tot[ids[0]])) * (3.0*Weights_curr[1]);
         grad_curr[2] = (volume_tet/(4.0*weights_tot[ids[0]])) * (3.0*Weights_curr[2]);
 
-        float scale = norm_grad[ids[0]] == 0.0f ? 0.0f : 1.0f/(norm_grad[ids[0]]*norm_grad[ids[0]]);
+        float scale = norm_grad[ids[0]]*norm_grad[ids[0]] == 0.0f ? 0.0f : 1.0f/(norm_grad[ids[0]]*norm_grad[ids[0]]);
         float A = (grad_norm[3*ids[0]]*grad_curr[0] + grad_norm[3*ids[0]+1]*grad_curr[1] + grad_norm[3*ids[0]+2]*grad_curr[2]);
         float B = norm_grad[ids[0]] == 0.0f ? 0.0f : 
                     (grad_unornmed[3*ids[0]]*grad_norm[3*ids[0]] + 
@@ -411,7 +310,7 @@ __global__ void backprop_unit_norm_kernel(
         grad_curr[1] = (volume_tet/(4.0*weights_tot[ids[1]])) * (3.0*Weights_curr[3*1+1]);
         grad_curr[2] = (volume_tet/(4.0*weights_tot[ids[1]])) * (3.0*Weights_curr[3*1+2]);
 
-        float scale = norm_grad[ids[1]] == 0.0f ? 0.0f : 1.0f/(norm_grad[ids[1]]*norm_grad[ids[1]]);
+        float scale = norm_grad[ids[1]]*norm_grad[ids[1]] == 0.0f ? 0.0f : 1.0f/(norm_grad[ids[1]]*norm_grad[ids[1]]);
         float A = (grad_norm[3*ids[1]]*grad_curr[0] + grad_norm[3*ids[1]+1]*grad_curr[1] + grad_norm[3*ids[1]+2]*grad_curr[2]);
         float B = norm_grad[ids[1]] == 0.0f ? 0.0f : 
                     (grad_unornmed[3*ids[1]]*grad_norm[3*ids[1]] + 
@@ -427,7 +326,7 @@ __global__ void backprop_unit_norm_kernel(
         grad_curr[1] = (volume_tet/(4.0*weights_tot[ids[2]])) * (3.0*Weights_curr[3*2+1]);
         grad_curr[2] = (volume_tet/(4.0*weights_tot[ids[2]])) * (3.0*Weights_curr[3*2+2]);
 
-        float scale = norm_grad[ids[2]] == 0.0f ? 0.0f : 1.0f/(norm_grad[ids[2]]*norm_grad[ids[2]]);
+        float scale = norm_grad[ids[2]]*norm_grad[ids[2]] == 0.0f ? 0.0f : 1.0f/(norm_grad[ids[2]]*norm_grad[ids[2]]);
         float A = (grad_norm[3*ids[2]]*grad_curr[0] + grad_norm[3*ids[2]+1]*grad_curr[1] + grad_norm[3*ids[2]+2]*grad_curr[2]);
         float B = norm_grad[ids[2]] == 0.0f ? 0.0f : 
                     (grad_unornmed[3*ids[2]]*grad_norm[3*ids[2]] + 
@@ -443,7 +342,7 @@ __global__ void backprop_unit_norm_kernel(
         grad_curr[1] = (volume_tet/(4.0*weights_tot[ids[3]])) * (3.0*Weights_curr[3*3+1]);
         grad_curr[2] = (volume_tet/(4.0*weights_tot[ids[3]])) * (3.0*Weights_curr[3*3+2]);
 
-        float scale = norm_grad[ids[3]] == 0.0f ? 0.0f : 1.0f/(norm_grad[ids[3]]*norm_grad[ids[3]]);
+        float scale = norm_grad[ids[3]]*norm_grad[ids[3]] == 0.0f ? 0.0f : 1.0f/(norm_grad[ids[3]]*norm_grad[ids[3]]);
         float A = (grad_norm[3*ids[3]]*grad_curr[0] + grad_norm[3*ids[3]+1]*grad_curr[1] + grad_norm[3*ids[3]+2]*grad_curr[2]);
         float B = norm_grad[ids[3]] == 0.0f ? 0.0f : 
                     (grad_unornmed[3*ids[3]]*grad_norm[3*ids[3]] + 
@@ -512,7 +411,7 @@ __global__ void smooth_grad_kernel(
         return;
     }
 
-    if (activated[edges[2*idx]] == 0 && activated[edges[2*idx + 1]] == 0)
+    if (!(activated[edges[2*idx]] >= 1 || activated[edges[2*idx + 1]] >= 1))
         return;
     
     float length_edge = (vertices[3*edges[2*idx]] - vertices[3*edges[2*idx+1]])*(vertices[3*edges[2*idx]] - vertices[3*edges[2*idx+1]]) +
@@ -557,7 +456,7 @@ __global__ void smooth_grad_kernel(
     return;
 }
 
-__global__ void geo_feat_kernel(
+/*__global__ void geo_feat_kernel(
     const size_t num_samples,                // number of rays
     const size_t num_knn,  
     const float sigma,  
@@ -622,7 +521,7 @@ __global__ void geo_feat_kernel(
             curr_edge[2] = (vertices[3*knn_id + 2] - curr_point[2]);
             length_edge = sqrt(curr_edge[0]*curr_edge[0] + curr_edge[1]*curr_edge[1] + curr_edge[2]*curr_edge[2]);
             
-            if (length_edge < 1.0e-10 /*|| length_edge > radius*/)
+            if (length_edge < 1.0e-10) // || length_edge > radius)
                 continue;
 
             w_r = exp(-4.0f*(length_edge - sigma/2.0f)*(length_edge - sigma/2.0f) / (sigma*sigma));
@@ -665,9 +564,9 @@ __global__ void geo_feat_kernel(
     }
 
     return;
-}
+}*/
 
-/*__global__ void geo_feat_kernel(
+__global__ void geo_feat_kernel(
     const size_t num_samples,                // number of rays
     const size_t num_knn,  
     float *__restrict__ samples,     // [N_voxels, 4] for each voxel => it's vertices
@@ -773,7 +672,7 @@ __global__ void geo_feat_kernel(
         curr_features[9 + 3 * id_list[i] + 1] = (curr_features[5 + i] - curr_features[1 + i]) * vec[1] / norm_2;
         curr_features[9 + 3 * id_list[i] + 2] = (curr_features[5 + i] - curr_features[1 + i]) * vec[2] / norm_2;
     }
-}*/
+}
 
 
 __global__ void knn_interpolate_kernel(
@@ -848,13 +747,13 @@ __global__ void knn_smooth_kernel(
         return;
     }
 
-    if (dim_sdf == 1 && fabs(sdf[idx]) > 3.0f*sigma) {
+    /*if (dim_sdf == 1 && fabs(sdf[idx]) > 3.0f*sigma) {
         sdf_smooth[idx] = sdf[idx];
         return;
-    }
+    }*/
 
-    //if (activated[idx] == 0)
-    //    return;
+    if (activated[idx] == 0)
+        return;
 
     float total_weight = 0.0f;
     float total_sdf = 0.0f;
@@ -874,15 +773,15 @@ __global__ void knn_smooth_kernel(
         for (int i = 0; i < 32; i++) {
             knn_id = neighbors[num_knn*idx + lvl_curr*32 + i];
             if (knn_id == -1)
-                continue;
+                break;
             
             curr_edge[0] = (curr_point[0] - vertices[3*knn_id]);
             curr_edge[1] = (curr_point[1] - vertices[3*knn_id + 1]);
             curr_edge[2] = (curr_point[2] - vertices[3*knn_id + 2]);
             length_edge = curr_edge[0]*curr_edge[0] + curr_edge[1]*curr_edge[1] + curr_edge[2]*curr_edge[2];
             
-            if (length_edge < max_dist || activated[knn_id] == -1/*sdf[dim_sdf*knn_id] == 0.0f*/ || sqrt(length_edge) > radius 
-            /*|| (dim_sdf > 1 && activated[knn_id] == 0)*/)
+            if (length_edge < max_dist) // || activated[knn_id] == -1)///*sdf[dim_sdf*knn_id] == 0.0f*/ || sqrt(length_edge) > radius 
+            ///*|| (dim_sdf > 1 && activated[knn_id] == 0)*/)
                 continue;
 
             // add bilateral smooth term with grad
@@ -902,8 +801,10 @@ __global__ void knn_smooth_kernel(
                 max_dist = length_edge;
             
             for (int i = 0; i < dim_sdf; i++) {
-                total_sdf = total_sdf + exp(-length_edge/(sigma*sigma) - length_feat/(0.05f) - length_o/(sigma*sigma)) * sdf[dim_sdf*knn_id + i];
-                total_weight = total_weight + exp(-length_edge/(sigma*sigma) - length_feat/(0.05f) - length_o/(sigma*sigma));
+                total_sdf = total_sdf + exp(-length_edge/(sigma*sigma)) * sdf[dim_sdf*knn_id + i];
+                total_weight = total_weight + exp(-length_edge/(sigma*sigma));
+                //total_sdf = total_sdf + exp(-length_edge/(sigma*sigma) - length_feat/(0.05f) - length_o/(sigma*sigma)) * sdf[dim_sdf*knn_id + i];
+                //total_weight = total_weight + exp(-length_edge/(sigma*sigma) - length_feat/(0.05f) - length_o/(sigma*sigma));
             }
         }
         radius = 2.0f*radius;
@@ -993,16 +894,16 @@ __global__ void smooth_kernel(
               
     for (int i = 0; i < dim_sdf; i++) {
         if (sdf[dim_sdf*edges[2*idx + 1] + i] != 0.0f)
-            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx] + i], exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)) * sdf[dim_sdf*edges[2*idx + 1] + i]);          
+            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx] + i], exp(-length_edge/(sigma*sigma)) * (sdf[dim_sdf*edges[2*idx] + i] - sdf[dim_sdf*edges[2*idx + 1] + i])); //exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)) * sdf[dim_sdf*edges[2*idx + 1] + i]);          
         
         if (sdf[dim_sdf*edges[2*idx] + i] != 0.0f)
-            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx + 1] + i], exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)) * sdf[dim_sdf*edges[2*idx] + i]);
+            atomicAdd(&sdf_smooth[dim_sdf*edges[2*idx + 1] + i], -exp(-length_edge/(sigma*sigma)) * (sdf[dim_sdf*edges[2*idx] + i] - sdf[dim_sdf*edges[2*idx + 1] + i])); //exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)) * sdf[dim_sdf*edges[2*idx] + i]);
     }
 
     if (sdf[dim_sdf*edges[2*idx + 1]] != 0.0f)
-        atomicAdd(&counter[edges[2*idx]], exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)));
+        atomicAdd(&counter[edges[2*idx]], exp(-length_edge/(sigma*sigma)));//exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)));
     if (sdf[dim_sdf*edges[2*idx]] != 0.0f)
-        atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)));
+        atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/(sigma*sigma)));// exp(-length_edge/(sigma*sigma) - length_feat/(0.05f)));
 
     return;
 }
@@ -1124,7 +1025,7 @@ __global__ void activate_sites_kernel(
     int end = offsets[2 * idx + 1];
     for (int t = start; t < start + end; t++) {      
         for (int i = 0; i < 6; i++) {
-            id = cell_ids[12 * t + 6 + i];
+            id = cell_ids[6 * t + i];
             //activated[id] = 1;
             atomicExch(&activated[id], 1);
         }        
@@ -1151,12 +1052,12 @@ __global__ void activate_knn_kernel(
     
     int knn_id, id_prev, id;
 
-    for (int j = 0; j < 64/*num_knn*/; j++) {
+    for (int j = 0; j < num_knn; j++) {
         knn_id = neighbors[num_knn*idx + j];
         if (knn_id == -1)
             continue;
-        //activated[knn_id] = 1;
-        atomicExch(&activated[knn_id], 1);
+        activated[knn_id] = 1;
+        //atomicExch(&activated[knn_id], 1);
     }    
 
     return;
@@ -1189,7 +1090,7 @@ void backprop_feat_cuda(
             cell_ids.data_ptr<int>(),
             cell_weights.data_ptr<float>());
     }));
-    //cudaDeviceSynchronize();
+    cudaDeviceSynchronize();
     
     /*const int threads2 = 512;
     const int blocks2 = (num_sites + threads2 - 1) / threads2; // ceil for example 8192 + 255 / 256 = 32
@@ -1230,25 +1131,29 @@ void  backprop_norm_cuda(
     size_t num_tets,
     torch::Tensor tets,
     torch::Tensor sites,
-    torch::Tensor weights_tot,
+    torch::Tensor vol,    
+    torch::Tensor weights,  
+    torch::Tensor weights_tot, 
     torch::Tensor grad_norm ,
     torch::Tensor grad_sdf,
     torch::Tensor activated 
 )
 {
-    const int threads = 256;
+    const int threads = 1024;
     const int blocks = (num_tets + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
     AT_DISPATCH_FLOATING_TYPES( grad_sdf.type(),"backprop_norm_kernel", ([&] {  
         backprop_norm_kernel CUDA_KERNEL(blocks,threads) (
             num_tets,
             tets.data_ptr<int>(),
             sites.data_ptr<float>(),
+            vol.data_ptr<float>(),
+            weights.data_ptr<float>(),
             weights_tot.data_ptr<float>(),
             grad_norm.data_ptr<float>(),
             grad_sdf.data_ptr<float>(),
             activated.data_ptr<int>());
     }));
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
 }
 
 
@@ -1258,13 +1163,15 @@ void  backprop_unit_norm_cuda(
     torch::Tensor sites,
     torch::Tensor norm_grad,
     torch::Tensor grad_unormed,
-    torch::Tensor weights_tot,
+    torch::Tensor vol,    
+    torch::Tensor weights,  
+    torch::Tensor weights_tot, 
     torch::Tensor grad_norm ,
     torch::Tensor grad_sdf,
     torch::Tensor activated 
 )
 {
-    const int threads = 512;
+    const int threads = 1024;
     const int blocks = (num_tets + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
     AT_DISPATCH_FLOATING_TYPES( grad_sdf.type(),"backprop_unit_norm_kernel", ([&] {  
         backprop_unit_norm_kernel CUDA_KERNEL(blocks,threads) (
@@ -1273,12 +1180,14 @@ void  backprop_unit_norm_cuda(
             sites.data_ptr<float>(),
             norm_grad.data_ptr<float>(),
             grad_unormed.data_ptr<float>(),
+            vol.data_ptr<float>(),
+            weights.data_ptr<float>(),
             weights_tot.data_ptr<float>(),
             grad_norm.data_ptr<float>(),
             grad_sdf.data_ptr<float>(),
             activated.data_ptr<int>());
     }));
-    //cudaDeviceSynchronize();
+    cudaDeviceSynchronize();
 }
 
 // *************************
@@ -1535,7 +1444,7 @@ void geo_feat_cuda(
     curandState* d_state;
     cudaMalloc(&d_state, 256 * sizeof(curandState));
     setup_kernel << < 1, 256, 0, computeStream >> > (d_state, time(NULL));
-    cudaDeviceSynchronize();*/
+    cudaDeviceSynchronize();
 
     const int threads = 512;
     const int blocks = (num_samples + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
@@ -1549,12 +1458,13 @@ void geo_feat_cuda(
             grads.data_ptr<float>(),       // [N_rays, 6]
             sdf.data_ptr<float>(),       // [N_rays, 6]
             geo_feat.data_ptr<float>(),       // [N_rays, 6]
+            d_state,
             neighbors.data_ptr<int>(),       // [N_rays, 6]
             cell_ids.data_ptr<int>());
     }));
     cudaDeviceSynchronize();
 
-    //cudaFree(d_state);
+    cudaFree(d_state);*/
 }
 
 
@@ -1570,7 +1480,7 @@ void activate_sites_cuda(
 )
 {
     const int threads = 1024;
-    const int blocks = (num_rays + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+    /*const int blocks = (num_rays + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
     AT_DISPATCH_ALL_TYPES( cell_ids.type(),"activate_sites_kernel", ([&] {  
         activate_sites_kernel CUDA_KERNEL(blocks,threads) (
             num_rays,    
@@ -1580,7 +1490,7 @@ void activate_sites_cuda(
             activated_buff.data_ptr<int>());
     }));
 
-    cudaDeviceSynchronize();
+    cudaDeviceSynchronize();*/
 
     const int blocks2 = (num_sites + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
     AT_DISPATCH_ALL_TYPES( cell_ids.type(),"activate_knn_kernel", ([&] {  
@@ -1591,4 +1501,33 @@ void activate_sites_cuda(
             activated_buff.data_ptr<int>(),
             activated.data_ptr<int>());
     }));
+    cudaDeviceSynchronize();
+}
+
+void backprop_multi_cuda(
+    size_t num_sites, 
+    size_t num_knn,  
+    size_t dim_feat,
+    torch::Tensor vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor activated,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor grad_norm,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor grad_norm_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor neighbors)
+{
+    const int threads = 1024;
+    const int blocks = (num_sites + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+    AT_DISPATCH_ALL_TYPES( grad_norm.type(),"backprop_multi_kernel", ([&] {  
+        backprop_multi_kernel CUDA_KERNEL(blocks,threads) (
+            num_sites,    
+            num_knn,
+            dim_feat,
+            vertices.data_ptr<float>(),      
+            activated.data_ptr<int>(),
+            grad_norm.data_ptr<float>(),
+            grad_norm_feat.data_ptr<float>(),
+            grad_feat.data_ptr<float>(),
+            neighbors.data_ptr<int>());
+    }));
+    cudaDeviceSynchronize();
 }

@@ -303,6 +303,11 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
             continue;
         }
         
+        /*if (Wtotal > 0.5f) {
+            contrib = Tpartial * (1.0f - alpha) / Wtotal;
+        } else {
+            contrib = Tpartial * (1.0f - alpha);
+        }*/
         contrib = Tpartial * (1.0f - alpha);
         Cpartial = Cpartial + color * contrib;
         Wpartial = Wpartial + contrib;
@@ -317,71 +322,49 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
         A = huber_grad(sample_color_diff) * contrib;
         
         ///////////////////////////////////////////////////////// Color discrepancy loss
-        dalpha += colorDiscrepancyReg * (-huber_loss(sample_color_diff) * Tpartial + dot(A, dCtotal_dalpha));
-        dc = dc + A * (contrib - 1.0f) * colorDiscrepancyReg;
+        //dalpha += colorDiscrepancyReg * (-huber_loss(sample_color_diff) * Tpartial + dot(A, dCtotal_dalpha));
+        //dc = dc + A * (contrib - 1.0f) * colorDiscrepancyReg;
 
         ///////////////////////////////////////////////////////// Background entropy loss
-        dalpha += alpha == 0.0f? 0.0f: (1.0f - 2.0f * Wtotal) * (Wtotal / alpha) * BackgroundEntropyReg;
+        //dalpha += alpha == 0.0f? 0.0f: (1.0f - 2.0f * Wtotal) * (Wtotal / alpha) * BackgroundEntropyReg;
 
         ///////////////////////////////////////////////////////// Mask regularization
-        dalpha += 2.0f * (Wtotal - Mask) * ((Wtotal - Wpartial) / alpha - Tpartial) * MaskReg;
+        /*if (1.0f - Wtotal > 0.5f) {
+            //dalpha += 2.0f * (1.0f - Mask) * ((Wtotal - Wpartial) / alpha - Tpartial) * MaskReg;
+            dalpha += -2.0f * (1.0f - Mask) * (Wtotal / alpha) * MaskReg;
+        } else {
+            //dalpha += 2.0f * (Wtotal - Mask) * ((Wtotal - Wpartial) / alpha - Tpartial) * MaskReg;
+            dalpha += -2.0f * (1.0f - Wtotal - Mask) * (Wtotal / alpha) * MaskReg;
+        }*/
+        dalpha += -2.0f * (1.0f - Wtotal - Mask) * (Wtotal / alpha) * MaskReg;
 
         if (NoColorSpilling != 0) {
-            dc = dc * Wtotal * Wtotal;
+            dc = dc * (1.0f - Wtotal) * (1.0f - Wtotal);
         }
 
-        ////////////////////////Linear interpolation//////////////////////////
         //////////////////////////////////////////////////////////////
-        //for (int i = 0; i < 3; i++) {
-            //id_prev = cell_ids[6 * t + i];
-            //id = cell_ids[6 * t + 3 + i];
-            //atomicAdd(&grads_sdf[id_prev], weights_seg[7*t + i] * dalpha * dalpha_dsdf_p);
-            //atomicAdd(&grads_sdf[id], weights_seg[7*t + 3 + i] * dalpha * dalpha_dsdf_n);           
-        //}
-
-        ////////////////////////Network interpolation//////////////////////////
-        //////////////////////////////////////////////////////////////
-        float lambda = weights_seg[13*t + 12] ;
+        float lambda = weights_seg[7*t + 6] ;
         for (int i = 0; i < 3; i++) {
-            id_prev = cell_ids[12 * t + 6 + i];
-            id = cell_ids[12 * t + 9 + i];
+            id_prev = cell_ids[6 * t + i];
+            id = cell_ids[6 * t + 3 + i];
             
 			if (lambda < 0.5f) {
-                atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + i] * 2.0f*lambda * dalpha * dalpha_dsdf_p);
-                atomicAdd(&grads_sdf[id], weights_seg[13*t + 6 + i] * 
+                atomicAdd(&grads_sdf[id_prev], weights_seg[7*t + i] * 2.0f*lambda * dalpha * dalpha_dsdf_p);
+                atomicAdd(&grads_sdf[id], weights_seg[7*t + 3 + i] * 
                                 ((1.0f-2.0f*lambda) * dalpha * dalpha_dsdf_p + dalpha * dalpha_dsdf_n));
-                atomicAdd(&counter[id], 1.0f);
-                atomicAdd(&counter[id_prev], 1.0f);
+                //atomicAdd(&counter[id], 1.0f);
+                //atomicAdd(&counter[id_prev], 1.0f);
 			} else {
-                atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + i] * 
+                atomicAdd(&grads_sdf[id_prev], weights_seg[7*t + i] * 
                                     (2.0f*lambda * dalpha * dalpha_dsdf_p + (1.0-2.0f*lambda)*dalpha * dalpha_dsdf_n));
-                atomicAdd(&grads_sdf[id], weights_seg[13*t + 6 + i] * (1.0f-(1.0-2.0f*lambda)) * dalpha * dalpha_dsdf_n);
-                atomicAdd(&counter[id], 1.0f);
-                atomicAdd(&counter[id_prev], 1.0f);
+                atomicAdd(&grads_sdf[id], weights_seg[7*t + 3 + i] * (1.0f-(1.0-2.0f*lambda)) * dalpha * dalpha_dsdf_n);
+                //atomicAdd(&counter[id], 1.0f);
+                //atomicAdd(&counter[id_prev], 1.0f);
 			}
-
-            /*id_prev = cell_ids[12 * t + i];
-            id = cell_ids[12 * t + 6 + i];
-            
-			if (lambda < 0.5f) {
-                atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + i] * 2.0f*lambda * dalpha * dalpha_dsdf_p);
-                atomicAdd(&grads_sdf[id], weights_seg[13*t + 6 + i] * 
-                                ((1.0f-2.0f*lambda) * dalpha * dalpha_dsdf_p + dalpha * dalpha_dsdf_n));
-                atomicAdd(&counter[id], 2.0f-2.0f*lambda);
-                atomicAdd(&counter[id_prev], 2.0f*lambda);
-			} else {
-                atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + i] * 
-                                    (2.0f*lambda * dalpha * dalpha_dsdf_p + (1.0-2.0f*lambda)*dalpha * dalpha_dsdf_n));
-                atomicAdd(&grads_sdf[id], weights_seg[13*t + 6 + i] * (1.0f-(1.0-2.0f*lambda)) * dalpha * dalpha_dsdf_n);
-                atomicAdd(&counter[id], 2.0f*lambda);
-                atomicAdd(&counter[id_prev], 1.0f);
-			}*/
-            //atomicAdd(&grads_sdf[id_prev], weights_seg[13*t + i] * lambda * dalpha * dalpha_dsdf_p);
-            //atomicAdd(&grads_sdf[id], weights_seg[13*t + 6 + i] * (1.0f - lambda) * dalpha * dalpha_dsdf_n);
         }
 
-        grads_sdf_net[2 * t] = dalpha * dalpha_dsdf_p;
-        grads_sdf_net[2 * t + 1] = dalpha * dalpha_dsdf_n;
+        //grads_sdf_net[2 * t] = dalpha * dalpha_dsdf_p;
+        //grads_sdf_net[2 * t + 1] = dalpha * dalpha_dsdf_n;
 
         // add total variation loss along the ray for color
         // float err_tv = 0.5 (color - color_prec)**2
@@ -390,19 +373,7 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
             grads_color[3 * t] = dc.x;
             grads_color[3 * t + 1] = dc.y;
             grads_color[3 * t + 2] = dc.z;
-
-            /*grads_color[3 * t] = t > start ? 0.001f*(color.x - color_prev.x) + dc.x : dc.x;
-            grads_color[3 * t + 1] = t > start ? 0.001f*(color.y - color_prev.y) + dc.y : dc.y;
-            grads_color[3 * t + 2] = t > start ? 0.001f*(color.z - color_prev.z) + dc.z : dc.z;
-
-            if (t > start) {
-                grads_color[3 * (t-1)] = grads_color[3 * (t-1)] - 0.001f*(color.x - color_prev.x) ;
-                grads_color[3 * (t-1) + 1] = grads_color[3 * (t-1) + 1] - 0.001f*(color.y - color_prev.y);
-                grads_color[3 * (t-1) + 2] = grads_color[3 * (t-1) + 2] - 0.001f*(color.z - color_prev.z);
-            }*/
         }
-
-        //color_prev.x = color.x; color_prev.y = color.y; color_prev.z = color.z;
 
         Tpartial = Tpartial * alpha;
 
@@ -442,13 +413,17 @@ __global__ void render_kernel(
     float Wtotal = 0.0f;
     float4 color = trace_ray(sdf_seg, color_samples, offsets, &Wtotal, inv_s, idx);
 
-    //if (color.w < 1.0f) {
+    if (color.w < 1.0f) {
         float msk = mask[idx] > 0.5f ? 1.0f : 0.0f;
+        //color.w = color.w > 0.5f ? 1.0f : 0.0f;
+        //float3 integrated_color = Wtotal > 0.5f ? make_float3(color.x/Wtotal, color.y/Wtotal, color.z/Wtotal):
+        //                            make_float3(color.x + color.w * BACK_R, color.y + color.w * BACK_G, color.z + color.w * BACK_B);
         float3 integrated_color = make_float3(color.x + color.w * BACK_R, color.y + color.w * BACK_G, color.z + color.w * BACK_B);
         float3 in_color = make_float3(true_color[3 * idx], true_color[3 * idx + 1], true_color[3 * idx + 2]);
         float3 grad_color_diff = huber_grad(integrated_color - in_color);
 
-        backward(integrated_color, Wtotal, in_color, grad_color_diff, msk,
+        //Wtotal
+        backward(integrated_color, color.w, in_color, grad_color_diff, msk,
             idx, grads_color, grads_sdf_net, grads_sdf, counter, sdf_seg, neighbors, weights_seg, color_samples,
             offsets, cell_ids, inv_s, mask_reg, 0.0f, 0.0f, 1);
 
@@ -458,7 +433,7 @@ __global__ void render_kernel(
         color_loss[idx] = msk*huber_loss(integrated_color - in_color);      
         //color_loss[idx] = msk*(fabs(grad_color_diff.x) + fabs(grad_color_diff.y) + fabs(grad_color_diff.z));    
         mask_loss[idx] = (msk - Wtotal)*(msk - Wtotal); //-(msk * logf(Wtotal) + (1.0f - msk) * logf(1.0f-Wtotal));
-    //}
+    }
     return;
 }
 
@@ -566,6 +541,7 @@ void render_cuda(
                 grads_sdf.data_ptr<float>(),
                 counter.data_ptr<float>());
         }));*/
+    cudaDeviceSynchronize();
 }
 
 void normalize_grads_cuda(

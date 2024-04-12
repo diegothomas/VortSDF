@@ -44,6 +44,50 @@ __global__ void upsample_counter_kernel(
 
 }
 
+__global__ void upsample_counter_tet_kernel(
+    const size_t nb_tets,
+    const float sigma,
+    const int *__restrict__ tets,
+    const float *__restrict__ sites,
+    const float *__restrict__ sdf,
+    int *__restrict__ counter)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= nb_tets)
+    {
+        return;
+    }
+
+    int id_3 = tets[4*idx]^tets[4*idx+1]^tets[4*idx+2]^tets[4*idx+3];
+    float sdf_i = sdf[tets[4*idx]];
+    float edge_length = sqrt((sites[3*tets[4*idx]] - sites[3*tets[4*idx+1]]) * (sites[3*tets[4*idx]] - sites[3*tets[4*idx+1]]) + 
+                               (sites[3*tets[4*idx]+1] - sites[3*tets[4*idx+1]+1]) * (sites[3*tets[4*idx]+1] - sites[3*tets[4*idx+1]+1]) + 
+                               (sites[3*tets[4*idx]+2] - sites[3*tets[4*idx+1]+2]) * (sites[3*tets[4*idx]+2] - sites[3*tets[4*idx+1]+2])); 
+
+    if (sdf_i*sdf[tets[4*idx + 1]] < 0.0f || fmin(fabs(sdf_i), fabs(sdf[tets[4*idx + 1]])) < 1.2*edge_length) {
+        atomicAdd(counter, 1);
+        return;
+    }
+
+    edge_length = sqrt((sites[3*tets[4*idx]] - sites[3*tets[4*idx+2]]) * (sites[3*tets[4*idx]] - sites[3*tets[4*idx+2]]) + 
+                               (sites[3*tets[4*idx]+1] - sites[3*tets[4*idx+2]+1]) * (sites[3*tets[4*idx]+1] - sites[3*tets[4*idx+2]+1]) + 
+                               (sites[3*tets[4*idx]+2] - sites[3*tets[4*idx+2]+2]) * (sites[3*tets[4*idx]+2] - sites[3*tets[4*idx+2]+2])); 
+
+    if (sdf_i*sdf[tets[4*idx + 2]] < 0.0f || fmin(fabs(sdf_i), fabs(sdf[tets[4*idx + 2]])) < 1.2*edge_length) {
+        atomicAdd(counter, 1);
+        return;
+    }
+    edge_length = sqrt((sites[3*tets[4*idx]] - sites[3*id_3]) * (sites[3*tets[4*idx]] - sites[3*id_3]) + 
+                               (sites[3*tets[4*idx]+1] - sites[3*id_3+1]) * (sites[3*tets[4*idx]+1] - sites[3*id_3+1]) + 
+                               (sites[3*tets[4*idx]+2] - sites[3*id_3+2]) * (sites[3*tets[4*idx]+2] - sites[3*id_3+2])); 
+
+    if (sdf_i*sdf[id_3] < 0.0f || fmin(fabs(sdf_i), fabs(sdf[id_3])) < 2.0*edge_length) {
+        atomicAdd(counter, 1);
+        return;
+    }
+
+}
+
 
 __global__ void upsample_kernel(
     const size_t nb_edges,
@@ -81,6 +125,65 @@ __global__ void upsample_kernel(
         }
     }
 }
+
+
+__global__ void upsample_tet_kernel(
+    const size_t nb_tets,
+    const float sigma,
+    const int *__restrict__ tets,
+    const float *__restrict__ sites,
+    const float *__restrict__ sdf,
+    const float *__restrict__ feats,
+    float *__restrict__ new_sites,
+    float *__restrict__ new_sdf,
+    float *__restrict__ new_feats,
+    int *__restrict__ counter)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= nb_tets)
+    {
+        return;
+    }
+    
+    int id_3 = tets[4*idx]^tets[4*idx+1]^tets[4*idx+2]^tets[4*idx+3];
+    float sdf_i = sdf[tets[4*idx]];
+    float edge_length = sqrt((sites[3*tets[4*idx]] - sites[3*tets[4*idx+1]]) * (sites[3*tets[4*idx]] - sites[3*tets[4*idx+1]]) + 
+                               (sites[3*tets[4*idx]+1] - sites[3*tets[4*idx+1]+1]) * (sites[3*tets[4*idx]+1] - sites[3*tets[4*idx+1]+1]) + 
+                               (sites[3*tets[4*idx]+2] - sites[3*tets[4*idx+1]+2]) * (sites[3*tets[4*idx]+2] - sites[3*tets[4*idx+1]+2])); 
+
+    bool valid = false;
+    if (sdf_i*sdf[tets[4*idx + 1]] < 0.0f || fmin(fabs(sdf_i), fabs(sdf[tets[4*idx + 1]])) < 1.2*edge_length) {
+        valid = true;
+    }
+    edge_length = sqrt((sites[3*tets[4*idx]] - sites[3*tets[4*idx+2]]) * (sites[3*tets[4*idx]] - sites[3*tets[4*idx+2]]) + 
+                               (sites[3*tets[4*idx]+1] - sites[3*tets[4*idx+2]+1]) * (sites[3*tets[4*idx]+1] - sites[3*tets[4*idx+2]+1]) + 
+                               (sites[3*tets[4*idx]+2] - sites[3*tets[4*idx+2]+2]) * (sites[3*tets[4*idx]+2] - sites[3*tets[4*idx+2]+2])); 
+
+    if (sdf_i*sdf[tets[4*idx + 2]] < 0.0f || fmin(fabs(sdf_i), fabs(sdf[tets[4*idx + 2]])) < 1.2*edge_length) {
+        valid = true;
+    }
+    edge_length = sqrt((sites[3*tets[4*idx]] - sites[3*id_3]) * (sites[3*tets[4*idx]] - sites[3*id_3]) + 
+                               (sites[3*tets[4*idx]+1] - sites[3*id_3+1]) * (sites[3*tets[4*idx]+1] - sites[3*id_3+1]) + 
+                               (sites[3*tets[4*idx]+2] - sites[3*id_3+2]) * (sites[3*tets[4*idx]+2] - sites[3*id_3+2])); 
+    if (sdf_i*sdf[id_3] < 0.0f || fmin(fabs(sdf_i), fabs(sdf[id_3])) < 2.0*edge_length) {
+        valid = true;
+    }
+    if (!valid)
+        return;
+
+    int new_idx = atomicAdd(counter, 1);
+    new_sites[3*new_idx] = (sites[3*tets[4*idx]] + sites[3*tets[4*idx + 1]] + sites[3*tets[4*idx + 2]] + sites[3*id_3]) / 4.0f;
+    new_sites[3*new_idx + 1] = (sites[3*tets[4*idx]+1] + sites[3*tets[4*idx + 1]+1] + sites[3*tets[4*idx + 2]+1] + sites[3*id_3+1]) / 4.0f;
+    new_sites[3*new_idx + 2] = (sites[3*tets[4*idx]+2] + sites[3*tets[4*idx + 1]+2] + sites[3*tets[4*idx + 2]+2] + sites[3*id_3+2]) / 4.0f;
+    
+    new_sdf[new_idx] = (sdf[tets[4*idx]] + sdf[tets[4*idx + 1]] + sdf[tets[4*idx + 2]] + sdf[id_3]) / 4.0f;
+    
+    for (int l = 0; l < DIM_L_FEAT; l++) {
+        new_feats[DIM_L_FEAT*new_idx + l] = (feats[DIM_L_FEAT*tets[4*idx]+l] + feats[DIM_L_FEAT*tets[4*idx + 1]+l] + feats[DIM_L_FEAT*tets[4*idx + 2]+l] + feats[DIM_L_FEAT*id_3+l]) / 4.0f;
+    }
+}
+
+
 
 __global__ void count_adjacencies_kernel(
     const size_t nb_tets,
@@ -355,6 +458,38 @@ int upsample_counter_cuda(
         return res;
 }
 
+int upsample_counter_tet_cuda(
+    size_t nb_tets,
+    float sigma,
+    torch::Tensor tets,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor sdf
+)   {
+        int* counter;
+        cudaMalloc((void**)&counter, sizeof(int));
+        cudaMemset(counter, 0, sizeof(int));
+        
+        const int threads = 1024;
+        const int blocks = (nb_tets + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+        AT_DISPATCH_FLOATING_TYPES( sdf.type(),"upsample_counter_tet_kernel", ([&] {  
+            upsample_counter_tet_kernel CUDA_KERNEL(blocks,threads) (
+                nb_tets,
+                sigma,
+                tets.data_ptr<int>(),
+                sites.data_ptr<float>(),
+                sdf.data_ptr<float>(),
+                counter); 
+        }));
+
+        cudaDeviceSynchronize();
+
+        int res = 0.;
+        cudaMemcpy(&res, counter, sizeof(int), cudaMemcpyDeviceToHost);
+        cudaFree(counter);
+
+        return res;
+}
+
 
 void upsample_cuda(
     size_t nb_edges,
@@ -390,6 +525,42 @@ void upsample_cuda(
         cudaDeviceSynchronize();
         cudaFree(counter);
 }
+
+void upsample_tet_cuda(
+    size_t nb_tets,
+    float sigma,
+    torch::Tensor tets,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor feats,
+    torch::Tensor new_sites,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor new_sdf,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor new_feats
+)   {
+        int* counter;
+        cudaMalloc((void**)&counter, sizeof(int));
+        cudaMemset(counter, 0, sizeof(int));
+        
+        const int threads = 1024;
+        const int blocks = (nb_tets + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+        AT_DISPATCH_ALL_TYPES( sdf.type(),"upsample_tet_kernel", ([&] {  
+            upsample_tet_kernel CUDA_KERNEL(blocks,threads) (
+                nb_tets,
+                sigma,
+                tets.data_ptr<int>(),
+                sites.data_ptr<float>(),
+                sdf.data_ptr<float>(),
+                feats.data_ptr<float>(),
+                new_sites.data_ptr<float>(),
+                new_sdf.data_ptr<float>(),
+                new_feats.data_ptr<float>(),
+                counter); 
+        }));
+
+        cudaDeviceSynchronize();
+        cudaFree(counter);
+}
+
 
 void vertex_adjacencies_cuda(
     size_t nb_tets,

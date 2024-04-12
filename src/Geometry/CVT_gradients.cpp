@@ -80,6 +80,15 @@ void update_sdf_cuda(
     torch::Tensor feat_diff    // [N_sites, 3] for each voxel => it's vertices
 );
 
+void diff_tensor_cuda(
+    size_t num_tets,                // number of rays
+    torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  vol,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights,     // [N_voxels, 4] for each voxel => it's vertices)
+    torch::Tensor  weights_tot
+);
+
 float eikonal_grad_cuda(
     size_t num_tets,                // number of rays
     size_t num_sites,                // number of rays
@@ -93,8 +102,21 @@ float eikonal_grad_cuda(
     torch::Tensor  grad_smooth,     // [N_voxels, 4] for each voxel => it's vertices)
     torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices)
     torch::Tensor  grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  vol,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  eik_loss     // [N_voxels, 4] for each voxel => it's vertices
+);
+
+void concat_feat_cuda(
+    size_t num_sites,                // number of rays
+    size_t num_knn,  
+    size_t dim_feat,
+    torch::Tensor  vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  activated,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  grads,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  neighbors
 );
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
@@ -274,6 +296,23 @@ void update_sdf(
 
 }
 
+void diff_tensor(
+    size_t num_tets,                // number of rays
+    torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  vol,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights,     // [N_voxels, 4] for each voxel => it's vertices)
+    torch::Tensor  weights_tot
+) {
+    diff_tensor_cuda(
+        num_tets,
+        tets,
+        sites, 
+        vol,
+        weights, 
+        weights_tot);
+}
+
 void eikonal_grad(
     size_t num_tets,                // number of rays
     size_t num_sites,                // number of rays
@@ -287,6 +326,8 @@ void eikonal_grad(
     torch::Tensor  grad_smooth,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices)
     torch::Tensor  grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  vol,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  eik_loss     // [N_voxels, 4] for each voxel => it's vertices
 ) {
@@ -303,11 +344,34 @@ void eikonal_grad(
         grad_smooth,   
         grad_sdf, 
         grad_feat,
-        weights_tot,
+        vol,     // [N_voxels, 4] for each voxel => it's vertices
+        weights,     // [N_voxels, 4] for each voxel => it's vertices
+        weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
         eik_loss);
 
 }
 
+void concat_feat(
+    size_t num_sites,                // number of rays
+    size_t num_knn,  
+    size_t dim_feat,
+    torch::Tensor  vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  activated,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  grads,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  neighbors
+    ) {
+        concat_feat_cuda(
+            num_sites,                // number of rays
+            num_knn,  
+            dim_feat,
+            vertices,     // [N_voxels, 4] for each voxel => it's vertices
+            activated,     // [N_voxels, 4] for each voxel => it's vertices
+            grads,     // [N_voxels, 4] for each voxel => it's vertices
+            feat,     // [N_voxels, 4] for each voxel => it's vertices
+            neighbors
+        );
+    }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("test_inverse", &test_inverse, "test_inverse (CPP)");
@@ -318,4 +382,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("sdf_grad", &sdf_grad, "sdf_grad (CPP)");
     m.def("update_sdf", &update_sdf, "update_sdf (CPP)");
     m.def("eikonal_grad", &eikonal_grad, "eikonal_grad (CPP)");
+    m.def("concat_feat", &concat_feat, "concat_feat (CPP)");
+    m.def("diff_tensor", &diff_tensor, "diff_tensor (CPP)");
 }

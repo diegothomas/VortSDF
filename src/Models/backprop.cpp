@@ -25,7 +25,9 @@ void backprop_norm_cuda(
     size_t num_tets,
     torch::Tensor tets,
     torch::Tensor sites,
-    torch::Tensor weights_tot,
+    torch::Tensor vol,    
+    torch::Tensor weights,  
+    torch::Tensor weights_tot, 
     torch::Tensor grad_norm,
     torch::Tensor grad_sdf,
     torch::Tensor activated 
@@ -37,7 +39,9 @@ void  backprop_unit_norm_cuda(
     torch::Tensor sites,
     torch::Tensor norm_grad,
     torch::Tensor grad_unormed,
-    torch::Tensor weights_tot,
+    torch::Tensor vol,    
+    torch::Tensor weights,  
+    torch::Tensor weights_tot, 
     torch::Tensor grad_norm ,
     torch::Tensor grad_sdf,
     torch::Tensor activated 
@@ -155,6 +159,17 @@ void activate_sites_cuda(
     torch::Tensor activated
 );
 
+void backprop_multi_cuda(
+    size_t num_sites, 
+    size_t num_knn,  
+    size_t dim_feat,
+    torch::Tensor vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor activated,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor grad_norm,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor grad_norm_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor neighbors
+);
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
@@ -203,7 +218,9 @@ void backprop_norm(
     size_t num_tets,
     torch::Tensor tets,
     torch::Tensor sites,
-    torch::Tensor weights_tot,
+    torch::Tensor vol,    
+    torch::Tensor weights,  
+    torch::Tensor weights_tot, 
     torch::Tensor grad_norm,
     torch::Tensor grad_sdf,
     torch::Tensor activated
@@ -212,7 +229,9 @@ void backprop_norm(
     backprop_norm_cuda(num_tets,
     tets,
     sites,
-    weights_tot,
+    vol,    
+    weights,  
+    weights_tot, 
     grad_norm,
     grad_sdf,
     activated);
@@ -224,7 +243,9 @@ void  backprop_unit_norm(
     torch::Tensor sites,
     torch::Tensor norm_grad,
     torch::Tensor grad_unormed,
-    torch::Tensor weights_tot,
+    torch::Tensor vol,    
+    torch::Tensor weights,  
+    torch::Tensor weights_tot, 
     torch::Tensor grad_norm ,
     torch::Tensor grad_sdf,
     torch::Tensor activated 
@@ -235,7 +256,9 @@ void  backprop_unit_norm(
     sites,
     norm_grad,
     grad_unormed,
-    weights_tot,
+    vol,    
+    weights,  
+    weights_tot, 
     grad_norm,
     grad_sdf,
     activated);
@@ -459,6 +482,30 @@ void activate_sites(
         activated);
 }
 
+void backprop_multi(
+    size_t num_sites, 
+    size_t num_knn,  
+    size_t dim_feat,
+    torch::Tensor vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor activated,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor grad_norm,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor grad_norm_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor neighbors
+) {
+    backprop_multi_cuda(
+    num_sites, 
+    num_knn,  
+    dim_feat,
+    vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    activated,     // [N_voxels, 4] for each voxel => it's vertices
+    grad_norm,     // [N_voxels, 4] for each voxel => it's vertices
+    grad_norm_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    neighbors
+    );
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("eikonal_loss", &eikonal_loss, "eikonal_loss (CPP)");
     m.def("smooth_sdf", &smooth_sdf, "smooth_sdf (CPP)");
@@ -473,4 +520,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("knn_interpolate", &knn_interpolate, "knn_interpolate (CPP)");
     m.def("geo_feat", &geo_feat, "geo_feat (CPP)");
     m.def("activate_sites", &activate_sites, "activate_sites (CPP)");
+    m.def("backprop_multi", &backprop_multi, "backprop_multi (CPP)");
 }
