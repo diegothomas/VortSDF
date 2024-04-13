@@ -945,7 +945,7 @@ class Runner:
                     self.learning_rate_feat = 1.0e-3
                     self.end_iter_loc = 20000
                     self.learning_rate_alpha = 1.0e-4
-                    self.vortSDF_renderer_fine.mask_reg = 1.0e-4
+                    self.vortSDF_renderer_fine.mask_reg = 0.0 #1.0e-4
                     #acc_it = 10
                     
                 if (iter_step+1) == 30000:
@@ -969,7 +969,7 @@ class Runner:
                     self.learning_rate_sdf = 5.0e-4
                     self.learning_rate_feat = 5.0e-4 #1.0e-2
                     self.end_iter_loc = 20000
-                    self.vortSDF_renderer_fine.mask_reg = 1.0e-4
+                    self.vortSDF_renderer_fine.mask_reg =  0.0 #1.0e-4
                     self.learning_rate_alpha = 1.0e-2
 
                 if (iter_step+1) == 50000:
@@ -981,16 +981,16 @@ class Runner:
                     """self.s_w = 2.0e-4 #2.0e-6
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
-                    self.s_w = 1.0e-4 #2.0e-6
-                    self.e_w = 1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 5.0e-5 #1.0e-8 #1.0e-1
+                    self.s_w = 1.0e-5 #2.0e-6
+                    self.e_w = 0.0 #1.0e-9 #1.0e-7 #5.0e-3
+                    self.tv_w = 5.0e-6 #1.0e-8 #1.0e-1
                     self.tv_f = 0.0 #1.0e-4
                     self.f_w = 1.0
                     self.end_iter_loc = 20000
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-4
-                    self.vortSDF_renderer_fine.mask_reg = 1.0e-5
+                    self.vortSDF_renderer_fine.mask_reg =  0.0 #1.0e-5
                     self.learning_rate_alpha = 1.0e-4
                     
                 if (iter_step+1) == 70000:
@@ -1010,7 +1010,7 @@ class Runner:
                     self.learning_rate = 5e-5
                     self.learning_rate_sdf = 5.0e-5
                     self.learning_rate_feat = 5.0e-5
-                    self.vortSDF_renderer_fine.mask_reg = 1.0e-5
+                    self.vortSDF_renderer_fine.mask_reg =  0.0 #1.0e-5
                     self.learning_rate_alpha = 1.0e-8
                     self.val_freq = 2000
                     #verbose = True

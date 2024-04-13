@@ -17,9 +17,9 @@
 
 #define STOP_TRANS 1.0e-8
 #define CLIP_ALPHA 60.0
-#define BACK_R 0.0f
+#define BACK_R 1.0f
 #define BACK_G 1.0f
-#define BACK_B 0.0f 
+#define BACK_B 1.0f 
 #define PI 3.141592653589793238462643383279502884197
 
 
@@ -329,14 +329,14 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
         //dalpha += alpha == 0.0f? 0.0f: (1.0f - 2.0f * Wtotal) * (Wtotal / alpha) * BackgroundEntropyReg;
 
         ///////////////////////////////////////////////////////// Mask regularization
-        /*if (1.0f - Wtotal > 0.5f) {
+        if (1.0f - Wtotal > 0.5f) {
             //dalpha += 2.0f * (1.0f - Mask) * ((Wtotal - Wpartial) / alpha - Tpartial) * MaskReg;
             dalpha += -2.0f * (1.0f - Mask) * (Wtotal / alpha) * MaskReg;
         } else {
             //dalpha += 2.0f * (Wtotal - Mask) * ((Wtotal - Wpartial) / alpha - Tpartial) * MaskReg;
             dalpha += -2.0f * (1.0f - Wtotal - Mask) * (Wtotal / alpha) * MaskReg;
-        }*/
-        dalpha += -2.0f * (1.0f - Wtotal - Mask) * (Wtotal / alpha) * MaskReg;
+        }
+        //dalpha += -2.0f * (1.0f - Wtotal - Mask) * (Wtotal / alpha) * MaskReg;
 
         if (NoColorSpilling != 0) {
             dc = dc * (1.0f - Wtotal) * (1.0f - Wtotal);
