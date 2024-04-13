@@ -75,29 +75,29 @@ def sample_Bbox(bound_min, bound_max, resolution, perturb_f = 0.0):
     samples = samples.astype(np.float32)
     return samples
 
-def exterior_Bbox(bound_min, bound_max, resolution):
-    res_x = (bound_max[0] - bound_min[0] + 2*resolution)/resolution
-    res_y = (bound_max[1] - bound_min[1] + 2*resolution)/resolution
-    res_z = (bound_max[2] - bound_min[2] + 2*resolution)/resolution
-    X = np.linspace(bound_min[0]-resolution, bound_max[0]+resolution, int((bound_max[0]-bound_min[0] + 2*resolution)/res_x ))
-    Y = np.linspace(bound_min[1]-resolution, bound_max[1]+resolution, int((bound_max[1]-bound_min[1] + 2*resolution)/res_y ))
-    Z = np.linspace(bound_min[2]-resolution, bound_max[2]+resolution, int((bound_max[2]-bound_min[2] + 2*resolution)/res_z ))
+def exterior_Bbox(bound_min, bound_max, resolution, shift):
+    res_x = (bound_max[0] - bound_min[0] + 2*shift)/resolution
+    res_y = (bound_max[1] - bound_min[1] + 2*shift)/resolution
+    res_z = (bound_max[2] - bound_min[2] + 2*shift)/resolution
+    X = np.linspace(bound_min[0]-shift, bound_max[0]+shift, int((bound_max[0]-bound_min[0] + 2*shift)/res_x ))
+    Y = np.linspace(bound_min[1]-shift, bound_max[1]+shift, int((bound_max[1]-bound_min[1] + 2*shift)/res_y ))
+    Z = np.linspace(bound_min[2]-shift, bound_max[2]+shift, int((bound_max[2]-bound_min[2] + 2*shift)/res_z ))
     xX, yY = np.meshgrid(X, Y)
-    zZ = (bound_min[2]-resolution)*np.ones(xX.shape)
+    zZ = (bound_min[2]-shift)*np.ones(xX.shape)
     ptsZm = np.stack((xX, yY, zZ), axis = -1).astype(np.float32)
-    zZ = (bound_min[2]+resolution)*np.ones(xX.shape)
+    zZ = (bound_max[2]+shift)*np.ones(xX.shape)
     ptsZM = np.stack((xX, yY, zZ), axis = -1).astype(np.float32)
 
     xX, zZ = np.meshgrid(X, Z)
-    yY = (bound_min[1]-resolution)*np.ones(xX.shape)
+    yY = (bound_min[1]-shift)*np.ones(xX.shape)
     ptsYm = np.stack((xX, yY, zZ), axis = -1).astype(np.float32)
-    yY = (bound_max[1]+resolution)*np.ones(xX.shape)
+    yY = (bound_max[1]+shift)*np.ones(xX.shape)
     ptsYM = np.stack((xX, yY, zZ), axis = -1).astype(np.float32)
 
     yY, zZ = np.meshgrid(X, Y)
-    xX = (bound_min[0]-resolution)*np.ones(yY.shape)
+    xX = (bound_min[0]-shift)*np.ones(yY.shape)
     ptsXm = np.stack((xX, yY, zZ), axis = -1).astype(np.float32)
-    xX = (bound_max[0]+resolution)*np.ones(yY.shape)
+    xX = (bound_max[0]+shift)*np.ones(yY.shape)
     ptsXM = np.stack((xX, yY, zZ), axis = -1).astype(np.float32)
 
     pts = np.concatenate((ptsZm, ptsZM, ptsYm, ptsYM, ptsXm, ptsXM), axis = -1).astype(np.float32)

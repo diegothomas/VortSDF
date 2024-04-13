@@ -173,13 +173,14 @@ class Runner:
             import src.Geometry.sampling as sampler
             res = 16
             sites = sampler.sample_Bbox(visual_hull[0:3], visual_hull[3:6], res, perturb_f =  (visual_hull[3] - visual_hull[0])*0.02)
-            ext_sites = sampler.exterior_Bbox(visual_hull[0:3], visual_hull[3:6], res)
+            ext_sites1 = sampler.exterior_Bbox(visual_hull[0:3], visual_hull[3:6], 32, 10.0)
+            ext_sites2 = sampler.exterior_Bbox(visual_hull[0:3], visual_hull[3:6], 32, 11.0)
             #sites, _ = ply.load_ply("Data/bmvs_man/bmvs_man_colmap_aligned.ply")
 
 
             #### Add cameras as sites 
             cam_sites = np.stack([self.dataset.pose_all[id, :3,3].cpu().numpy() for id in range(self.dataset.n_images)])
-            sites = np.concatenate((ext_sites, sites, cam_sites))
+            sites = np.concatenate((ext_sites1, ext_sites2, sites, cam_sites))
 
             self.tet32 = tet32.Tet32(sites, id = 0)
             #self.tet32.start() 
@@ -204,12 +205,12 @@ class Runner:
             outside_flag[sites[:,2] > visual_hull[5] - (visual_hull[5]-visual_hull[2])/(res)] = 1
             
             ext_flag = np.zeros(sites.shape[0], np.int32)
-            ext_flag[sites[:,0] < visual_hull[0]] = 1
-            ext_flag[sites[:,1] < visual_hull[1]] = 1
-            ext_flag[sites[:,2] < visual_hull[2]] = 1
-            ext_flag[sites[:,0] > visual_hull[3]] = 1
-            ext_flag[sites[:,1] > visual_hull[4]] = 1
-            ext_flag[sites[:,2] > visual_hull[5]] = 1
+            ext_flag[sites[:,0] < visual_hull[0] - 10.5] = 1
+            ext_flag[sites[:,1] < visual_hull[1] - 10.5] = 1
+            ext_flag[sites[:,2] < visual_hull[2] - 10.5] = 1
+            ext_flag[sites[:,0] > visual_hull[3] + 10.5] = 1
+            ext_flag[sites[:,1] > visual_hull[4] + 10.5] = 1
+            ext_flag[sites[:,2] > visual_hull[5] + 10.5] = 1
 
         #else:
         #    sites, _ = ply.load_ply(base_exp_dir + "/sites_init_" + data_name +"_32.ply")
@@ -267,12 +268,12 @@ class Runner:
         outside_flag[sites[:,2] > visual_hull[5] - (visual_hull[5]-visual_hull[2])/(2*res)] = 1
 
         ext_flag = np.zeros(sites.shape[0], np.int32)
-        """ext_flag[sites[:,0] < visual_hull[0]] = 1
-        ext_flag[sites[:,1] < visual_hull[1]] = 1
-        ext_flag[sites[:,2] < visual_hull[2]] = 1
-        ext_flag[sites[:,0] > visual_hull[3]] = 1
-        ext_flag[sites[:,1] > visual_hull[4]] = 1
-        ext_flag[sites[:,2] > visual_hull[5]] = 1"""
+        ext_flag[sites[:,0] < visual_hull[0] - 10.5] = 1
+        ext_flag[sites[:,1] < visual_hull[1] - 10.5] = 1
+        ext_flag[sites[:,2] < visual_hull[2] - 10.5] = 1
+        ext_flag[sites[:,0] > visual_hull[3] + 10.5] = 1
+        ext_flag[sites[:,1] > visual_hull[4] + 10.5] = 1
+        ext_flag[sites[:,2] > visual_hull[5] + 10.5] = 1
 
         self.sites = torch.from_numpy(sites.astype(np.float32)).cuda()
         self.sites = self.sites.contiguous()
@@ -404,8 +405,8 @@ class Runner:
                 eik_loss = 0.0 #self.eik_loss.sum()
 
                 ############## Concat multi-res features and normals ##############
-                with torch.no_grad():
-                    self.fine_features[:,8:] = 0.0
+                #with torch.no_grad():
+                #    self.fine_features[:,8:] = 0.0
                 self.grad_sdf_feat[:,:3] = self.grad_sdf_space[:,:3]
                 self.grad_sdf_feat[:,3:] = 0.0
                 cvt_grad_cuda.concat_feat(self.sites.shape[0], 96, 8, self.sites, self.activated, self.grad_sdf_feat, self.fine_features, self.tet32.knn_sites)
@@ -607,17 +608,19 @@ class Runner:
             self.grad_norm_feat[:] = 0.0
             self.counter[:] = 0.0
             backprop_cuda.backprop_feat(nb_samples, self.sites.shape[0], 12, self.grad_norm_feat, self.counter, self.norm_features_grad, self.out_ids, self.out_weights)
+            self.grad_norm[:,:] = self.grad_norm_feat[:,:3]
+            #self.grad_features[:,8:] = 0.0
 
             if verbose:
                 print('backprop_feat grads time:', timer() - start)
 
             ############ Backprop gradients to neighbors ############                   
-            start = timer()
+            """start = timer()
             self.grad_norm[:] = 0.0
             backprop_cuda.backprop_multi(self.sites.shape[0], 96, 8, self.sites, self.activated, self.grad_norm, self.grad_norm_feat, self.grad_features, self.tet32.knn_sites)
             self.grad_features[:,8:] = 0.0
             if verbose:
-                print('backprop_multi sites time:', timer() - start)
+                print('backprop_multi sites time:', timer() - start)"""
              
             start = timer()
             self.grad_sdf_norm[:] = 0.0
@@ -853,12 +856,12 @@ class Runner:
                 outside_flag[sites[:,2] > visual_hull[5] - (visual_hull[5]-visual_hull[2])/(res)] = 1
                 
                 ext_flag = np.zeros(sites.shape[0], np.int32)
-                """ext_flag[sites[:,0] < visual_hull[0]] = 1
-                ext_flag[sites[:,1] < visual_hull[1]] = 1
-                ext_flag[sites[:,2] < visual_hull[2]] = 1
-                ext_flag[sites[:,0] > visual_hull[3]] = 1
-                ext_flag[sites[:,1] > visual_hull[4]] = 1
-                ext_flag[sites[:,2] > visual_hull[5]] = 1"""
+                ext_flag[sites[:,0] < visual_hull[0] - 10.5] = 1
+                ext_flag[sites[:,1] < visual_hull[1] - 10.5] = 1
+                ext_flag[sites[:,2] < visual_hull[2] - 10.5] = 1
+                ext_flag[sites[:,0] > visual_hull[3] + 10.5] = 1
+                ext_flag[sites[:,1] > visual_hull[4] + 10.5] = 1
+                ext_flag[sites[:,2] > visual_hull[5] + 10.5] = 1
 
                 with torch.no_grad():
                     self.sdf[ext_flag[:] == 1] = -1000.0
@@ -936,8 +939,8 @@ class Runner:
                     self.e_w = 5.0e-4
                     self.tv_w = 1.0e-5"""
                     self.s_w = 1.0e-4 #1e-6
-                    self.e_w = 1.0e-8 #5.0e-3
-                    self.tv_w = 5.0e-5 #1.0e-8 #1.0e-1
+                    self.e_w = 0.0#1.0e-8 #5.0e-3
+                    self.tv_w = 0.0#5.0e-5 #1.0e-8 #1.0e-1
                     self.tv_f = 1.0e-8
                     self.f_w = 1.0 #1.0
                     self.learning_rate = 5e-4
@@ -958,8 +961,8 @@ class Runner:
                     self.e_w = 1.0e-3
                     self.tv_w = 1.0e-3"""
                     self.s_w = 1.0e-4 #5.0e-4
-                    self.e_w = 1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 5.0e-5 #1.0e-8 #1.0e-1
+                    self.e_w = 0.0#1.0e-9 #1.0e-7 #5.0e-3
+                    self.tv_w = 0.0#5.0e-5 #1.0e-8 #1.0e-1
                     self.w_g = 0.0
                     #acc_it = 10
 
@@ -981,9 +984,9 @@ class Runner:
                     """self.s_w = 2.0e-4 #2.0e-6
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
-                    self.s_w = 1.0e-5 #2.0e-6
+                    self.s_w = 1.0e-4 #2.0e-6
                     self.e_w = 0.0 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 5.0e-6 #1.0e-8 #1.0e-1
+                    self.tv_w = 0.0 #5.0e-6 #1.0e-8 #1.0e-1
                     self.tv_f = 0.0 #1.0e-4
                     self.f_w = 1.0
                     self.end_iter_loc = 20000

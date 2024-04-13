@@ -190,9 +190,9 @@ __global__ void concat_feat_kernel(
             knn_id = neighbors[num_knn*idx + lvl_curr*32 + i];
             if (knn_id == -1) {
                 for (int last_lvl = lvl_curr; last_lvl < nb_lvl; last_lvl++) {
-                    for (int i = 0; i < dim_feat; i++) {
-                    feat[dim_feat*(4*idx+last_lvl+1) + i] = feat[4*dim_feat*idx + i];
-                    }  
+                    /*for (int i = 0; i < dim_feat; i++) {
+                        feat[dim_feat*(4*idx+last_lvl+1) + i] = feat[4*dim_feat*idx + i];
+                    }  */
                     for (int i = 0; i < 3; i++) {
                         grads[3*(4*idx+last_lvl+1) + i] = grads[3*4*idx + i];
                     } 
@@ -200,9 +200,9 @@ __global__ void concat_feat_kernel(
                 return;
             }
             
-            for (int i = 0; i < dim_feat; i++) {
+            /*for (int i = 0; i < dim_feat; i++) {
                 feat[dim_feat*(4*idx+lvl_curr+1) + i] = feat[dim_feat*(4*idx+lvl_curr+1) + i] + feat[4*dim_feat*knn_id + i]/32.0f;
-            }  
+            }  */
             for (int i = 0; i < 3; i++) {
                 grads[3*(4*idx+lvl_curr+1) + i] = grads[3*(4*idx+lvl_curr+1) + i] + grads[3*4*knn_id + i]/32.0f;
             }                       
