@@ -947,7 +947,9 @@ __global__ void tet32_march_cuda_kernel(
 		int fact_s = int(contrib_tet * 4.0f);
 		
 		if (prev_tet_id != -1) { 
-			if ((prev_sdf > next_sdf && fmin(fabs(next_sdf), fabs(prev_sdf))*inv_s < 2.0*CLIP_ALPHA)) {
+			if (((prev_sdf > next_sdf && 
+					(next_sdf == -1000.0f || alpha_tet < 1.0f)))) {
+					//fmin(fabs(next_sdf), fabs(prev_sdf))*inv_s < 2.0*CLIP_ALPHA)))) {
 				z_val_ray[2 * s_id] = prev_dist;
 				z_val_ray[2 * s_id + 1] = curr_dist;
 
@@ -987,9 +989,9 @@ __global__ void tet32_march_cuda_kernel(
 		
 		Tpartial = Tpartial * alpha_tet;
 
-		if (Tpartial < STOP_TRANS) {// stop if the transmittance is low
-            break;
-        }
+		//if (Tpartial < STOP_TRANS) {// stop if the transmittance is low
+        //    break;
+        //}
 
 		prev_dist = curr_dist;
 		prev_sdf = next_sdf;
