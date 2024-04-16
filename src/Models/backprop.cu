@@ -758,7 +758,7 @@ __global__ void knn_smooth_kernel(
     float total_weight = 0.0f;
     float total_sdf = 0.0f;
 
-    int nb_lvl = fmin(2, num_knn / 32); //num_knn / 32; //fmin(2, num_knn / 32);
+    int nb_lvl = fmin(3, num_knn / 32); //num_knn / 32; //fmin(2, num_knn / 32);
 
     float length_edge, length_feat, length_o = 0.0f;
     int knn_id;
