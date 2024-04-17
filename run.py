@@ -365,7 +365,7 @@ class Runner:
                     self.sdf_smooth[:] = 0.0
                 backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.sigma_feat, 1, self.sites,  self.activated,
                                         self.grad_sdf_space, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)
-                
+            
             ## sample points along the rays
             start = timer()
             self.offsets[:] = 0
@@ -958,7 +958,7 @@ class Runner:
                     self.tv_w = 1.0e-5"""
                     self.s_w = 1.0e-3 #1e-6
                     self.e_w = 1.0e-6#1.0e-8 #5.0e-3
-                    self.tv_w = 5.0e-5 #1.0e-8 #1.0e-1
+                    self.tv_w = 5.0e-4 #1.0e-8 #1.0e-1
                     self.tv_f = 1.0e-8
                     self.f_w = 1.0 #1.0
                     self.learning_rate = 5e-4
@@ -978,9 +978,9 @@ class Runner:
                     """self.s_w = 5.0e-3
                     self.e_w = 1.0e-3
                     self.tv_w = 1.0e-3"""
-                    self.s_w = 1.0e-4 #5.0e-4
-                    self.e_w = 0.0#1.0e-9 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 5.0e-5 #1.0e-8 #1.0e-1
+                    self.s_w = 1.0e-3 #5.0e-4
+                    self.e_w = 1.0e-5 #1.0e-9 #1.0e-7 #5.0e-3
+                    self.tv_w = 5.0e-4 #1.0e-8 #1.0e-1
                     self.w_g = 0.0
                     #acc_it = 10
 
@@ -1008,9 +1008,9 @@ class Runner:
                     self.tv_f = 0.0 #1.0e-4
                     self.f_w = 1.0
                     self.end_iter_loc = 20000
-                    self.learning_rate = 5e-4
-                    self.learning_rate_sdf = 5.0e-4
-                    self.learning_rate_feat = 5.0e-4
+                    self.learning_rate = 1e-4
+                    self.learning_rate_sdf = 1.0e-4
+                    self.learning_rate_feat = 1.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-5
                     self.learning_rate_alpha = 1.0e-4
                     

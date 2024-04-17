@@ -1024,6 +1024,306 @@ __global__ void tet32_march_cuda_kernel(
     return;
 }
 
+/*__global__ void tet32_march_cuda_kernel_o(
+	const float inv_s,
+    const size_t num_rays,                // number of rays
+    const size_t num_samples,                // number of rays
+    const size_t cam_id,
+    const float3 *__restrict__ rays,       // [N_rays, 6]
+    float3 *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ tets,  
+    int *__restrict__ nei_tets,  
+    const int *__restrict__ cam_ids,  
+    const int *__restrict__ offsets_cam,  
+    const int *__restrict__ cam_tets,  
+    float3 *__restrict__ weights_samp,     // [N_voxels, 4] for each voxel => it's vertices
+    float2 *__restrict__ z_vals,     // [N_voxels, 4] for each voxel => it's vertices
+    float2 *__restrict__ z_sdfs,     // [N_voxels, 4] for each voxel => it's vertices
+    int3 *__restrict__ z_ids,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ counter,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ activate,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ offset     // [N_voxels, 4] for each voxel => it's vertices
+)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_rays)
+    {
+        return;
+    }
+
+    int r_id = cam_ids[cam_id];
+
+	float3 ray_d = rays[idx];
+	float3 ray_o = vertices[r_id];
+
+    float3 curr_site = ray_o;
+	
+    float2 *z_val_ray = &z_vals[idx*num_samples];
+    int3 *z_id_ray = &z_ids[idx*num_samples*2];	
+    float2 *z_sdf_ray = &z_sdfs[idx*num_samples];
+    float3 *weights_ray = &weights_samp[idx*num_samples*2];
+
+    // build base w.r.t ray
+	float ut[3]{};
+	float vt[3]{};
+
+	{
+		int min = 0;
+		if (abs(ray_d.y) < abs(ray_d.x)) {
+			if (abs(ray_d.y) < abs(ray_d.z))
+				min = 1;
+			else
+				min = 2;
+		}
+		else if ((abs(ray_d.z) < abs(ray_d.x))) {
+			min = 2;
+		}
+
+		int max = 0;
+		if (abs(ray_d.y) > abs(ray_d.x)) {
+			if (abs(ray_d.y) > abs(ray_d.z))
+				max = 1;
+			else
+				max = 2;
+		}
+		else if ((abs(ray_d.z) > abs(ray_d.x))) {
+			max = 2;
+		}
+
+		ut[min] = 0.0f;
+		ut[(min + 1) % 3] = ray_d[(min + 2) % 3] / ray_d[max];
+		ut[(min + 2) % 3] = -ray_d[(min + 1) % 3] / ray_d[max];
+		float t[3] = { ray_d.y * ut[2] - ray_d.z * ut[1], 
+						ray_d.z * ut[0] - ray_d.x * ut[2], 
+						ray_d.x * ut[1] - ray_d.y * ut[0] };
+
+		min = 0;
+		if (abs(t[1]) < abs(t[0])) {
+			if (abs(t[1]) < abs(t[2]))
+				min = 1;
+			else
+				min = 2;
+		}
+		else if ((abs(t[2]) < abs(t[0]))) {
+			min = 2;
+		}
+
+		max = 0;
+		if (abs(t[1]) > abs(t[0])) {
+			if (abs(t[1]) > abs(t[2]))
+				max = 1;
+			else
+				max = 2;
+		}
+		else if ((abs(t[2]) > abs(t[0]))) {
+			max = 2;
+		}
+
+		vt[0] = t[0] / t[3 - min - max];
+		vt[1] = t[1] / t[3 - min - max];
+		vt[2] = t[2] / t[3 - min - max];
+	}
+
+	float3 u = make_float3(ut[0], ut[1], ut[2]);
+	float3 v = make_float3(vt[0], vt[1], vt[2]);
+
+    // Initialisation with entry tet
+	int tet_id = -1; 
+	int prev_tet_id = -1;
+
+	// id_0, id_1, id_2 are indices of vertices of exit face
+	int ids[4] = { 0, 0, 0, 0 };
+	float weights[3] = { 0.0f, 0.0f, 0.0f};
+	float prev_weights[3] = { 0.0f, 0.0f, 0.0f};
+	int id_exit_face = 3;
+	float p[8]{};
+
+	// project all vertices into the base coordinate system
+	float v_new[3]{};
+	float curr_dist;
+
+	float nmle[3]{};
+	float v_0[3]{};
+	float v_1[3]{};
+	float v_2[3]{};
+
+    int start_cam_tet = cam_id == 0 ? 0 : offsets_cam[cam_id-1];
+    int cam_adj_count = cam_id == 0 ? offsets_cam[cam_id] : offsets_cam[cam_id] - offsets_cam[cam_id-1];  
+
+    for (int i = 1; i < cam_adj_count; i++) {
+		tet_id = cam_tets[start_cam_tet + i];
+		prev_tet_id = tet_id;
+		ids[0] = tets[4 * tet_id];
+		ids[1] = tets[4 * tet_id + 1];
+		ids[2] = tets[4 * tet_id + 2];
+		ids[3] = tets[4 * tet_id] ^ tets[4 * tet_id + 1] ^ tets[4 * tet_id + 2] ^ tets[4 * tet_id + 3];
+
+		if (r_id == ids[0]) {
+			ids[0] = ids[3];
+			ids[3] = r_id;
+			tet_id = nei_tets[4 * tet_id];
+		}
+		else if (r_id == ids[1]) {
+			ids[1] = ids[3];
+			ids[3] = r_id;
+			tet_id = nei_tets[4 * tet_id + 1];
+		}
+		else if (r_id == ids[2]) {
+			ids[2] = ids[3];
+			ids[3] = r_id;
+			tet_id = nei_tets[4 * tet_id + 2];
+		}
+		else {
+			tet_id = nei_tets[4 * tet_id + 3];
+		}
+
+		for (int j = 0; j < 3; j++) {
+			v_new = vertices[ids[j]] - ray_o;
+			p[2 * j] = dot3D_gpu(u, v_new);
+			p[2 * j + 1] = dot3D_gpu(v, v_new);
+		}
+
+		v_0 = vertices[ids[0]];
+		v_1 = vertices[ids[1]];
+		v_2 = vertices[ids[2]];
+		nmle = cross(v_1 - v_0, v_2 - v_0);
+		float norm_n = norm_2(nmle);
+		if (norm_n > 0.0f)
+			nmle = nmle / norm_n;
+
+		curr_dist = dist_tri(ray_o, ray_d, v_0, v_1, v_2, nmle);
+
+		if (curr_dist > 0.0f && OriginInTriangle_gpu(&p[0], &p[2], &p[4])) {
+
+			v_new = ray_o + ray_d * curr_dist / 2.0f;
+			if (get_sdf32(v_new, weights, vertices, sdf, tets, prev_tet_id) != 30.0f) 
+				break;
+		}
+		else {
+			tet_id = -1;
+		}
+	}
+
+	// Traverse tet
+	prev_tet_id = -1;
+	float prev_dist = 0.0f;
+	int s_id = 0;
+	int iter_max = 0;
+	float curr_z = 0.0f;
+	float curr_p[3] = { ray_o[0] + ray_d[0] * curr_z,
+						ray_o[1] + ray_d[1] * curr_z,
+						ray_o[2] + ray_d[2] * curr_z };
+	int ids_s[6] = { 0, 0, 0, 0, 0, 0 };		
+	float next_sdf;
+	float prev_sdf = -1000.0f;
+	float Tpartial = 1.0;
+	while (tet_id >= 0 && iter_max < 10000) {
+		ids_s[0] = ids[0]; ids_s[1] = ids[1]; ids_s[2] = ids[2]; 
+		ids[id_exit_face] = ids[3];
+		ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[4 * tet_id + 3]; 
+		v_0[0] = vertices[3 * ids[0]]; v_0[1] = vertices[3 * ids[0] + 1]; v_0[2] = vertices[3 * ids[0] + 2];
+		v_1[0] = vertices[3 * ids[1]]; v_1[1] = vertices[3 * ids[1] + 1]; v_1[2] = vertices[3 * ids[1] + 2];
+		v_2[0] = vertices[3 * ids[2]]; v_2[1] = vertices[3 * ids[2] + 1]; v_2[2] = vertices[3 * ids[2] + 2];
+
+		nmle[0] = (v_1[1] - v_0[1]) * (v_2[2] - v_0[2]) - (v_1[2] - v_0[2]) * (v_2[1] - v_0[1]);
+		nmle[1] = (v_1[2] - v_0[2]) * (v_2[0] - v_0[0]) - (v_1[0] - v_0[0]) * (v_2[2] - v_0[2]);
+		nmle[2] = (v_1[0] - v_0[0]) * (v_2[1] - v_0[1]) - (v_1[1] - v_0[1]) * (v_2[0] - v_0[0]);
+		float norm_n = sqrtf(nmle[0] * nmle[0] + nmle[1] * nmle[1] + nmle[2] * nmle[2]);
+		nmle[0] = norm_n == 0.0f ? 0.0f : nmle[0] / norm_n;
+		nmle[1] = norm_n == 0.0f ? 0.0f : nmle[1] / norm_n;
+		nmle[2] = norm_n == 0.0f ? 0.0f : nmle[2] / norm_n;
+
+		curr_dist = dist_tri(ray_o, ray_d, v_0, v_1, v_2, nmle);
+		curr_p[0] = ray_o[0] + ray_d[0] * curr_dist;
+		curr_p[1] = ray_o[1] + ray_d[1] * curr_dist;
+		curr_p[2] = ray_o[2] + ray_d[2] * curr_dist;
+
+		next_sdf = get_sdf_triangle32(weights, curr_p, vertices, sdf, tets, ids[0], ids[1], ids[2]);
+		ids_s[3] = ids[0]; ids_s[4] = ids[1]; ids_s[5] = ids[2]; 
+		
+		float alpha_tet = sdf2Alpha(next_sdf, prev_sdf, inv_s);
+		float contrib_tet = Tpartial * (1.0f - alpha_tet);
+		int fact_s = int(contrib_tet * 4.0f);
+		
+		if (prev_tet_id != -1) { 
+			if (((prev_sdf > next_sdf && 
+					(next_sdf == -1000.0f || alpha_tet < 1.0f)))) {
+					//fmin(fabs(next_sdf), fabs(prev_sdf))*inv_s < 2.0*CLIP_ALPHA)))) {
+				z_val_ray[2 * s_id] = prev_dist;
+				z_val_ray[2 * s_id + 1] = curr_dist;
+
+				z_id_ray[6 * s_id] = ids_s[0]; 
+				z_id_ray[6 * s_id + 1] = ids_s[1];
+				z_id_ray[6 * s_id + 2] = ids_s[2]; 
+				z_id_ray[6 * s_id + 3] = ids_s[3]; 
+				z_id_ray[6 * s_id + 4] = ids_s[4];
+				z_id_ray[6 * s_id + 5] = ids_s[5]; 
+
+				z_sdf_ray[2 * s_id] = prev_sdf;
+				z_sdf_ray[2 * s_id + 1] = next_sdf;
+
+				weights_ray[6 * s_id] = prev_weights[0];
+				weights_ray[6 * s_id + 1] = prev_weights[1];
+				weights_ray[6 * s_id + 2] = prev_weights[2];
+				weights_ray[6 * s_id + 3] = weights[0]; 
+				weights_ray[6 * s_id + 4] = weights[1]; 
+				weights_ray[6 * s_id + 5] = weights[2]; 
+
+				// activate sites here
+				for (int l = 0; l < 6; l++) {
+					//activate[ids_s[l]] = 1;
+					atomicExch(&activate[ids_s[l]], 1);
+				}
+
+				s_id++;
+				if (s_id > num_samples - 1) {
+					break;
+				}
+			}
+
+			if (s_id > num_samples - 1) {
+				break;
+			}			
+		}
+		
+		Tpartial = Tpartial * alpha_tet;
+
+		//if (Tpartial < STOP_TRANS) {// stop if the transmittance is low
+        //    break;
+        //}
+
+		prev_dist = curr_dist;
+		prev_sdf = next_sdf;
+		for (int l = 0; l < 3; l++) {
+			prev_weights[l] = weights[l];
+		}
+
+		prev_tet_id = tet_id;
+
+		v_new[0] = vertices[3 * ids[3]] - ray_o[0];
+		v_new[1] = vertices[3 * ids[3] + 1] - ray_o[1];
+		v_new[2] = vertices[3 * ids[3] + 2] - ray_o[2];
+
+		p[2 * id_exit_face] = p[2 * 3];
+		p[2 * id_exit_face + 1] = p[2 * 3 + 1];
+
+		p[2 * 3] = dot3D_gpu(u, v_new);
+		p[2 * 3 + 1] = dot3D_gpu(v, v_new);
+
+		id_exit_face = GetExitFaceBis(&p[0], &p[2], &p[4], &p[6]);
+
+		tet_id = GetNextTet(tets, nei_tets, tet_id, ids[id_exit_face]);
+
+		iter_max++;
+	}
+
+	offset[2 * idx] = atomicAdd(counter, s_id);
+	offset[2 * idx + 1] = s_id;
+
+    return;
+}*/
+
 
 __global__ void fill_samples_adapt_kernel(
     const size_t num_rays,                // number of rays

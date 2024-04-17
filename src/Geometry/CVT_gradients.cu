@@ -3,8 +3,10 @@
 #include <vector>
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <thrust/device_vector.h>
 
 #include <device_launch_parameters.h>
+#include "../Models/cudaType.cuh"
 
 #ifdef __INTELLISENSE__
 #define CUDA_KERNEL(...)
@@ -213,6 +215,64 @@ __global__ void concat_feat_kernel(
 }
 
 
+
+__global__ void concat_feat_kernel_o(
+    const size_t num_sites,                // number of rays
+    const size_t num_knn,  
+    const size_t dim_feat,
+    float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ activated,     // [N_voxels, 4] for each voxel => it's vertices
+    float3 *__restrict__ grads,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ feat,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ neighbors
+    )
+{
+    const size_t idx = blockIdx.x;
+    if (idx >= num_sites)
+    {
+        return;
+    }
+
+    if (activated[idx] != 2)
+        return;
+
+    int nb_lvl = num_knn / 32;
+    int knn_id; 
+    
+    __shared__ float3 smem[96];
+    
+    int lvl_curr = fmin(3, threadIdx.x / 32);
+    int i_curr = threadIdx.x % 32;
+    knn_id = neighbors[num_knn*idx + lvl_curr*32 + i_curr];
+    if (knn_id != -1) {
+        smem[32*lvl_curr + i_curr] = grads[4*knn_id]/32.0f;
+    } else {
+        smem[32*lvl_curr + i_curr] = grads[4*idx]/32.0f;
+    }
+
+    __syncthreads();
+    if (threadIdx.x < 16) {
+        smem[32*lvl_curr + threadIdx.x] = smem[32*lvl_curr + threadIdx.x] + smem[32*lvl_curr + threadIdx.x + 16]; 
+    }
+    __syncthreads();
+    if (threadIdx.x < 8) {
+        smem[32*lvl_curr + threadIdx.x] = smem[32*lvl_curr + threadIdx.x] + smem[32*lvl_curr + threadIdx.x + 8]; 
+    }
+    __syncthreads();
+    if (threadIdx.x < 4) {
+        smem[32*lvl_curr + threadIdx.x] = smem[32*lvl_curr + threadIdx.x] + smem[32*lvl_curr + threadIdx.x + 4]; 
+    }
+    __syncthreads();
+    if (threadIdx.x < 2) {
+        smem[32*lvl_curr + threadIdx.x] = smem[32*lvl_curr + threadIdx.x] + smem[32*lvl_curr + threadIdx.x + 2]; 
+    }
+    __syncthreads();
+
+    if (i_curr == 0)
+        grads[(4*idx+lvl_curr+1)] = smem[32*lvl_curr] + smem[32*lvl_curr + 1]; 
+
+    return;
+}
 
 
 
@@ -1477,7 +1537,7 @@ void concat_feat_cuda(
     torch::Tensor  feat,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  neighbors
     ) {
-        const int threads = 1024;
+        /*const int threads = 1024;
         const int blocks = (num_sites + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
         AT_DISPATCH_FLOATING_TYPES( grads.type(),"concat_feat_kernel", ([&] {  
             concat_feat_kernel CUDA_KERNEL(blocks,threads) (
@@ -1487,6 +1547,20 @@ void concat_feat_cuda(
                 vertices.data_ptr<float>(),
                 activated.data_ptr<int>(),
                 grads.data_ptr<float>(),
+                feat.data_ptr<float>(),
+                neighbors.data_ptr<int>()); 
+        }));*/
+
+        const int threads = 96;
+        const int blocks = num_sites; 
+        AT_DISPATCH_FLOATING_TYPES( grads.type(),"concat_feat_kernel_o", ([&] {  
+            concat_feat_kernel_o CUDA_KERNEL(blocks,threads) (
+                num_sites,
+                num_knn,
+                dim_feat,
+                vertices.data_ptr<float>(),
+                activated.data_ptr<int>(),
+                (float3*)thrust::raw_pointer_cast(grads.data_ptr<float>()),
                 feat.data_ptr<float>(),
                 neighbors.data_ptr<int>()); 
         }));

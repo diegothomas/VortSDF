@@ -66,6 +66,9 @@ inline __device__ float4 make_float4(float3 a, float b) {
     return make_float4(a.x, a.y, a.z, b);
 }
 
+inline __device__ float2 operator+(float2 a, float2 b) {
+    return make_float2(a.x + b.x, a.y + b.y);
+}
 
 inline __device__ float3 operator*(float3 a, float3 b) {
     return make_float3(a.x * b.x, a.y * b.y, a.z * b.z);
@@ -100,6 +103,15 @@ inline __device__ void operator+=(float3 a, float3 b) {
     a.x = a.x + b.x;
     a.y = a.y + b.y;
     a.z = a.z + b.z;
+}
+
+inline __device__ float elem(float3 a, int b) {
+    if (b == 0)
+        return a.x;
+    if (b == 1)
+        return a.y;
+    if (b == 2)
+        return a.z;
 }
 
 inline __device__ float dot(float3 a, float3 b) {
