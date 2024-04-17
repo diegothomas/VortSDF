@@ -246,7 +246,9 @@ __global__ void render_no_sdf_kernel(
 
 
 __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 grad_color_diff, float Mask, int n,
-                        float* grads_color, float* grads_sdf_net, float* grads_sdf, float* counter, const float* sdf_seg, const int *neighbors, const float* weights_seg, const float* color_samples, const int* offsets, const int* cell_ids,
+                        float* grads_color, float* grads_sdf_net, float* grads_sdf, float* counter, const float* sdf_seg, 
+                        const int *neighbors, const float* weights_seg, const float* color_samples, const int* offsets, const int* cell_ids,
+                        const float *grad_space, const float *rays,
                         float inv_s, float MaskReg = 0.0f, float colorDiscrepancyReg = 0.0f, float BackgroundEntropyReg = 0.0f, int NoColorSpilling = 0) 
 {
 
@@ -329,18 +331,21 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
         //dalpha += alpha == 0.0f? 0.0f: (1.0f - 2.0f * Wtotal) * (Wtotal / alpha) * BackgroundEntropyReg;
 
         ///////////////////////////////////////////////////////// Mask regularization
-        if (1.0f - Wtotal > 0.5f) {
+        /*if (1.0f - Wtotal > 0.5f) {
             //dalpha += 2.0f * (1.0f - Mask) * ((Wtotal - Wpartial) / alpha - Tpartial) * MaskReg;
             dalpha += -2.0f * (1.0f - Mask) * (Wtotal / alpha) * MaskReg;
         } else {
             //dalpha += 2.0f * (Wtotal - Mask) * ((Wtotal - Wpartial) / alpha - Tpartial) * MaskReg;
             dalpha += -2.0f * (1.0f - Wtotal - Mask) * (Wtotal / alpha) * MaskReg;
-        }
-        //dalpha += -2.0f * (1.0f - Wtotal - Mask) * (Wtotal / alpha) * MaskReg;
+        }*/
+        dalpha += -2.0f * (1.0f - Wtotal - Mask) * (Wtotal / alpha) * MaskReg;
 
         if (NoColorSpilling != 0) {
             dc = dc * (1.0f - Wtotal) * (1.0f - Wtotal);
         }
+
+        float w_photo = fabs(grad_space[12 * t]*rays[3*n] + grad_space[12 * t + 1]*rays[3*n+1] + grad_space[12 * t + 2]*rays[3*n+2]);
+        dalpha = dalpha*w_photo;
 
         //////////////////////////////////////////////////////////////
         float lambda = weights_seg[7*t + 6] ;
@@ -396,7 +401,9 @@ __global__ void render_kernel(
     const float *__restrict__ true_color,
     const float *__restrict__ mask,
     const int *__restrict__ cell_ids,
-    const int *__restrict__ offsets,
+    const int *__restrict__ offsets, 
+    const float *__restrict__ grad_space, 
+    const float *__restrict__ rays,
     float *__restrict__ grads_sdf,
     float *__restrict__ grads_color,
     float *__restrict__ grads_sdf_net,
@@ -425,7 +432,7 @@ __global__ void render_kernel(
         //Wtotal
         backward(integrated_color, color.w, in_color, grad_color_diff, msk,
             idx, grads_color, grads_sdf_net, grads_sdf, counter, sdf_seg, neighbors, weights_seg, color_samples,
-            offsets, cell_ids, inv_s, mask_reg, 0.0f, 0.0f, 1);
+            offsets, cell_ids, grad_space, rays, inv_s, mask_reg, 0.0f, 0.0f, 1);
 
         //color_loss[3*idx] = integrated_color.x;
         //color_loss[3*idx + 1] = integrated_color.y;
@@ -502,6 +509,8 @@ void render_cuda(
     torch::Tensor mask,
     torch::Tensor cell_ids,
     torch::Tensor offsets,
+    torch::Tensor grad_space,
+    torch::Tensor rays,
     torch::Tensor grads_sdf,
     torch::Tensor grads_color,
     torch::Tensor grads_sdf_net,
@@ -524,6 +533,8 @@ void render_cuda(
                 mask.data_ptr<float>(),
                 cell_ids.data_ptr<int>(),
                 offsets.data_ptr<int>(),
+                grad_space.data_ptr<float>(),
+                rays.data_ptr<float>(),
                 grads_sdf.data_ptr<float>(),
                 grads_color.data_ptr<float>(),
                 grads_sdf_net.data_ptr<float>(),

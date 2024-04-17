@@ -68,14 +68,14 @@ class VortSDFRenderer:
         self.mask_loss = torch.zeros([1], dtype=torch.float32).to(torch.device('cuda')).contiguous()
        
 
-    def render_gpu(self, num_rays, inv_s, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, cell_ids, offsets):   
+    def render_gpu(self, num_rays, inv_s, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, cell_ids, offsets, grad_space, rays):   
         self.grads_color[:, :] = 0
         self.grads_sdf[:] = 0
         self.grads_sdf_net[:] = 0
         self.counter[:] = 0
         
         renderer_cuda.render(num_rays, inv_s, self.mask_reg, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, 
-                             cell_ids, offsets, self.grads_sdf, self.grads_color, self.grads_sdf_net, self.counter, self.colors_loss, self.mask_loss)
+                             cell_ids, offsets, grad_space, rays, self.grads_sdf, self.grads_color, self.grads_sdf_net, self.counter, self.colors_loss, self.mask_loss)
         
         return self.colors_loss, self.grads_color, self.grads_sdf_net
     
@@ -105,9 +105,9 @@ class VortSDFRenderer:
         
 class VortSDFRenderingFunction(autograd.Function):  
     @staticmethod
-    def forward(ctx, cvt_renderer, num_rays, inv_s, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, cell_ids, offsets):
+    def forward(ctx, cvt_renderer, num_rays, inv_s, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, cell_ids, offsets, grad_space, rays):
         
-        color_error, grads_color, grads_sdf_net = cvt_renderer.render_gpu(num_rays, inv_s, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, cell_ids, offsets)
+        color_error, grads_color, grads_sdf_net = cvt_renderer.render_gpu(num_rays, inv_s, sdf_seg, knn_sites, weights_seg, color_samples, true_color, mask, cell_ids, offsets, grad_space, rays)
         
         mask_sum = mask.sum()
         grads_color.requires_grad_(True)
@@ -134,6 +134,6 @@ class VortSDFRenderingFunction(autograd.Function):
         grads = grads[:nb_samples,:]
         #grads_sdf = grads_sdf[:nb_samples,:]
 
-        return None, None, None, None, None, None, grads, None, None, None, None
+        return None, None, None, None, None, None, grads, None, None, None, None, None, None
         #return None, None, None, grads_sdf, None, None, grads, None, None, None, None
         
