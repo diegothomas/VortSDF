@@ -600,13 +600,15 @@ class Tet32(Process):
         knn_sites = -1 * np.ones((self.sites.shape[0], 32))
         _, idx = prev_kdtree.query(self.sites, k=32)
         knn_sites[:,:32] = np.asarray(idx[:,:])
-        out_sdf = torch.zeros(self.sites.shape[0]).float().cuda().contiguous()
+        """out_sdf = torch.zeros(self.sites.shape[0]).float().cuda().contiguous()
         backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius/8.0, 1, torch.from_numpy(new_sites).float().cuda().contiguous(), 
                                         torch.from_numpy(self.sites).float().cuda().contiguous(), torch.from_numpy(in_sdf).float().cuda().contiguous(), 
                                         torch.from_numpy(knn_sites).int().cuda().contiguous(), out_sdf)
-        out_sdf = out_sdf.cpu().numpy()
+        out_sdf = out_sdf.cpu().numpy()"""
         
-        #out_sdf = -f(self.sites)
+        out_sdf = -f(self.sites)
+        mask_background = abs(f(self.sites)) > radius
+        #out_sdf[mask_background[:] == True] = 1.0
 
         """if flag:
             out_sdf[:] = in_sdf[idx[:]]
@@ -633,7 +635,7 @@ class Tet32(Process):
 
         self.sdf_init = torch.from_numpy(out_sdf).float().cuda()
 
-        return torch.from_numpy(out_sdf).float().cuda(), torch.from_numpy(out_feat).float().cuda()
+        return torch.from_numpy(out_sdf).float().cuda(), torch.from_numpy(out_feat).float().cuda(), torch.from_numpy(mask_background).float().cuda()
 
     def marching_tets(self, sdf, filename, m_iso = 0.0):
         nb_tets = self.nb_tets

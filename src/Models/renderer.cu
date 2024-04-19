@@ -17,9 +17,9 @@
 
 #define STOP_TRANS 1.0e-8
 #define CLIP_ALPHA 60.0
-#define BACK_R 1.0f
-#define BACK_G 1.0f
-#define BACK_B 1.0f 
+#define BACK_R 0.5f
+#define BACK_G 0.5f
+#define BACK_B 0.5f 
 #define PI 3.141592653589793238462643383279502884197
 
 

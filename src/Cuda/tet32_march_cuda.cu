@@ -5,8 +5,10 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <thrust/device_vector.h>
 
 #include <device_launch_parameters.h>
+#include "../Models/cudaType.cuh"
 
 #ifdef __INTELLISENSE__
 #define CUDA_KERNEL(...)
@@ -16,7 +18,7 @@
 #define FAKEINIT
 #endif
 
-#define STOP_TRANS 1.0e-8
+#define STOP_TRANS 1.0e-10
 #define DIM_L_FEAT 32
 #define CLIP_ALPHA 60.0
 
@@ -59,6 +61,18 @@ __device__ float dist_tri(float ray_o[3], float ray_d[3], float v0[3], float v1[
 	return fact;
 }
 
+__device__ float dist_tri3(float3 ray_o, float3 ray_d, float3 v0, float3 v1, float3 v2, float3 n) {
+	float den = dot(ray_d, n);
+	if (den == 0.0f) {
+		return 0.0f;
+	}
+	float3 tmp = v0-ray_o;
+	float fact = (dot(tmp, n) / den);
+
+	return fact;
+}
+
+
 __device__ bool OriginInTriangle_gpu(float v1[2], float v2[2], float v3[2])
 {
 	float d1, d2, d3;
@@ -99,6 +113,26 @@ __device__ int GetNextTet(int* tets, int* nei_tets, int tet_id, int id_exit_face
 	return next_tet_id;
 }
 
+__device__ int GetNextTet3(int4* tets, int4* nei_tets, int tet_id, int id_exit_face) {
+	int4 curr_tet = tets[tet_id];
+	int4 neis = nei_tets[tet_id];
+	int next_tet_id = neis.w;
+	
+	if (id_exit_face == curr_tet.x) {
+		next_tet_id = neis.x;
+	}
+	
+	if (id_exit_face == curr_tet.y) {
+		next_tet_id = neis.y;
+	}
+	
+	if (id_exit_face == curr_tet.z) {
+		next_tet_id = neis.z;
+	}
+
+	return next_tet_id;
+}
+
 __device__ double volume_tetrahedron_32(float a[3], float b[3], float c[3], float d[3]) {
 	double ad[3] = { a[0] - d[0], a[1] - d[1], a[2] - d[2] };
 	double bd[3] = { b[0] - d[0], b[1] - d[1], b[2] - d[2] };
@@ -110,6 +144,14 @@ __device__ double volume_tetrahedron_32(float a[3], float b[3], float c[3], floa
 
 	double res = abs(dot3D_gpu_d(ad, n)) / 6.0;
 	return res;
+}
+
+__device__ float volume_tetrahedron_3(float3 a, float3 b, float3 c, float3 d) {
+	float3 ad = a-d;
+	float3 bd = b-d;
+	float3 cd = c-d; 
+	float3 n = cross(bd, cd); 
+	return fabs(dot(ad, n)) / 6.0f;
 }
 
 
@@ -124,7 +166,13 @@ __device__ float Triangle_Area_3D(float a[3], float b[3], float c[3])
 }
 
 
-__device__ float get_sdf32(float* weights, float p[3], float* sites, float* sdf, int* tets, int tet_id) {
+__device__ float Triangle_Area_3(float3 a, float3 b, float3 c)
+{
+	return norm_2(cross(b - a, c - a)) / 2.0f;
+}
+
+
+__device__ float get_sdf32(float p[3], float* weights, float* sites, float* sdf, int* tets, int tet_id) {
 	int id0 = tets[4 * tet_id];
 	int id1 = tets[4 * tet_id + 1];
 	int id2 = tets[4 * tet_id + 2];
@@ -157,6 +205,39 @@ __device__ float get_sdf32(float* weights, float p[3], float* sites, float* sdf,
 
 	return sdf[id0] * weights[0] + sdf[id1] * weights[1] +
             sdf[id2] * weights[2] + sdf[id3] * weights[3];
+}
+
+__device__ float get_sdf3(float3 p, float* weights, float3* sites, float* sdf, int4* tets, int tet_id) {
+	int4 id = tets[tet_id];
+	id.w = id.x ^ id.y ^ id.z ^ id.w;
+
+	float tot_vol = volume_tetrahedron_3(sites[id.x], sites[id.y], sites[id.z], sites[id.w]);
+
+    weights[0] = tot_vol == 0.0f ? 0.25f : volume_tetrahedron_3(p, sites[id.y],
+		sites[id.z], sites[id.w]) / tot_vol;
+    weights[1] = tot_vol == 0.0f ? 0.25f : volume_tetrahedron_3(p, sites[id.x],
+		sites[id.z], sites[id.w]) / tot_vol;
+    weights[2] = tot_vol == 0.0f ? 0.25f : volume_tetrahedron_3(p, sites[id.x],
+		sites[id.y], sites[id.w]) / tot_vol;
+    weights[3] = tot_vol == 0.0f ? 0.25f : volume_tetrahedron_3(p, sites[id.x],
+		sites[id.y], sites[id.z]) / tot_vol;
+
+    float sum_weights = weights[0] + weights[1] + weights[2] + weights[3];
+	if (sum_weights > 0.0f) {
+		weights[0] = weights[0] / sum_weights;
+		weights[1] = weights[1] / sum_weights;
+		weights[2] = weights[2] / sum_weights;
+		weights[3] = weights[3] / sum_weights;
+	}
+	else {
+		weights[0] = 0.25f;
+		weights[1] = 0.25f;
+		weights[2] = 0.25f;
+		weights[3] = 0.25f;
+	}
+
+	return sdf[id.x] * weights[0] + sdf[id.y] * weights[1] +
+            sdf[id.z] * weights[2] + sdf[id.w] * weights[3];
 }
 
 __device__ void get_feat32(float *feat, float weights[4], float* vol_feat, int* tets, int tet_id) {
@@ -206,6 +287,29 @@ __device__ float get_sdf_triangle32(float weights[3], float p[3], float* sites, 
 		return -1000.0;
 	return sdf[id0] * weights[0] + sdf[id1] * weights[1] + sdf[id2] * weights[2];
 }
+
+__device__ float get_sdf_triangle3(float weights[3], float3 p, float3* sites, float* sdf, int4* tets, int id0, int id1, int id2) {
+	// Rescale the tetrahedron
+	float3 s0 = sites[id0];
+	float3 s1 = sites[id1];
+	float3 s2 = sites[id2];
+
+	double tot_area = Triangle_Area_3(s0, s1, s2);
+
+	weights[0] = tot_area == 0.0f ? 0.33f : float(Triangle_Area_3(p, s1, s2) / tot_area);
+	weights[1] = tot_area == 0.0f ? 0.33f : float(Triangle_Area_3(p, s0, s2) / tot_area);
+	weights[2] = tot_area == 0.0f ? 0.33f : float(Triangle_Area_3(p, s0, s1) / tot_area);
+
+	float w_tot = weights[0] + weights[1] + weights[2];
+	weights[0] = weights[0] / w_tot;
+	weights[1] = weights[1] / w_tot;
+	weights[2] = weights[2] / w_tot;
+	
+	if (sdf[id0] == -1000.0 || sdf[id1] == -1000.0 || sdf[id2] == -1000.0)
+		return -1000.0;
+	return sdf[id0] * weights[0] + sdf[id1] * weights[1] + sdf[id2] * weights[2];
+}
+
 
 __device__ void get_feat_triangle32(float *feat, float weights[3], float p[3], float* sites, float* vol_feat, int* tets, int id0, int id1, int id2) {
 	for (int i = 0; i < DIM_L_FEAT; i++) {
@@ -1024,7 +1128,7 @@ __global__ void tet32_march_cuda_kernel(
     return;
 }
 
-/*__global__ void tet32_march_cuda_kernel_o(
+__global__ void tet32_march_cuda_kernel_o(
 	const float inv_s,
     const size_t num_rays,                // number of rays
     const size_t num_samples,                // number of rays
@@ -1032,8 +1136,8 @@ __global__ void tet32_march_cuda_kernel(
     const float3 *__restrict__ rays,       // [N_rays, 6]
     float3 *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
-    int *__restrict__ tets,  
-    int *__restrict__ nei_tets,  
+    int4 *__restrict__ tets,  
+    int4 *__restrict__ nei_tets,  
     const int *__restrict__ cam_ids,  
     const int *__restrict__ offsets_cam,  
     const int *__restrict__ cam_tets,  
@@ -1092,8 +1196,8 @@ __global__ void tet32_march_cuda_kernel(
 		}
 
 		ut[min] = 0.0f;
-		ut[(min + 1) % 3] = ray_d[(min + 2) % 3] / ray_d[max];
-		ut[(min + 2) % 3] = -ray_d[(min + 1) % 3] / ray_d[max];
+		ut[(min + 1) % 3] = elem(ray_d,(min + 2) % 3) / elem(ray_d,max);
+		ut[(min + 2) % 3] = -elem(ray_d,(min + 1) % 3) / elem(ray_d,max);
 		float t[3] = { ray_d.y * ut[2] - ray_d.z * ut[1], 
 						ray_d.z * ut[0] - ray_d.x * ut[2], 
 						ray_d.x * ut[1] - ray_d.y * ut[0] };
@@ -1133,20 +1237,19 @@ __global__ void tet32_march_cuda_kernel(
 	int prev_tet_id = -1;
 
 	// id_0, id_1, id_2 are indices of vertices of exit face
-	int ids[4] = { 0, 0, 0, 0 };
-	float weights[3] = { 0.0f, 0.0f, 0.0f};
-	float prev_weights[3] = { 0.0f, 0.0f, 0.0f};
+	int ids[4]{};
+	float weights[3] =  {0.0f, 0.0f, 0.0f};
+	float prev_weights[3] = {0.0f, 0.0f, 0.0f};
 	int id_exit_face = 3;
 	float p[8]{};
 
 	// project all vertices into the base coordinate system
-	float v_new[3]{};
+	float3 v_new = make_float3(0.0f, 0.0f, 0.0f);
+	float3 nmle = make_float3(0.0f, 0.0f, 0.0f);
+	float3 v_0 = make_float3(0.0f, 0.0f, 0.0f);
+	float3 v_1 = make_float3(0.0f, 0.0f, 0.0f);
+	float3 v_2 = make_float3(0.0f, 0.0f, 0.0f);
 	float curr_dist;
-
-	float nmle[3]{};
-	float v_0[3]{};
-	float v_1[3]{};
-	float v_2[3]{};
 
     int start_cam_tet = cam_id == 0 ? 0 : offsets_cam[cam_id-1];
     int cam_adj_count = cam_id == 0 ? offsets_cam[cam_id] : offsets_cam[cam_id] - offsets_cam[cam_id-1];  
@@ -1154,34 +1257,35 @@ __global__ void tet32_march_cuda_kernel(
     for (int i = 1; i < cam_adj_count; i++) {
 		tet_id = cam_tets[start_cam_tet + i];
 		prev_tet_id = tet_id;
-		ids[0] = tets[4 * tet_id];
-		ids[1] = tets[4 * tet_id + 1];
-		ids[2] = tets[4 * tet_id + 2];
-		ids[3] = tets[4 * tet_id] ^ tets[4 * tet_id + 1] ^ tets[4 * tet_id + 2] ^ tets[4 * tet_id + 3];
+		ids[0] = tets[tet_id].x;
+		ids[1] = tets[tet_id].y;
+		ids[2] = tets[tet_id].z;
+		ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[tet_id].w; 
+
 
 		if (r_id == ids[0]) {
 			ids[0] = ids[3];
 			ids[3] = r_id;
-			tet_id = nei_tets[4 * tet_id];
+			tet_id = nei_tets[tet_id].x;
 		}
 		else if (r_id == ids[1]) {
 			ids[1] = ids[3];
 			ids[3] = r_id;
-			tet_id = nei_tets[4 * tet_id + 1];
+			tet_id = nei_tets[tet_id].y;
 		}
 		else if (r_id == ids[2]) {
 			ids[2] = ids[3];
 			ids[3] = r_id;
-			tet_id = nei_tets[4 * tet_id + 2];
+			tet_id = nei_tets[tet_id].z;
 		}
 		else {
-			tet_id = nei_tets[4 * tet_id + 3];
+			tet_id = nei_tets[tet_id].w;
 		}
 
 		for (int j = 0; j < 3; j++) {
 			v_new = vertices[ids[j]] - ray_o;
-			p[2 * j] = dot3D_gpu(u, v_new);
-			p[2 * j + 1] = dot3D_gpu(v, v_new);
+			p[2 * j] = dot(u, v_new);
+			p[2 * j + 1] = dot(v, v_new);
 		}
 
 		v_0 = vertices[ids[0]];
@@ -1192,12 +1296,12 @@ __global__ void tet32_march_cuda_kernel(
 		if (norm_n > 0.0f)
 			nmle = nmle / norm_n;
 
-		curr_dist = dist_tri(ray_o, ray_d, v_0, v_1, v_2, nmle);
+		curr_dist = dist_tri3(ray_o, ray_d, v_0, v_1, v_2, nmle);
 
 		if (curr_dist > 0.0f && OriginInTriangle_gpu(&p[0], &p[2], &p[4])) {
 
 			v_new = ray_o + ray_d * curr_dist / 2.0f;
-			if (get_sdf32(v_new, weights, vertices, sdf, tets, prev_tet_id) != 30.0f) 
+			if (get_sdf3(v_new, weights, vertices, sdf, tets, prev_tet_id) != 30.0f) 
 				break;
 		}
 		else {
@@ -1211,9 +1315,7 @@ __global__ void tet32_march_cuda_kernel(
 	int s_id = 0;
 	int iter_max = 0;
 	float curr_z = 0.0f;
-	float curr_p[3] = { ray_o[0] + ray_d[0] * curr_z,
-						ray_o[1] + ray_d[1] * curr_z,
-						ray_o[2] + ray_d[2] * curr_z };
+	float3 curr_p = ray_o + ray_d * curr_z;
 	int ids_s[6] = { 0, 0, 0, 0, 0, 0 };		
 	float next_sdf;
 	float prev_sdf = -1000.0f;
@@ -1221,25 +1323,20 @@ __global__ void tet32_march_cuda_kernel(
 	while (tet_id >= 0 && iter_max < 10000) {
 		ids_s[0] = ids[0]; ids_s[1] = ids[1]; ids_s[2] = ids[2]; 
 		ids[id_exit_face] = ids[3];
-		ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[4 * tet_id + 3]; 
-		v_0[0] = vertices[3 * ids[0]]; v_0[1] = vertices[3 * ids[0] + 1]; v_0[2] = vertices[3 * ids[0] + 2];
-		v_1[0] = vertices[3 * ids[1]]; v_1[1] = vertices[3 * ids[1] + 1]; v_1[2] = vertices[3 * ids[1] + 2];
-		v_2[0] = vertices[3 * ids[2]]; v_2[1] = vertices[3 * ids[2] + 1]; v_2[2] = vertices[3 * ids[2] + 2];
+		ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[tet_id].w; 
+		v_0 = vertices[ids[0]];
+		v_1 = vertices[ids[1]];
+		v_2 = vertices[ids[2]];
 
-		nmle[0] = (v_1[1] - v_0[1]) * (v_2[2] - v_0[2]) - (v_1[2] - v_0[2]) * (v_2[1] - v_0[1]);
-		nmle[1] = (v_1[2] - v_0[2]) * (v_2[0] - v_0[0]) - (v_1[0] - v_0[0]) * (v_2[2] - v_0[2]);
-		nmle[2] = (v_1[0] - v_0[0]) * (v_2[1] - v_0[1]) - (v_1[1] - v_0[1]) * (v_2[0] - v_0[0]);
-		float norm_n = sqrtf(nmle[0] * nmle[0] + nmle[1] * nmle[1] + nmle[2] * nmle[2]);
-		nmle[0] = norm_n == 0.0f ? 0.0f : nmle[0] / norm_n;
-		nmle[1] = norm_n == 0.0f ? 0.0f : nmle[1] / norm_n;
-		nmle[2] = norm_n == 0.0f ? 0.0f : nmle[2] / norm_n;
+		nmle = cross(v_1 - v_0, v_2 - v_0);
+		float norm_n = norm_2(nmle);
+		if (norm_n > 0.0f)
+			nmle = nmle / norm_n;
 
-		curr_dist = dist_tri(ray_o, ray_d, v_0, v_1, v_2, nmle);
-		curr_p[0] = ray_o[0] + ray_d[0] * curr_dist;
-		curr_p[1] = ray_o[1] + ray_d[1] * curr_dist;
-		curr_p[2] = ray_o[2] + ray_d[2] * curr_dist;
+		curr_dist = dist_tri3(ray_o, ray_d, v_0, v_1, v_2, nmle);
+		curr_p = ray_o + ray_d * curr_dist;
 
-		next_sdf = get_sdf_triangle32(weights, curr_p, vertices, sdf, tets, ids[0], ids[1], ids[2]);
+		next_sdf = get_sdf_triangle3(weights, curr_p, vertices, sdf, tets, ids[0], ids[1], ids[2]);
 		ids_s[3] = ids[0]; ids_s[4] = ids[1]; ids_s[5] = ids[2]; 
 		
 		float alpha_tet = sdf2Alpha(next_sdf, prev_sdf, inv_s);
@@ -1250,30 +1347,19 @@ __global__ void tet32_march_cuda_kernel(
 			if (((prev_sdf > next_sdf && 
 					(next_sdf == -1000.0f || alpha_tet < 1.0f)))) {
 					//fmin(fabs(next_sdf), fabs(prev_sdf))*inv_s < 2.0*CLIP_ALPHA)))) {
-				z_val_ray[2 * s_id] = prev_dist;
-				z_val_ray[2 * s_id + 1] = curr_dist;
+				z_val_ray[s_id] = make_float2(prev_dist, curr_dist);
 
-				z_id_ray[6 * s_id] = ids_s[0]; 
-				z_id_ray[6 * s_id + 1] = ids_s[1];
-				z_id_ray[6 * s_id + 2] = ids_s[2]; 
-				z_id_ray[6 * s_id + 3] = ids_s[3]; 
-				z_id_ray[6 * s_id + 4] = ids_s[4];
-				z_id_ray[6 * s_id + 5] = ids_s[5]; 
+				z_id_ray[2 * s_id] = make_int3(ids_s[0], ids_s[1], ids_s[2]); 
+				z_id_ray[2 * s_id + 1] = make_int3(ids_s[3], ids_s[4], ids_s[5]); 
 
-				z_sdf_ray[2 * s_id] = prev_sdf;
-				z_sdf_ray[2 * s_id + 1] = next_sdf;
+				z_sdf_ray[s_id] = make_float2(prev_sdf, next_sdf);
 
-				weights_ray[6 * s_id] = prev_weights[0];
-				weights_ray[6 * s_id + 1] = prev_weights[1];
-				weights_ray[6 * s_id + 2] = prev_weights[2];
-				weights_ray[6 * s_id + 3] = weights[0]; 
-				weights_ray[6 * s_id + 4] = weights[1]; 
-				weights_ray[6 * s_id + 5] = weights[2]; 
+				weights_ray[2 * s_id] = make_float3(prev_weights[0], prev_weights[1], prev_weights[2]);
+				weights_ray[2 * s_id + 1] = make_float3(weights[0], weights[1], weights[2]); 
 
 				// activate sites here
 				for (int l = 0; l < 6; l++) {
-					//activate[ids_s[l]] = 1;
-					atomicExch(&activate[ids_s[l]], 1);
+					activate[ids_s[l]] = 1;
 				}
 
 				s_id++;
@@ -1289,9 +1375,9 @@ __global__ void tet32_march_cuda_kernel(
 		
 		Tpartial = Tpartial * alpha_tet;
 
-		//if (Tpartial < STOP_TRANS) {// stop if the transmittance is low
-        //    break;
-        //}
+		if (Tpartial < STOP_TRANS) {// stop if the transmittance is low
+            break;
+        }
 
 		prev_dist = curr_dist;
 		prev_sdf = next_sdf;
@@ -1301,19 +1387,17 @@ __global__ void tet32_march_cuda_kernel(
 
 		prev_tet_id = tet_id;
 
-		v_new[0] = vertices[3 * ids[3]] - ray_o[0];
-		v_new[1] = vertices[3 * ids[3] + 1] - ray_o[1];
-		v_new[2] = vertices[3 * ids[3] + 2] - ray_o[2];
+		v_new = vertices[ids[3]] - ray_o;
 
 		p[2 * id_exit_face] = p[2 * 3];
 		p[2 * id_exit_face + 1] = p[2 * 3 + 1];
 
-		p[2 * 3] = dot3D_gpu(u, v_new);
-		p[2 * 3 + 1] = dot3D_gpu(v, v_new);
+		p[2 * 3] = dot(u, v_new);
+		p[2 * 3 + 1] = dot(v, v_new);
 
 		id_exit_face = GetExitFaceBis(&p[0], &p[2], &p[4], &p[6]);
 
-		tet_id = GetNextTet(tets, nei_tets, tet_id, ids[id_exit_face]);
+		tet_id = GetNextTet3(tets, nei_tets, tet_id, ids[id_exit_face]);
 
 		iter_max++;
 	}
@@ -1322,7 +1406,7 @@ __global__ void tet32_march_cuda_kernel(
 	offset[2 * idx + 1] = s_id;
 
     return;
-}*/
+}
 
 
 __global__ void fill_samples_adapt_kernel(
@@ -1627,7 +1711,7 @@ int tet32_march_cuda(
 
         const int threads = 512;
         const int blocks = (num_rays + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
-        AT_DISPATCH_FLOATING_TYPES( rays.type(),"tet32_march_cuda", ([&] {  
+        /*AT_DISPATCH_FLOATING_TYPES( rays.type(),"tet32_march_cuda", ([&] {  
             tet32_march_cuda_kernel CUDA_KERNEL(blocks,threads) (
 	 			inv_s,
                 num_rays,
@@ -1645,6 +1729,29 @@ int tet32_march_cuda(
                 z_vals.data_ptr<float>(),
                 z_sdfs.data_ptr<float>(),
                 z_ids.data_ptr<int>(),
+                counter,
+                activate.data_ptr<int>(),
+                offset.data_ptr<int>()); 
+    	}));*/
+
+		AT_DISPATCH_FLOATING_TYPES( rays.type(),"tet32_march_cuda_kernel_o", ([&] {  
+            tet32_march_cuda_kernel_o CUDA_KERNEL(blocks,threads) (
+	 			inv_s,
+                num_rays,
+                num_samples,
+                cam_id,
+                (float3*)thrust::raw_pointer_cast(rays.data_ptr<float>()),
+                (float3*)thrust::raw_pointer_cast(vertices.data_ptr<float>()),
+                sdf.data_ptr<float>(),
+                (int4*)thrust::raw_pointer_cast(tets.data_ptr<int>()),
+                (int4*)thrust::raw_pointer_cast(nei_tets.data_ptr<int>()),
+                cam_ids.data_ptr<int>(),
+                offsets_cam.data_ptr<int>(),
+                cam_tets.data_ptr<int>(),
+                (float3*)thrust::raw_pointer_cast(weights.data_ptr<float>()),
+                (float2*)thrust::raw_pointer_cast(z_vals.data_ptr<float>()),
+                (float2*)thrust::raw_pointer_cast(z_sdfs.data_ptr<float>()),
+                (int3*)thrust::raw_pointer_cast(z_ids.data_ptr<int>()),
                 counter,
                 activate.data_ptr<int>(),
                 offset.data_ptr<int>()); 

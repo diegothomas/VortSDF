@@ -310,6 +310,8 @@ class Runner:
         self.vortSDF_renderer_fine.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
 
         grad_sdf = torch.zeros(self.sdf.shape).float().cuda()
+
+        self.mask_background = torch.zeros(self.sdf.shape).float().cuda()
         
         """self.inv_s = 1000
         self.render_image(cam_ids, 0)
@@ -353,6 +355,12 @@ class Runner:
             rays_d = rays_d.reshape(-1, 3)
             true_rgb = true_rgb.reshape(-1, 3)
             mask = mask.reshape(-1, 1)
+            
+            if iter_step > 30000:
+                rays_o = rays_o[mask[:,0] > 0.5]
+                rays_d = rays_d[mask[:,0]  > 0.5]
+                true_rgb = true_rgb[mask[:,0] > 0.5]
+                mask = mask[mask[:,0] > 0.5]
 
             rays_o = rays_o.contiguous()
             rays_d = rays_d.contiguous()
@@ -788,6 +796,8 @@ class Runner:
                 self.optimizer_sdf.zero_grad() # 0.00001*self.grad_mean_curve +\ # self.e_w*self.grad_eik +\
 
             self.norm_grad = torch.linalg.norm(self.unormed_grad, ord=2, axis=-1, keepdims=True).reshape(-1)
+            #self.grad_sdf[self.mask_background[:] == 1.0] = 0.0
+
             ###self.norm_grad * 
             if (iter_step+1) < 2000: 
                 if self.sdf.grad is None:
@@ -850,12 +860,15 @@ class Runner:
                 #if self.sites.shape[0] > 500000:
                 #    self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, 0.0) #(iter_step+1) > 2000
                 #else:
-                self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, self.sigma)
+                self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, self.sigma)
                 self.sdf = self.sdf.contiguous()
                 self.sdf.requires_grad_(True)
                 self.fine_features = self.fine_features.contiguous()
                 self.fine_features.requires_grad_(True)
                 self.tet32.load_cuda()
+
+                print(self.mask_background.max())
+                print(self.mask_background.min())
 
                 sites = np.asarray(self.tet32.vertices)  
                 cam_ids = np.stack([np.where((sites == cam_sites[i,:]).all(axis = 1))[0] for i in range(cam_sites.shape[0])]).reshape(-1)
@@ -947,6 +960,7 @@ class Runner:
                     self.learning_rate_feat = 1.0e-3
                     self.end_iter_loc = 8000
                     self.learning_rate_alpha = 1.0e-8
+                    self.vortSDF_renderer_fine.mask_reg = 1.0e-1
                     #verbose = True
 
                 if (iter_step+1) == 10000:
@@ -966,7 +980,7 @@ class Runner:
                     self.learning_rate_feat = 5.0e-4
                     self.end_iter_loc = 20000
                     self.learning_rate_alpha = 1.0e-4
-                    self.vortSDF_renderer_fine.mask_reg = 1.0e-4
+                    self.vortSDF_renderer_fine.mask_reg = 1.0e-1
                     #acc_it = 10
                     
                 if (iter_step+1) == 30000:
@@ -1003,7 +1017,7 @@ class Runner:
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
                     self.s_w = 1.0e-4 #2.0e-6
-                    self.e_w = 0.0#1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
+                    self.e_w = 1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
                     self.tv_w = 5.0e-5 #1.0e-8 #1.0e-1
                     self.tv_f = 0.0 #1.0e-4
                     self.f_w = 1.0
@@ -1011,7 +1025,7 @@ class Runner:
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-4
-                    self.vortSDF_renderer_fine.mask_reg = 1.0e-5
+                    self.vortSDF_renderer_fine.mask_reg = 1.0e-4
                     self.learning_rate_alpha = 1.0e-4
                     
                 if (iter_step+1) == 70000:
@@ -1031,7 +1045,7 @@ class Runner:
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-4
-                    self.vortSDF_renderer_fine.mask_reg = 1.0e-5
+                    self.vortSDF_renderer_fine.mask_reg = 1.0e-4
                     self.learning_rate_alpha = 1.0e-8
                     self.val_freq = 2000
                     #verbose = True
