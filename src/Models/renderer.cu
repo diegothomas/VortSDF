@@ -317,7 +317,7 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
         
         
         ///////////////////////////////////////////////////////// Photometric loss
-        dalpha = dot(grad_color_diff, dCtotal_dalpha);
+        dalpha = Mask == 0.0f ? 0.0f : dot(grad_color_diff, dCtotal_dalpha);
         dc = grad_color_diff * contrib;
 
         sample_color_diff = Ctotal - color;

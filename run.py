@@ -356,11 +356,11 @@ class Runner:
             true_rgb = true_rgb.reshape(-1, 3)
             mask = mask.reshape(-1, 1)
             
-            if iter_step > 30000:
+            """if iter_step > 30000:
                 rays_o = rays_o[mask[:,0] > 0.5]
                 rays_d = rays_d[mask[:,0]  > 0.5]
                 true_rgb = true_rgb[mask[:,0] > 0.5]
-                mask = mask[mask[:,0] > 0.5]
+                mask = mask[mask[:,0] > 0.5]"""
 
             rays_o = rays_o.contiguous()
             rays_d = rays_d.contiguous()
