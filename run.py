@@ -336,6 +336,9 @@ class Runner:
                 img_idx = image_perm[iter_step % len(image_perm)].item() 
                 self.inv_s = min(self.s_max, self.loc_iter/self.R + self.s_start)
 
+            if img_idx == 6 or img_idx == 9 or img_idx == 13 or img_idx == 42 or img_idx == 50 or img_idx == 61 or img_idx == 67 or img_idx == 77 or img_idx == 80 or img_idx == 81 or img_idx == 117 or img_idx == 121 or img_idx == 122:
+                continue
+
             ## Generate rays
             if iter_step +1 < 2000:
                 num_rays = 512
@@ -1004,7 +1007,7 @@ class Runner:
                     self.learning_rate_sdf = 5e-4
                     self.learning_rate_feat = 5e-4 #1.0e-2
                     self.end_iter_loc = 20000
-                    self.vortSDF_renderer_fine.mask_reg = 1.0e-4
+                    self.vortSDF_renderer_fine.mask_reg = 1.0e-1
                     self.learning_rate_alpha = 1.0e-2
 
                 if (iter_step+1) == 50000:
@@ -1025,7 +1028,7 @@ class Runner:
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-4
-                    self.vortSDF_renderer_fine.mask_reg = 1.0e-4
+                    self.vortSDF_renderer_fine.mask_reg = 1.0e-1
                     self.learning_rate_alpha = 1.0e-4
                     
                 if (iter_step+1) == 70000:
@@ -1045,7 +1048,7 @@ class Runner:
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-4
-                    self.vortSDF_renderer_fine.mask_reg = 1.0e-4
+                    self.vortSDF_renderer_fine.mask_reg = 1.0e-1
                     self.learning_rate_alpha = 1.0e-8
                     self.val_freq = 2000
                     #verbose = True
