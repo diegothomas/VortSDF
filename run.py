@@ -337,6 +337,8 @@ class Runner:
                 self.inv_s = min(self.s_max, self.loc_iter/self.R + self.s_start)
 
             if img_idx == 6 or img_idx == 9 or img_idx == 13 or img_idx == 42 or img_idx == 50 or img_idx == 61 or img_idx == 67 or img_idx == 77 or img_idx == 80 or img_idx == 81 or img_idx == 117 or img_idx == 121 or img_idx == 122:
+                iter_step = iter_step - 1
+                image_perm = self.get_image_perm()
                 continue
 
             ## Generate rays
@@ -995,9 +997,9 @@ class Runner:
                     """self.s_w = 5.0e-3
                     self.e_w = 1.0e-3
                     self.tv_w = 1.0e-3"""
-                    self.s_w = 1.0e-3 #5.0e-4
-                    self.e_w = 1.0e-5 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 5.0e-4 #1.0e-8 #1.0e-1
+                    self.s_w = 1.0e-4 #5.0e-4
+                    self.e_w = 1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
+                    self.tv_w = 5.0e-5 #1.0e-8 #1.0e-1
                     self.w_g = 0.0
                     #acc_it = 10
 
@@ -1007,7 +1009,7 @@ class Runner:
                     self.learning_rate_sdf = 5e-4
                     self.learning_rate_feat = 5e-4 #1.0e-2
                     self.end_iter_loc = 20000
-                    self.vortSDF_renderer_fine.mask_reg = 1.0e-1
+                    self.vortSDF_renderer_fine.mask_reg = 1.0e-2
                     self.learning_rate_alpha = 1.0e-2
 
                 if (iter_step+1) == 50000:
@@ -1020,7 +1022,7 @@ class Runner:
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
                     self.s_w = 1.0e-4 #2.0e-6
-                    self.e_w = 1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
+                    self.e_w = 1.0e-7 #1.0e-9 #1.0e-7 #5.0e-3
                     self.tv_w = 5.0e-5 #1.0e-8 #1.0e-1
                     self.tv_f = 0.0 #1.0e-4
                     self.f_w = 1.0
@@ -1028,7 +1030,7 @@ class Runner:
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-4
-                    self.vortSDF_renderer_fine.mask_reg = 1.0e-1
+                    self.vortSDF_renderer_fine.mask_reg = 1.0e-2
                     self.learning_rate_alpha = 1.0e-4
                     
                 if (iter_step+1) == 70000:
@@ -1040,15 +1042,15 @@ class Runner:
                     """self.s_w = 1.0e-2
                     self.e_w = 1.0e-4
                     self.tv_w = 1.0e-2"""
-                    self.s_w = 1.0e-4 #5.0e-4
+                    self.s_w = 1.0e-5 #5.0e-4
                     self.e_w = 1.0e-9
-                    self.tv_w = 5.0e-5 #1.0e-4 #1.0e-3
+                    self.tv_w = 5.0e-6 #1.0e-4 #1.0e-3
                     self.tv_f = 0.0 #1.0e-3
                     self.end_iter_loc = 20000
-                    self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 1.0e-4
-                    self.learning_rate_feat = 1.0e-4
-                    self.vortSDF_renderer_fine.mask_reg = 1.0e-1
+                    self.learning_rate = 5e-5
+                    self.learning_rate_sdf = 5.0e-5
+                    self.learning_rate_feat = 5.0e-5
+                    self.vortSDF_renderer_fine.mask_reg = 1.0e-3
                     self.learning_rate_alpha = 1.0e-8
                     self.val_freq = 2000
                     #verbose = True

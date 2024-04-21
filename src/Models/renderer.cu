@@ -15,7 +15,7 @@
 #define FAKEINIT
 #endif
 
-#define STOP_TRANS 1.0e-8
+#define STOP_TRANS 1.0e-10
 #define CLIP_ALPHA 60.0
 #define BACK_R 0.5f
 #define BACK_G 0.5f
@@ -271,6 +271,8 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
     double sdf_prev_clamp, sdf_clamp, inv_clipped_p, inv_clipped;
     int id, id_prev;
 
+    float w_color = 1.0f;//  exp(-norm_2(Ctotal - TrueColor)/0.01f);
+
     int start = offsets[2 * n];
     int end = offsets[2 * n + 1];
     for (int t = start; t < start + end; t++) {        
@@ -317,7 +319,8 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
         
         
         ///////////////////////////////////////////////////////// Photometric loss
-        dalpha = Mask == 0.0f ? 0.0f : dot(grad_color_diff, dCtotal_dalpha);
+        //dalpha = Mask == 0.0f ? 0.0f : dot(grad_color_diff, dCtotal_dalpha);
+        dalpha = dot(grad_color_diff, dCtotal_dalpha);
         dc = grad_color_diff * contrib;
 
         sample_color_diff = Ctotal - color;
@@ -347,6 +350,9 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
         float w_photo = fabs(grad_space[12 * t]*rays[3*n] + grad_space[12 * t + 1]*rays[3*n+1] + grad_space[12 * t + 2]*rays[3*n+2]);
         dalpha = dalpha*w_photo;
 
+        //if (MaskReg < 0.01f)
+        //    dalpha = dalpha*w_color;
+
         //////////////////////////////////////////////////////////////
         float lambda = weights_seg[7*t + 6] ;
         for (int i = 0; i < 3; i++) {
@@ -374,11 +380,15 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
         // add total variation loss along the ray for color
         // float err_tv = 0.5 (color - color_prec)**2
 
-        if (Mask > 0.0f) {
+        /*if (MaskReg < 0.01f) {
+            grads_color[3 * t] = dc.x*w_color;
+            grads_color[3 * t + 1] = dc.y*w_color;
+            grads_color[3 * t + 2] = dc.z*w_color;
+        } else {*/
             grads_color[3 * t] = dc.x;
             grads_color[3 * t + 1] = dc.y;
             grads_color[3 * t + 2] = dc.z;
-        }
+        //}  
 
         Tpartial = Tpartial * alpha;
 
