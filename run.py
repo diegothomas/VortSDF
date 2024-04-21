@@ -331,15 +331,19 @@ class Runner:
         self.loc_iter = 0
         image_perm = self.get_image_perm()
         num_rays = self.batch_size
-        for iter_step in tqdm(range(self.end_iter)):
+
+        iter_step = 0
+        #for _ in tqdm(range(self.end_iter)):
+        while iter_step < self.end_iter:
             if iter_step % acc_it == 0:
                 img_idx = image_perm[iter_step % len(image_perm)].item() 
                 self.inv_s = min(self.s_max, self.loc_iter/self.R + self.s_start)
 
-            if img_idx == 6 or img_idx == 9 or img_idx == 13 or img_idx == 42 or img_idx == 50 or img_idx == 61 or img_idx == 67 or img_idx == 77 or img_idx == 80 or img_idx == 81 or img_idx == 117 or img_idx == 121 or img_idx == 122:
-                iter_step = iter_step - 1
+            if img_idx == 6 or img_idx == 9 or img_idx == 13 or img_idx == 42 or img_idx == 50 or img_idx == 61 or img_idx == 67 or img_idx == 77 or img_idx == 80 or img_idx == 81 or img_idx == 117 or img_idx == 121 or img_idx == 122:              
                 image_perm = self.get_image_perm()
                 continue
+
+            iter_step = iter_step + 1
 
             ## Generate rays
             if iter_step +1 < 2000:
@@ -1042,9 +1046,9 @@ class Runner:
                     """self.s_w = 1.0e-2
                     self.e_w = 1.0e-4
                     self.tv_w = 1.0e-2"""
-                    self.s_w = 1.0e-5 #5.0e-4
+                    self.s_w = 1.0e-4 #5.0e-4
                     self.e_w = 1.0e-9
-                    self.tv_w = 5.0e-6 #1.0e-4 #1.0e-3
+                    self.tv_w = 5.0e-8 #1.0e-4 #1.0e-3
                     self.tv_f = 0.0 #1.0e-3
                     self.end_iter_loc = 20000
                     self.learning_rate = 5e-5
