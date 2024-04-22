@@ -7,7 +7,6 @@ void render_cuda(
     float inv_s,
     float mask_reg,
     torch::Tensor sdf_seg,
-    torch::Tensor neighbors,
     torch::Tensor weights_seg,
     torch::Tensor color_samples,
     torch::Tensor true_color,
@@ -18,11 +17,8 @@ void render_cuda(
     torch::Tensor rays,
     torch::Tensor grads_sdf,
     torch::Tensor grads_color,
-    torch::Tensor grads_sdf_net,
-    torch::Tensor counter,
     torch::Tensor color_loss,
-    torch::Tensor mask_loss
-); 
+    torch::Tensor mask_loss); 
 
 void normalize_grads_cuda(
     size_t num_sites,
@@ -89,7 +85,6 @@ void render(
     inv_s,
     mask_reg,
     sdf_seg,
-    neighbors,
     weights_seg,
     color_samples,
     true_color,
@@ -100,8 +95,6 @@ void render(
     rays,
     grads_sdf,
     grads_color,
-    grads_sdf_net,
-    counter,
     color_loss,
     mask_loss  );
 }

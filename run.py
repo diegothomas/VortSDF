@@ -506,7 +506,7 @@ class Runner:
             self.viewdirs_emb[:nb_samples, 6:9] = self.viewdirs_emb[:nb_samples, 9:12].cos()"""
 
             if self.double_net:
-                coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:], self.out_grads[:nb_samples,:], self.out_feat[:nb_samples,:32]], -1)       
+                coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:2], self.out_grads[:nb_samples,:], self.out_feat[:nb_samples,:32]], -1)       
                 #coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.geo_features[:nb_samples,:]], -1)       
                 #coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:]], -1)       
                 coarse_feat.requires_grad_(True)
@@ -540,14 +540,14 @@ class Runner:
                     self.rgb_feat[:nb_samples, 45:47] = self.out_sdf[:nb_samples,:]
                     self.rgb_feat[:nb_samples, 47:59] = self.out_grads[:nb_samples,:]
                     self.rgb_feat[:nb_samples, 59:] = self.out_feat[:nb_samples,:32]"""
-                    rgb_feat = torch.cat([xyz_emb, viewdirs_emb, colors_feat, self.out_sdf[:nb_samples,:], self.out_grads[:nb_samples,:], self.out_feat[:nb_samples,:32]], -1)
+                    rgb_feat = torch.cat([xyz_emb, viewdirs_emb, colors_feat, self.out_sdf[:nb_samples,:2], self.out_grads[:nb_samples,:], self.out_feat[:nb_samples,:32]], -1)
                 else:
-                    rgb_feat = torch.cat([viewdirs_emb, colors_feat.detach(), self.out_sdf[:nb_samples,:], self.out_grads[:nb_samples,:], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
+                    rgb_feat = torch.cat([viewdirs_emb, colors_feat.detach(), self.out_sdf[:nb_samples,:2], self.out_grads[:nb_samples,:], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
             else:
                 if self.position_encoding:
-                    rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:], self.out_grads[:nb_samples,:], self.out_feat[:nb_samples,:]], -1)
+                    rgb_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:2], self.out_grads[:nb_samples,:], self.out_feat[:nb_samples,:]], -1)
                 else:
-                    rgb_feat = torch.cat([viewdirs_emb, self.out_sdf[:nb_samples,:], self.out_grads[:nb_samples,:], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
+                    rgb_feat = torch.cat([viewdirs_emb, self.out_sdf[:nb_samples,:2], self.out_grads[:nb_samples,:], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
                 
             rgb_feat.requires_grad_(True)
             rgb_feat.retain_grad()
@@ -616,14 +616,14 @@ class Runner:
             start = timer()
             self.grad_features[:] = 0.0
             self.counter[:] = 0.0
-            backprop_cuda.backprop_feat(nb_samples, self.sites.shape[0], self.dim_feats, self.grad_features, self.counter, self.fine_features_grad, self.out_ids, self.out_weights)  
+            backprop_cuda.backprop_feat(nb_samples, self.sites.shape[0], self.dim_feats, self.out_sdf, self.grad_features, self.counter, self.fine_features_grad, self.out_ids, self.out_weights)  
             if verbose:
                 print('backprop_feat samples time:', timer() - start)
                 
             start = timer()
             self.grad_norm_feat[:] = 0.0
             self.counter[:] = 0.0
-            backprop_cuda.backprop_feat(nb_samples, self.sites.shape[0], 12, self.grad_norm_feat, self.counter, self.norm_features_grad, self.out_ids, self.out_weights)
+            backprop_cuda.backprop_grad(nb_samples, self.sites.shape[0], 12, self.out_sdf, self.grad_norm_feat, self.counter, self.norm_features_grad, self.out_ids, self.out_weights)
             self.grad_norm[:,:] = self.grad_norm_feat[:,:3]
             #self.grad_features[:,8:] = 0.0
 
@@ -1030,7 +1030,7 @@ class Runner:
                     self.learning_rate_alpha = 1.0e-4
                     
                 if (iter_step+1) == 70000:
-                    self.R = 40
+                    self.R = 20
                     self.s_start = 600.0 #400
                     self.s_max = 4000
                     #self.sigma = 0.01
@@ -1397,7 +1397,7 @@ class Runner:
         self.out_z = torch.zeros([self.n_samples * self.batch_size,2], dtype=torch.float32).cuda()
         self.out_z = self.out_z.contiguous()
         
-        self.out_sdf = torch.zeros([self.n_samples * self.batch_size, 2], dtype=torch.float32).cuda()
+        self.out_sdf = torch.zeros([self.n_samples * self.batch_size, 3], dtype=torch.float32).cuda()
         self.out_sdf = self.out_sdf.contiguous()
         
         self.out_feat = torch.zeros([self.n_samples * self.batch_size, self.dim_feats], dtype=torch.float32).cuda()
