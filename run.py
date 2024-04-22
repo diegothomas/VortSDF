@@ -332,18 +332,10 @@ class Runner:
         image_perm = self.get_image_perm()
         num_rays = self.batch_size
 
-        iter_step = 0
-        #for _ in tqdm(range(self.end_iter)):
-        while iter_step < self.end_iter:
+        for iter_step in tqdm(range(self.end_iter)):
             if iter_step % acc_it == 0:
                 img_idx = image_perm[iter_step % len(image_perm)].item() 
                 self.inv_s = min(self.s_max, self.loc_iter/self.R + self.s_start)
-
-            if img_idx == 6 or img_idx == 9 or img_idx == 13 or img_idx == 42 or img_idx == 50 or img_idx == 61 or img_idx == 67 or img_idx == 77 or img_idx == 80 or img_idx == 81 or img_idx == 117 or img_idx == 121 or img_idx == 122:              
-                image_perm = self.get_image_perm()
-                continue
-
-            iter_step = iter_step + 1
 
             ## Generate rays
             if iter_step +1 < 2000:
@@ -401,8 +393,8 @@ class Runner:
             if verbose:
                 print('activate time:', timer() - start)   
                 
-            if iter_step % 3 == 0:
-                self.activated[:] = 1
+            #if iter_step % 3 == 0:
+            #    self.activated[:] = 1
 
             ############ Compute spatial SDF gradients
             if iter_step % acc_it == 0:
@@ -832,13 +824,13 @@ class Runner:
                                                 self.s_w*self.grad_norm_smooth  +\
                                                 self.tv_w*self.grad_sdf_smooth) 
                 else:
-                    """self.grad_norm_smooth[self.sdf.grad[:] == 0.0] = 0.0
+                    self.grad_norm_smooth[self.sdf.grad[:] == 0.0] = 0.0
                     self.grad_eik[self.sdf.grad[:] == 0.0] = 0.0
-                    self.grad_sdf_smooth[self.sdf.grad[:] == 0.0] = 0.0"""
-                    if not iter_step % 3 == 0:
+                    self.grad_sdf_smooth[self.sdf.grad[:] == 0.0] = 0.0
+                    """if not iter_step % 3 == 0:
                         self.grad_norm_smooth[:] = 0.0
                         self.grad_eik[:] = 0.0
-                        self.grad_sdf_smooth[:] = 0.0
+                        self.grad_sdf_smooth[:] = 0.0"""
                     """self.grad_norm_smooth[self.activated[:] < 2] = 0.0
                     self.grad_eik[self.activated[:] < 2] = 0.0
                     self.grad_sdf_smooth[self.activated[:] < 2] = 0.0"""
@@ -869,7 +861,7 @@ class Runner:
                 #if self.sites.shape[0] > 500000:
                 #    self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, 0.0) #(iter_step+1) > 2000
                 #else:
-                self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, self.sigma)
+                self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, (iter_step+1) > 30000, self.sigma)
                 self.sdf = self.sdf.contiguous()
                 self.sdf.requires_grad_(True)
                 self.fine_features = self.fine_features.contiguous()
@@ -1048,7 +1040,7 @@ class Runner:
                     self.tv_w = 1.0e-2"""
                     self.s_w = 1.0e-4 #5.0e-4
                     self.e_w = 1.0e-9
-                    self.tv_w = 5.0e-8 #1.0e-4 #1.0e-3
+                    self.tv_w = 5.0e-6 #1.0e-4 #1.0e-3
                     self.tv_f = 0.0 #1.0e-3
                     self.end_iter_loc = 20000
                     self.learning_rate = 5e-5
