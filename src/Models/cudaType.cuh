@@ -78,12 +78,24 @@ inline __device__ float3 operator*(float3 a, float s) {
     return make_float3(a.x * s, a.y * s, a.z * s);
 }
 
+inline __device__ float3 operator*(float s, float3 a) {
+    return make_float3(a.x * s, a.y * s, a.z * s);
+}
+
+inline __device__ float4 operator*(float s, float4 a) {
+    return make_float4(a.x * s, a.y * s, a.z * s, a.w * s);
+}
+
 inline __device__ float3 operator/(float3 a, float s) {
     return make_float3(a.x / s, a.y / s, a.z / s);
 }
 
 inline __device__ float3 operator+(float3 a, float3 b) {
     return make_float3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+
+inline __device__ float4 operator+(float4 a, float4 b) {
+    return make_float4(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w);
 }
 
 inline __device__ float3 operator-(float3 a, float3 b) {

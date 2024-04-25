@@ -126,15 +126,145 @@ __global__ void backprop_multi_kernel(
     return;
 }
 
-
-
 __global__ void backprop_feat_kernel(
+    const size_t num_samples,
+    const size_t dim_feats,
+    float *__restrict__ sdf,
+    float *__restrict__ grad_feat,
+    float *__restrict__ counter,
+    const float *__restrict__ grad_samples,
+    const int *__restrict__ cell_ids,
+    const float *__restrict__ cell_weights)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_samples)
+    {
+        return;
+    }
+
+    int id_prev, id;
+    ////////////////////////Linear interpolation//////////////////////////
+    //////////////////////////////////////////////////////////////
+    float lamda = sdf[3*idx + 2] ;
+    for (int i = 0; i < 3; i++) {
+        id_prev = cell_ids[6 * idx + i];
+        id = cell_ids[6 * idx + 3 + i];
+        for (int k = 0; k < dim_feats; k++) {    
+            atomicAdd(&grad_feat[dim_feats * id_prev + k], cell_weights[6*idx + i] * lamda * grad_samples[dim_feats * idx + k]);              
+            atomicAdd(&grad_feat[dim_feats * id + k], cell_weights[6*idx + 3 + i] * (1.0f - lamda) * grad_samples[dim_feats * idx + k]);
+        }
+    }
+    return;
+}
+
+__global__ void backprop_feat_kernel_o(
     const size_t num_samples,
     const size_t dim_feats,
     float3 *__restrict__ sdf,
     float4 *__restrict__ grad_feat,
     float *__restrict__ counter,
     const float4 *__restrict__ grad_samples,
+    const int3 *__restrict__ cell_ids,
+    const float3 *__restrict__ cell_weights)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_samples)
+    {
+        return;
+    }
+
+    ////////////////////////Linear interpolation//////////////////////////
+    //////////////////////////////////////////////////////////////
+    float lamda = sdf[idx].z ;
+    int3 id_prev = cell_ids[2 * idx ];
+    int3 id = cell_ids[2 * idx + 1];
+
+    float3 cell_weights_prev = cell_weights[2 * idx ];
+    float3 cell_weights_curr = cell_weights[2 * idx + 1];
+
+    float4 val;
+    for (int k = 0; k < dim_feats; k++) {    
+        val = grad_samples[dim_feats * idx + k];
+        atomicAdd(&(grad_feat[dim_feats * id_prev.x + k].x), cell_weights_prev.x * lamda * val.x);
+        atomicAdd(&(grad_feat[dim_feats * id_prev.x + k].y), cell_weights_prev.x * lamda * val.y);
+        atomicAdd(&(grad_feat[dim_feats * id_prev.x + k].z), cell_weights_prev.x * lamda * val.z);
+        atomicAdd(&(grad_feat[dim_feats * id_prev.x + k].w), cell_weights_prev.x * lamda * val.w);
+        //atomicAdd(&grad_feat[dim_feats * id_prev.x + k], cell_weights_prev.x * lamda * grad_samples[dim_feats * idx + k]);
+        
+        //val = cell_weights_curr.x * (1.0f - lamda) * grad_samples[dim_feats * idx + k];   
+        atomicAdd(&(grad_feat[dim_feats * id.x + k].x), cell_weights_curr.x * (1.0f - lamda) * val.x);
+        atomicAdd(&(grad_feat[dim_feats * id.x + k].y), cell_weights_curr.x * (1.0f - lamda) * val.y);
+        atomicAdd(&(grad_feat[dim_feats * id.x + k].z), cell_weights_curr.x * (1.0f - lamda) * val.z);      
+        atomicAdd(&(grad_feat[dim_feats * id.x + k].w), cell_weights_curr.x * (1.0f - lamda) * val.w);     
+        //atomicAdd(&grad_feat[dim_feats * id.x + k], cell_weights_curr.x * (1.0f - lamda) * grad_samples[dim_feats * idx + k]);
+        
+        //val = cell_weights_prev.y * lamda * grad_samples[dim_feats * idx + k];     
+        atomicAdd(&(grad_feat[dim_feats * id_prev.y + k].x), cell_weights_prev.y * lamda * val.x);
+        atomicAdd(&(grad_feat[dim_feats * id_prev.y + k].y), cell_weights_prev.y * lamda * val.y);
+        atomicAdd(&(grad_feat[dim_feats * id_prev.y + k].z), cell_weights_prev.y * lamda * val.z);     
+        atomicAdd(&(grad_feat[dim_feats * id_prev.y + k].w), cell_weights_prev.y * lamda * val.w);      
+        //atomicAdd(&grad_feat[dim_feats * id_prev.y + k], cell_weights_prev.y * lamda * grad_samples[dim_feats * idx + k]);     
+
+        //val = cell_weights_curr.y * (1.0f - lamda) * grad_samples[dim_feats * idx + k];   
+        atomicAdd(&(grad_feat[dim_feats * id.y + k].x), cell_weights_curr.y * (1.0f - lamda) * val.x);
+        atomicAdd(&(grad_feat[dim_feats * id.y + k].y), cell_weights_curr.y * (1.0f - lamda) * val.y);
+        atomicAdd(&(grad_feat[dim_feats * id.y + k].z), cell_weights_curr.y * (1.0f - lamda) * val.z);     
+        atomicAdd(&(grad_feat[dim_feats * id.y + k].w), cell_weights_curr.y * (1.0f - lamda) * val.w);  
+        //atomicAdd(&grad_feat[dim_feats * id.y + k], cell_weights_curr.y * (1.0f - lamda) * grad_samples[dim_feats * idx + k]);
+        
+        //val = cell_weights_prev.z * lamda * grad_samples[dim_feats * idx + k];   
+        atomicAdd(&(grad_feat[dim_feats * id_prev.z + k].x), cell_weights_prev.z * lamda * val.x);
+        atomicAdd(&(grad_feat[dim_feats * id_prev.z + k].y), cell_weights_prev.z * lamda * val.y);
+        atomicAdd(&(grad_feat[dim_feats * id_prev.z + k].z), cell_weights_prev.z * lamda * val.z);    
+        atomicAdd(&(grad_feat[dim_feats * id_prev.z + k].w), cell_weights_prev.z * lamda * val.w); 
+        //atomicAdd(&grad_feat[dim_feats * id_prev.z + k], cell_weights_prev.z * lamda * grad_samples[dim_feats * idx + k]);              
+        
+        //val = cell_weights_curr.z * (1.0f - lamda) * grad_samples[dim_feats * idx + k];   
+        atomicAdd(&(grad_feat[dim_feats * id.z + k].x), cell_weights_curr.z * (1.0f - lamda) * val.x);
+        atomicAdd(&(grad_feat[dim_feats * id.z + k].y), cell_weights_curr.z * (1.0f - lamda) * val.y);
+        atomicAdd(&(grad_feat[dim_feats * id.z + k].z), cell_weights_curr.z * (1.0f - lamda) * val.z);     
+        atomicAdd(&(grad_feat[dim_feats * id.z + k].w), cell_weights_curr.z * (1.0f - lamda) * val.w);  
+        //atomicAdd(&grad_feat[dim_feats * id.xz + k], cell_weights_curr.z * (1.0f - lamda) * grad_samples[dim_feats * idx + k]);*/
+    }
+
+    return;
+}
+
+
+__global__ void backprop_grad_kernel(
+    const size_t num_samples,
+    float *__restrict__ sdf,
+    float *__restrict__ grad_sites,
+    const float *__restrict__ grad_samples,
+    const int *__restrict__ cell_ids,
+    const float *__restrict__ cell_weights)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_samples)
+    {
+        return;
+    }
+
+    int id_prev, id;
+    ////////////////////////Linear interpolation//////////////////////////
+    //////////////////////////////////////////////////////////////
+    float lamda = sdf[3*idx + 2] ;
+    for (int i = 0; i < 3; i++) {
+        id_prev = cell_ids[6 * idx + i];
+        id = cell_ids[6 * idx + 3 + i];
+        for (int k = 0; k < 3; k++) {    
+            atomicAdd(&grad_sites[3 * id_prev + k], cell_weights[6*idx + i] * lamda * grad_samples[12 * idx + k]);              
+            atomicAdd(&grad_sites[3 * id + k], cell_weights[6*idx + 3 + i] * (1.0f - lamda) * grad_samples[12 * idx + k]);
+        }
+    }
+    return;
+}
+
+__global__ void backprop_grad_kernel_o(
+    const size_t num_samples,
+    float3 *__restrict__ sdf,
+    float3 *__restrict__ grad_sites,
+    const float3 *__restrict__ grad_samples,
     const int3 *__restrict__ cell_ids,
     const float3 *__restrict__ cell_weights)
 {
@@ -154,15 +284,44 @@ __global__ void backprop_feat_kernel(
     float3 cell_weights_prev = cell_weights[2 * idx ];
     float3 cell_weights_curr = cell_weights[2 * idx + 1];
 
-    for (int k = 0; k < dim_feats; k++) {    
-        atomicAdd(&grad_feat[dim_feats * id_prev.x + k], cell_weights_prev.x * lamda * grad_samples[dim_feats * idx + k]);              
-        atomicAdd(&grad_feat[dim_feats * id.x + k], cell_weights_curr.x * (1.0f - lamda) * grad_samples[dim_feats * idx + k]);
+    float3 val;
+    for (int k = 0; k < 4; k++) {    
+        val = grad_samples[4 * idx + k];
+        //val = cell_weights_prev.x * lamda * grad_samples[4 * idx + k];
+        atomicAdd(&(grad_sites[4 * id_prev.x + k].x), cell_weights_prev.x * lamda * val.x);
+        atomicAdd(&(grad_sites[4 * id_prev.x + k].y), cell_weights_prev.x * lamda * val.y);
+        atomicAdd(&(grad_sites[4 * id_prev.x + k].z), cell_weights_prev.x * lamda * val.z);
+        //atomicAdd(&grad_sites[4 * id_prev.x + k], cell_weights_prev.x * lamda * grad_samples[4 * idx + k]);              
         
-        atomicAdd(&grad_feat[dim_feats * id_prev.y + k], cell_weights_prev.y * lamda * grad_samples[dim_feats * idx + k]);              
-        atomicAdd(&grad_feat[dim_feats * id.y + k], cell_weights_curr.y * (1.0f - lamda) * grad_samples[dim_feats * idx + k]);
+        //val = cell_weights_curr.x * (1.0f - lamda) * grad_samples[4 * idx + k];
+        atomicAdd(&(grad_sites[4 * id.x + k].x), cell_weights_curr.x * (1.0f - lamda) * val.x);
+        atomicAdd(&(grad_sites[4 * id.x + k].y), cell_weights_curr.x * (1.0f - lamda) * val.y);
+        atomicAdd(&(grad_sites[4 * id.x + k].z), cell_weights_curr.x * (1.0f - lamda) * val.z);
+        //atomicAdd(&grad_sites[4 * id.x + k], cell_weights_curr.x * (1.0f - lamda) * grad_samples[4 * idx + k]);
         
-        atomicAdd(&grad_feat[dim_feats * id_prev.z + k], cell_weights_prev.z * lamda * grad_samples[dim_feats * idx + k]);              
-        atomicAdd(&grad_feat[dim_feats * id.xz + k], cell_weights_curr.z * (1.0f - lamda) * grad_samples[dim_feats * idx + k]);
+        //val = cell_weights_prev.y * lamda * grad_samples[4 * idx + k];
+        atomicAdd(&(grad_sites[4 * id_prev.y + k].x), cell_weights_prev.y * lamda * val.x);
+        atomicAdd(&(grad_sites[4 * id_prev.y + k].y), cell_weights_prev.y * lamda * val.y);
+        atomicAdd(&(grad_sites[4 * id_prev.y + k].z), cell_weights_prev.y * lamda * val.z);
+        //atomicAdd(&grad_feat[4 * id_prev.y + k], cell_weights_prev.y * lamda * grad_samples[4 * idx + k]);              
+        
+        //val = cell_weights_curr.y * (1.0f - lamda) * grad_samples[4 * idx + k];
+        atomicAdd(&(grad_sites[4 * id.y + k].x), cell_weights_curr.y * (1.0f - lamda) * val.x);
+        atomicAdd(&(grad_sites[4 * id.y + k].y), cell_weights_curr.y * (1.0f - lamda) * val.y);
+        atomicAdd(&(grad_sites[4 * id.y + k].z), cell_weights_curr.y * (1.0f - lamda) * val.z);
+        //atomicAdd(&grad_feat[4 * id.y + k], cell_weights_curr.y * (1.0f - lamda) * grad_samples[4 * idx + k]);
+        
+        //val = cell_weights_prev.z * lamda * grad_samples[4 * idx + k];
+        atomicAdd(&(grad_sites[4 * id_prev.z + k].x), cell_weights_prev.z * lamda * val.x);
+        atomicAdd(&(grad_sites[4 * id_prev.z + k].y), cell_weights_prev.z * lamda * val.y);
+        atomicAdd(&(grad_sites[4 * id_prev.z + k].z), cell_weights_prev.z * lamda * val.z);
+        //atomicAdd(&grad_feat[4 * id_prev.z + k], cell_weights_prev.z * lamda * grad_samples[4 * idx + k]);              
+        
+        //val = cell_weights_curr.z * (1.0f - lamda) * grad_samples[4 * idx + k];
+        atomicAdd(&(grad_sites[4 * id.z + k].x), cell_weights_curr.z * (1.0f - lamda) * val.x);
+        atomicAdd(&(grad_sites[4 * id.z + k].y), cell_weights_curr.z * (1.0f - lamda) * val.y);
+        atomicAdd(&(grad_sites[4 * id.z + k].z), cell_weights_curr.z * (1.0f - lamda) * val.z);
+        //atomicAdd(&grad_feat[4 * id.xz + k], cell_weights_curr.z * (1.0f - lamda) * grad_samples[4 * idx + k]);
     }
 
     return;
@@ -171,10 +330,11 @@ __global__ void backprop_feat_kernel(
 
 __global__ void backprop_sdf_kernel(
     const size_t num_samples,
+    float3 *__restrict__ sdf,
     float *__restrict__ grad_sdf,
-    const float *__restrict__ grad_sdf_samples,
-    const int *__restrict__ cell_ids,
-    const float *__restrict__ cell_weights)
+    const float2 *__restrict__ grad_sdf_samples,
+    const int3 *__restrict__ cell_ids,
+    const float3 *__restrict__ cell_weights)
 {
     const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= num_samples)
@@ -182,17 +342,25 @@ __global__ void backprop_sdf_kernel(
         return;
     }
 
-    int id_prev, id;
+    int3 id_prev, id;
     ////////////////////////Linear interpolation//////////////////////////
     //////////////////////////////////////////////////////////////
-    float lamda = cell_weights[7*idx + 6] ;
-    for (int i = 0; i < 3; i++) {
-        id_prev = cell_ids[6 * idx + i];
-        id = cell_ids[6 * idx + 3 + i];
+    float lamda = sdf[idx].z ;
+    id_prev = cell_ids[2 * idx ];
+    id = cell_ids[2 * idx + 1];
 
-        atomicAdd(&grad_sdf[id_prev], cell_weights[7*idx + i] * grad_sdf_samples[2 * idx]);       
-        atomicAdd(&grad_sdf[id], cell_weights[7*idx + 3 + i] * grad_sdf_samples[2 * idx + 1]);    
-    }
+    float3 cell_weights_prev = cell_weights[2 * idx ];
+    float3 cell_weights_curr = cell_weights[2 * idx + 1];
+    float2 grad_curr = grad_sdf_samples[idx];
+
+    atomicAdd(&grad_sdf[id_prev.x], cell_weights_prev.x * grad_curr.x);       
+    atomicAdd(&grad_sdf[id.x], cell_weights_curr.x * grad_curr.y);  
+    
+    atomicAdd(&grad_sdf[id_prev.y], cell_weights_prev.y * grad_curr.x);       
+    atomicAdd(&grad_sdf[id.y], cell_weights_curr.y * grad_curr.y);  
+    
+    atomicAdd(&grad_sdf[id_prev.z], cell_weights_prev.z * grad_curr.x);       
+    atomicAdd(&grad_sdf[id.z], cell_weights_curr.z * grad_curr.y);  
 
     return;
 }
@@ -1251,6 +1419,19 @@ void backprop_feat_cuda(
         backprop_feat_kernel CUDA_KERNEL(blocks,threads) (
             num_samples,
             dim_feats,
+            sdf.data_ptr<float>(),
+            grad_feat.data_ptr<float>(),
+            counter.data_ptr<float>(),
+            grad_samples.data_ptr<float>(),
+            cell_ids.data_ptr<int>(),
+            cell_weights.data_ptr<float>());
+    }));
+    cudaDeviceSynchronize();
+
+    /*AT_DISPATCH_FLOATING_TYPES( grad_feat.type(),"backprop_feat_kernel_o", ([&] {  
+        backprop_feat_kernel_o CUDA_KERNEL(blocks,threads) (
+            num_samples,
+            dim_feats,
             (float3*)thrust::raw_pointer_cast(sdf.data_ptr<float>()),
             (float4*)thrust::raw_pointer_cast(grad_feat.data_ptr<float>()),
             counter.data_ptr<float>(),
@@ -1258,7 +1439,7 @@ void backprop_feat_cuda(
             (int3*)thrust::raw_pointer_cast(cell_ids.data_ptr<int>()),
             (float3*)thrust::raw_pointer_cast(cell_weights.data_ptr<float>()));
     }));
-    cudaDeviceSynchronize();
+    cudaDeviceSynchronize();*/
     
     /*const int threads2 = 512;
     const int blocks2 = (num_sites + threads2 - 1) / threads2; // ceil for example 8192 + 255 / 256 = 32
@@ -1272,10 +1453,47 @@ void backprop_feat_cuda(
     cudaDeviceSynchronize();*/
 }
 
+// *************************
+void backprop_grad_cuda(
+    size_t num_samples,
+    size_t num_sites,
+    torch::Tensor sdf,
+    torch::Tensor grad_sites,
+    torch::Tensor grad_samples,
+    torch::Tensor cell_ids,
+    torch::Tensor cell_weights 
+)
+{
+    const int threads = 1024;
+    const int blocks = (num_samples + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+    AT_DISPATCH_FLOATING_TYPES( grad_sites.type(),"backprop_grad_kernel", ([&] {  
+        backprop_grad_kernel CUDA_KERNEL(blocks,threads) (
+            num_samples,
+            sdf.data_ptr<float>(),
+            grad_sites.data_ptr<float>(),
+            grad_samples.data_ptr<float>(),
+            cell_ids.data_ptr<int>(),
+            cell_weights.data_ptr<float>());
+    }));
+    cudaDeviceSynchronize();
+
+    /*AT_DISPATCH_FLOATING_TYPES( grad_sites.type(),"backprop_grad_kernel_o", ([&] {  
+        backprop_grad_kernel_o CUDA_KERNEL(blocks,threads) (
+            num_samples,
+            (float3*)thrust::raw_pointer_cast(sdf.data_ptr<float>()),
+            (float3*)thrust::raw_pointer_cast(grad_sites.data_ptr<float>()),
+            (float3*)thrust::raw_pointer_cast(grad_samples.data_ptr<float>()),
+            (int3*)thrust::raw_pointer_cast(cell_ids.data_ptr<int>()),
+            (float3*)thrust::raw_pointer_cast(cell_weights.data_ptr<float>()));
+    }));
+    cudaDeviceSynchronize();*/
+}
+
 
 // *************************
 void backprop_sdf_cuda(
     size_t num_samples,
+    torch::Tensor sdf,
     torch::Tensor grad_sdf,
     torch::Tensor grad_sdf_samples,
     torch::Tensor cell_ids,
@@ -1287,10 +1505,11 @@ void backprop_sdf_cuda(
     AT_DISPATCH_FLOATING_TYPES( grad_sdf.type(),"backprop_sdf_kernel", ([&] {  
         backprop_sdf_kernel CUDA_KERNEL(blocks,threads) (
             num_samples,
+            (float3*)thrust::raw_pointer_cast(sdf.data_ptr<float>()),
             grad_sdf.data_ptr<float>(),
-            grad_sdf_samples.data_ptr<float>(),
-            cell_ids.data_ptr<int>(),
-            cell_weights.data_ptr<float>());
+            (float2*)thrust::raw_pointer_cast(grad_sdf_samples.data_ptr<float>()),
+            (int3*)thrust::raw_pointer_cast(cell_ids.data_ptr<int>()),
+            (float3*)thrust::raw_pointer_cast(cell_weights.data_ptr<float>()));
     }));
     cudaDeviceSynchronize();
 }

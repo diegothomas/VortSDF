@@ -63,6 +63,15 @@ class Runner:
         self.extrinsics = self.extrinsics.float().flatten().cuda().contiguous()
 
         
+        self.data_dir = self.conf['dataset'].get_string('data_dir')
+        self.data_dir = self.data_dir.replace('DATA_NAME', data_name)
+        f = open(self.data_dir+ "/bbox.conf")
+        conf_text = f.read()
+        f.close()
+        self.conf_bbox = ConfigFactory.parse_string(conf_text)
+        self.visual_hull = self.conf_bbox['visual_hull']
+        print(self.visual_hull)
+        
         # Training parameters
         self.end_iter = self.conf.get_int('train.end_iter')
         self.n_samples = self.conf.get_int('model.cvt_renderer.n_samples')
@@ -623,7 +632,7 @@ class Runner:
             start = timer()
             self.grad_norm_feat[:] = 0.0
             self.counter[:] = 0.0
-            backprop_cuda.backprop_grad(nb_samples, self.sites.shape[0], 12, self.out_sdf, self.grad_norm_feat, self.counter, self.norm_features_grad, self.out_ids, self.out_weights)
+            backprop_cuda.backprop_grad(nb_samples, self.sites.shape[0], self.out_sdf, self.grad_norm_feat, self.norm_features_grad, self.out_ids, self.out_weights)
             self.grad_norm[:,:] = self.grad_norm_feat[:,:3]
             #self.grad_features[:,8:] = 0.0
 
@@ -649,7 +658,7 @@ class Runner:
 
             start = timer()
             self.grad_sdf_net[:] = 0.0
-            backprop_cuda.backprop_sdf(nb_samples, self.grad_sdf_net, self.sdf_features_grad, self.out_ids, self.out_weights)    
+            backprop_cuda.backprop_sdf(nb_samples, self.out_sdf, self.grad_sdf_net, self.sdf_features_grad, self.out_ids, self.out_weights)    
             ##backprop_cuda.backprop_norm(nb_samples, self.grad_sdf_net, self.grad_norm_feat, self.weights_grad)  
             self.grad_sdf_net[outside_flag[:] == 1] = 0.0   
             self.grad_sdf_net[ext_flag[:] == 1] = 0.0   
@@ -957,8 +966,8 @@ class Runner:
                     self.tv_w = 0.0#5.0e-3 #1.0e-1
                     self.s_start = 50.0
                     self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 1.0e-3
-                    self.learning_rate_feat = 1.0e-3
+                    self.learning_rate_sdf = 5.0e-4
+                    self.learning_rate_feat = 5.0e-4
                     self.end_iter_loc = 8000
                     self.learning_rate_alpha = 1.0e-8
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-1
@@ -1084,7 +1093,7 @@ class Runner:
                 #print('iter:{:8>d} loss CVT = {} lr={}'.format(iter_step, loss_cvt, self.optimizer_cvt.param_groups[0]['lr']))
                 
 
-            if iter_step % self.val_freq == 0:
+            if verbose and iter_step % self.val_freq == 0:
                 #self.inv_s = 1000     
                 #self.render_image(cam_ids, img_idx)
                 with torch.no_grad():
@@ -1403,7 +1412,7 @@ class Runner:
         self.out_feat = torch.zeros([self.n_samples * self.batch_size, self.dim_feats], dtype=torch.float32).cuda()
         self.out_feat = self.out_feat.contiguous()
         
-        self.out_weights = torch.zeros([self.n_samples * self.batch_size, 7], dtype=torch.float32).cuda()
+        self.out_weights = torch.zeros([self.n_samples * self.batch_size, 6], dtype=torch.float32).cuda()
         self.out_weights = self.out_weights.contiguous()
         
         self.out_grads = torch.zeros([self.n_samples * self.batch_size, 12], dtype=torch.float32).cuda().contiguous()

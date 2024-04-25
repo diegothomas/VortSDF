@@ -843,7 +843,7 @@ __global__ void tet32_march_cuda_kernel_o(
 		int fact_s = int(contrib_tet * 4.0f);
 		
 		if (prev_tet_id != -1) { 
-			if (((prev_dist > 0.1f && prev_sdf > next_sdf && 
+			if (((/*prev_dist > 0.1f &&*/ prev_sdf > next_sdf && 
 					(next_sdf == -1000.0f || alpha_tet < 1.0f)))) {
 					//fmin(fabs(next_sdf), fabs(prev_sdf))*inv_s < 2.0*CLIP_ALPHA)))) {
 				z_val_ray[s_id] = make_float2(prev_dist, curr_dist);
@@ -954,18 +954,19 @@ __global__ void fill_samples_kernel(
         out_z[2*i] = in_z_rays[2*s_id];
 		out_z[2*i + 1] = in_z_rays[2*s_id+1];
 
-        out_sdf[2*i] = in_sdf_rays[2*s_id];
-		out_sdf[2*i + 1] = in_sdf_rays[2*s_id+1];
+        out_sdf[3*i] = in_sdf_rays[2*s_id];
+		out_sdf[3*i + 1] = in_sdf_rays[2*s_id+1];
 
 		float lambda = 0.5f;
-		if (out_sdf[2*i]*out_sdf[2*i+1] <= 0.0f) {
-			lambda = fabs(out_sdf[2*i+1])/(fabs(out_sdf[2*i])+fabs(out_sdf[2*i+1]));
+		if (out_sdf[3*i]*out_sdf[3*i+1] <= 0.0f) {
+			lambda = fabs(out_sdf[3*i+1])/(fabs(out_sdf[3*i])+fabs(out_sdf[3*i+1]));
 			if (lambda < 0.5f) {
-				out_sdf[2*i] = 2.0f*lambda*out_sdf[2*i] + (1.0f-2.0f*lambda)*out_sdf[2*i+1];
+				out_sdf[3*i] = 2.0f*lambda*out_sdf[3*i] + (1.0f-2.0f*lambda)*out_sdf[3*i+1];
 			} else {
-				out_sdf[2*i+1] = (1.0-2.0f*lambda)*out_sdf[2*i] + (1.0f-(1.0-2.0f*lambda))*out_sdf[2*i+1];
+				out_sdf[3*i+1] = (1.0-2.0f*lambda)*out_sdf[3*i] + (1.0f-(1.0-2.0f*lambda))*out_sdf[3*i+1];
 			}
 		}
+		out_sdf[3*i+2] = lambda;
 
 		for (int l = 0; l < 6; l++) {
         	out_ids[6*i + l] = in_ids_rays[6 * s_id + l];
@@ -1033,8 +1034,8 @@ __global__ void fill_samples_kernel_o(
     float3 *__restrict__ out_grads,     // [N_voxels, 4] for each voxel => it's vertices
     int3 *__restrict__ out_ids,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ offset,     // [N_voxels, 4] for each voxel => it's vertices
-    float *__restrict__ samples,     // [N_voxels, 4] for each voxel => it's vertices
-    float *__restrict__ sample_rays     // [N_voxels, 4] for each voxel => it's vertices
+    float3 *__restrict__ samples,     // [N_voxels, 4] for each voxel => it's vertices
+    float3 *__restrict__ sample_rays     // [N_voxels, 4] for each voxel => it's vertices
 )
 {
     const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1085,13 +1086,13 @@ __global__ void fill_samples_kernel_o(
 												c_weights_n.z*in_grads[4*c_ids_n.z + l]);
 		}
 
-		for (int l = 0; l < DIM_L_FEAT; l++) {
-			out_feat[DIM_L_FEAT*i+l] = lambda*(c_weights.x*in_feat[DIM_L_FEAT*c_ids.x + l] +
-												c_weights.y*in_feat[DIM_L_FEAT*c_ids.y + l] +
-												c_weights.z*in_feat[DIM_L_FEAT*c_ids.z + l])
-							+ (1.0f-lambda)*(c_weights_n.x*in_feat[DIM_L_FEAT*c_ids_n.x + l] +
-												c_weights_n.y*in_feat[DIM_L_FEAT*c_ids_n.y + l] +
-												c_weights_n.z*in_feat[DIM_L_FEAT*c_ids_n.z + l]);
+		for (int l = 0; l < 8; l++) { // dim feats = 32 = 4*8
+			out_feat[8*i+l] = lambda*(c_weights.x*in_feat[8*c_ids.x + l] +
+												c_weights.y*in_feat[8*c_ids.y + l] +
+												c_weights.z*in_feat[8*c_ids.z + l])
+							+ (1.0f-lambda)*(c_weights_n.x*in_feat[8*c_ids_n.x + l] +
+												c_weights_n.y*in_feat[8*c_ids_n.y + l] +
+												c_weights_n.z*in_feat[8*c_ids_n.z + l]);
 		}
 
         sample_rays[i] = ray_d;	
@@ -1222,15 +1223,15 @@ void fill_samples_cuda(
 )   {
         const int threads = 1024;
         const int blocks = (num_rays + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
-        AT_DISPATCH_FLOATING_TYPES( rays_o.type(),"fill_samples_kernel", ([&] {  
-            fill_samples_kernel CUDA_KERNEL(blocks,threads) (
+        AT_DISPATCH_FLOATING_TYPES( rays_o.type(),"fill_samples_kernel_o", ([&] {  
+            fill_samples_kernel_o CUDA_KERNEL(blocks,threads) (
                 num_rays,
                 num_samples,
                 (float3*)thrust::raw_pointer_cast(rays_o.data_ptr<float>()),
                 (float3*)thrust::raw_pointer_cast(rays_d.data_ptr<float>()),
-                sites.data_ptr<float>(),
+                (float3*)thrust::raw_pointer_cast(sites.data_ptr<float>()),
                 (float2*)thrust::raw_pointer_cast(in_z.data_ptr<float>()),
-                (float3*)thrust::raw_pointer_cast(in_sdf.data_ptr<float>()),  
+                (float2*)thrust::raw_pointer_cast(in_sdf.data_ptr<float>()),  
                 (float4*)thrust::raw_pointer_cast(in_feat.data_ptr<float>()),    
                 (float3*)thrust::raw_pointer_cast(in_weights.data_ptr<float>()),    
                 (float3*)thrust::raw_pointer_cast(in_grads.data_ptr<float>()),     

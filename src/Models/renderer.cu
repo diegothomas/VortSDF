@@ -3,6 +3,7 @@
 #include <vector>
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <thrust/device_vector.h>
 
 #include <device_launch_parameters.h>
 #include "cudaType.cuh"
@@ -26,7 +27,7 @@
 /** Device functions **/
 /** Device functions **/
 /** Device functions **/
-__device__ const float HUBER_EPS = 1.5f / 255.0f;
+__device__ const float HUBER_EPS = 1.0f; //100.0f / 255.0f; //1.5f / 255.0f;
 
 __device__ float huber_loss(float3 x) 
 {
@@ -215,7 +216,7 @@ __global__ void render_no_sdf_kernel(
     }
     
     float Wtotal = 0.0f;
-    float4 color = trace_ray(sdf_seg, color_samples, offsets, &Wtotal, inv_s, idx);
+    float4 color;// = trace_ray(sdf_seg, color_samples, offsets, &Wtotal, inv_s, idx);
 
     //if (color.w < 1.0f) {
         float msk = mask[idx] > 0.5f ? 1.0f : 0.0f;
@@ -261,7 +262,8 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
 
     float alpha, dalpha_dsdf_p, dalpha_dsdf_n, dalpha, contrib;
     double sdf_prev_clamp, sdf_clamp, inv_clipped_p, inv_clipped;
-    int id, id_prev;
+    int3 id, id_prev;
+    float3 weights_seg_prev, weights_seg_next;
 
     float w_color = 1.0f;//  exp(-norm_2(Ctotal - TrueColor)/0.01f);
 
@@ -324,8 +326,8 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
             dc = dc * (1.0f - Wtotal) * (1.0f - Wtotal);
         }
 
-        //float w_photo = fabs(grad_space[12 * t]*rays[3*n] + grad_space[12 * t + 1]*rays[3*n+1] + grad_space[12 * t + 2]*rays[3*n+2]);
-        //dalpha = dalpha*w_photo;
+        float w_photo = fabs(dot(grad_space[4*t], rays[n])); //(grad_space[12 * t]*rays[3*n] + grad_space[12 * t + 1]*rays[3*n+1] + grad_space[12 * t + 2]*rays[3*n+2]);
+        dalpha = dalpha*w_photo;
 
         //if (MaskReg < 0.01f)
         //    dalpha = dalpha*w_color;
@@ -333,27 +335,27 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
         //////////////////////////////////////////////////////////////
         float lambda = sdf.z;
         weights_seg_prev = weights_seg[2 * t];
-        weights_seg = weights_seg[2 * t + 1];
+        weights_seg_next = weights_seg[2 * t + 1];
         id_prev = cell_ids[2 * t];
         id = cell_ids[2 * t + 1];
         if (lambda < 0.5f) {
             atomicAdd(&grads_sdf[id_prev.x], weights_seg_prev.x * 2.0f * lambda * dalpha * dalpha_dsdf_p);
-            atomicAdd(&grads_sdf[id.x],  weights_seg.x * ((1.0f-2.0f*lambda) * dalpha * dalpha_dsdf_p + dalpha * dalpha_dsdf_n));
+            atomicAdd(&grads_sdf[id.x],  weights_seg_next.x * ((1.0f-2.0f*lambda) * dalpha * dalpha_dsdf_p + dalpha * dalpha_dsdf_n));
             
             atomicAdd(&grads_sdf[id_prev.y], weights_seg_prev.y * 2.0f * lambda * dalpha * dalpha_dsdf_p);
-            atomicAdd(&grads_sdf[id.y],  weights_seg.y * ((1.0f-2.0f*lambda) * dalpha * dalpha_dsdf_p + dalpha * dalpha_dsdf_n));
+            atomicAdd(&grads_sdf[id.y],  weights_seg_next.y * ((1.0f-2.0f*lambda) * dalpha * dalpha_dsdf_p + dalpha * dalpha_dsdf_n));
             
             atomicAdd(&grads_sdf[id_prev.z], weights_seg_prev.z * 2.0f * lambda * dalpha * dalpha_dsdf_p);
-            atomicAdd(&grads_sdf[id.z],  weights_seg.z * ((1.0f-2.0f*lambda) * dalpha * dalpha_dsdf_p + dalpha * dalpha_dsdf_n));
+            atomicAdd(&grads_sdf[id.z],  weights_seg_next.z * ((1.0f-2.0f*lambda) * dalpha * dalpha_dsdf_p + dalpha * dalpha_dsdf_n));
         } else {
             atomicAdd(&grads_sdf[id_prev.x], weights_seg_prev.x * (2.0f*lambda * dalpha * dalpha_dsdf_p + (1.0-2.0f*lambda)*dalpha * dalpha_dsdf_n));
-            atomicAdd(&grads_sdf[id.x],  weights_seg.x * (1.0f-(1.0-2.0f*lambda)) * dalpha * dalpha_dsdf_n);
+            atomicAdd(&grads_sdf[id.x],  weights_seg_next.x * (1.0f-(1.0-2.0f*lambda)) * dalpha * dalpha_dsdf_n);
             
             atomicAdd(&grads_sdf[id_prev.y], weights_seg_prev.y * (2.0f*lambda * dalpha * dalpha_dsdf_p + (1.0-2.0f*lambda)*dalpha * dalpha_dsdf_n));
-            atomicAdd(&grads_sdf[id.y],  weights_seg.y * (1.0f-(1.0-2.0f*lambda)) * dalpha * dalpha_dsdf_n);
+            atomicAdd(&grads_sdf[id.y],  weights_seg_next.y * (1.0f-(1.0-2.0f*lambda)) * dalpha * dalpha_dsdf_n);
             
             atomicAdd(&grads_sdf[id_prev.z], weights_seg_prev.z * (2.0f*lambda * dalpha * dalpha_dsdf_p + (1.0-2.0f*lambda)*dalpha * dalpha_dsdf_n));
-            atomicAdd(&grads_sdf[id.z],  weights_seg.z * (1.0f-(1.0-2.0f*lambda)) * dalpha * dalpha_dsdf_n);
+            atomicAdd(&grads_sdf[id.z],  weights_seg_next.z * (1.0f-(1.0-2.0f*lambda)) * dalpha * dalpha_dsdf_n);
         }
 
         if (Mask > 0.0f) {
@@ -410,7 +412,7 @@ __global__ void render_kernel(
         //color_loss[3*idx] = integrated_color.x;
         //color_loss[3*idx + 1] = integrated_color.y;
         //color_loss[3*idx + 2] = integrated_color.z;
-        color_loss[idx] = msk*huber_loss(integrated_color - in_color);      
+        color_loss[idx] = msk*huber_loss(integrated_color - true_color[idx]);      
         //color_loss[idx] = msk*(fabs(grad_color_diff.x) + fabs(grad_color_diff.y) + fabs(grad_color_diff.z));    
         mask_loss[idx] = (msk - Wtotal)*(msk - Wtotal); //-(msk * logf(Wtotal) + (1.0f - msk) * logf(1.0f-Wtotal));
     }
@@ -452,7 +454,7 @@ __global__ void render_no_grad_kernel(
     }
     
     float Wtotal = 0.0f;
-    float4 color = trace_ray(sdf_seg, color_samples, offsets, &Wtotal, inv_s, idx);
+    float4 color;// = trace_ray(sdf_seg, color_samples, offsets, &Wtotal, inv_s, idx);
 
     color_out[3*idx] = color.x + color.w * BACK_R;
     color_out[3*idx + 1] = color.y + color.w * BACK_G;

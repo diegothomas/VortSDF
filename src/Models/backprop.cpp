@@ -14,8 +14,19 @@ void backprop_feat_cuda(
     torch::Tensor cell_weights 
 ); 
 
+void backprop_grad_cuda(
+    size_t num_samples,
+    size_t num_sites,
+    torch::Tensor sdf,
+    torch::Tensor grad_sites,
+    torch::Tensor grad_samples,
+    torch::Tensor cell_ids,
+    torch::Tensor cell_weights 
+);
+
 void backprop_sdf_cuda(
     size_t num_samples,
+    torch::Tensor sdf,
     torch::Tensor grad_sdf,
     torch::Tensor grad_sdf_samples,
     torch::Tensor cell_ids,
@@ -201,16 +212,37 @@ void backprop_feat(
     cell_weights);
 }
 
+void backprop_grad(
+    size_t num_samples,
+    size_t num_sites,
+    torch::Tensor sdf,
+    torch::Tensor grad_sites,
+    torch::Tensor grad_samples,
+    torch::Tensor cell_ids,
+    torch::Tensor cell_weights 
+){
+    //std::cout << "Backprop feature gradients" << std::endl; 
+    backprop_grad_cuda(num_samples,
+    num_sites,
+    sdf,
+    grad_sites,
+    grad_samples,
+    cell_ids,
+    cell_weights);
+}
+
 
 void backprop_sdf(
     size_t num_samples,
+    torch::Tensor sdf,
     torch::Tensor grad_sdf,
     torch::Tensor grad_sdf_samples,
     torch::Tensor cell_ids,
     torch::Tensor cell_weights 
-) {
+){
     //std::cout << "Backprop feature gradients" << std::endl; 
     backprop_sdf_cuda(num_samples,
+    sdf,
     grad_sdf,
     grad_sdf_samples,
     cell_ids,
@@ -513,6 +545,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("eikonal_loss", &eikonal_loss, "eikonal_loss (CPP)");
     m.def("smooth_sdf", &smooth_sdf, "smooth_sdf (CPP)");
     m.def("backprop_feat", &backprop_feat, "backprop_feat (CPP)");
+    m.def("backprop_grad", &backprop_grad, "backprop_grad (CPP)");
     m.def("backprop_sdf", &backprop_sdf, "backprop_sdf (CPP)");
     m.def("backprop_norm", &backprop_norm, "backprop_norm (CPP)");
     m.def("backprop_unit_norm", &backprop_unit_norm, "backprop_unit_norm (CPP)");
