@@ -69,7 +69,7 @@ class Runner:
         conf_text = f.read()
         f.close()
         self.conf_bbox = ConfigFactory.parse_string(conf_text)
-        self.visual_hull = self.conf_bbox['visual_hull']
+        self.visual_hull = self.conf_bbox.get_list('data_info.visual_hull')
         print(self.visual_hull)
         
         # Training parameters
@@ -974,7 +974,7 @@ class Runner:
                     #verbose = True
 
                 if (iter_step+1) == 10000:
-                    self.R = 30
+                    self.R = 50
                     self.s_start = 100.0
                     self.s_max = 300
                     """self.s_w = 1.0e-3
@@ -1003,7 +1003,7 @@ class Runner:
                     self.e_w = 1.0e-3
                     self.tv_w = 1.0e-3"""
                     self.s_w = 1.0e-4 #5.0e-4
-                    self.e_w = 1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
+                    self.e_w = 1.0e-5 #1.0e-9 #1.0e-7 #5.0e-3
                     self.tv_w = 5.0e-5 #1.0e-8 #1.0e-1
                     self.w_g = 0.0
                     #acc_it = 10
@@ -1011,8 +1011,8 @@ class Runner:
                     self.tv_f = 0.0
                     self.f_w = 1.0
                     self.learning_rate = 5e-4
-                    self.learning_rate_sdf = 5e-4
-                    self.learning_rate_feat = 5e-4 #1.0e-2
+                    self.learning_rate_sdf = 1e-4
+                    self.learning_rate_feat = 1e-4 #1.0e-2
                     self.end_iter_loc = 20000
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-2
                     self.learning_rate_alpha = 1.0e-2
@@ -1027,14 +1027,14 @@ class Runner:
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
                     self.s_w = 1.0e-4 #2.0e-6
-                    self.e_w = 1.0e-7 #1.0e-9 #1.0e-7 #5.0e-3
+                    self.e_w = 1.0e-5 #1.0e-9 #1.0e-7 #5.0e-3
                     self.tv_w = 5.0e-5 #1.0e-8 #1.0e-1
                     self.tv_f = 0.0 #1.0e-4
                     self.f_w = 1.0
                     self.end_iter_loc = 20000
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 1.0e-4
-                    self.learning_rate_feat = 1.0e-4
+                    self.learning_rate_sdf = 5.0e-5
+                    self.learning_rate_feat = 5.0e-5
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-2
                     self.learning_rate_alpha = 1.0e-4
                     
@@ -1048,13 +1048,13 @@ class Runner:
                     self.e_w = 1.0e-4
                     self.tv_w = 1.0e-2"""
                     self.s_w = 1.0e-4 #5.0e-4
-                    self.e_w = 1.0e-9
+                    self.e_w = 1.0e-5
                     self.tv_w = 5.0e-6 #1.0e-4 #1.0e-3
                     self.tv_f = 0.0 #1.0e-3
                     self.end_iter_loc = 20000
                     self.learning_rate = 5e-5
-                    self.learning_rate_sdf = 5.0e-5
-                    self.learning_rate_feat = 5.0e-5
+                    self.learning_rate_sdf = 1.0e-5
+                    self.learning_rate_feat = 1.0e-5
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-3
                     self.learning_rate_alpha = 1.0e-8
                     self.val_freq = 2000
@@ -1093,7 +1093,8 @@ class Runner:
                 #print('iter:{:8>d} loss CVT = {} lr={}'.format(iter_step, loss_cvt, self.optimizer_cvt.param_groups[0]['lr']))
                 
 
-            if verbose and iter_step % self.val_freq == 0:
+            #if verbose and iter_step % self.val_freq == 0:
+            if iter_step % self.val_freq == 0:
                 #self.inv_s = 1000     
                 #self.render_image(cam_ids, img_idx)
                 with torch.no_grad():
