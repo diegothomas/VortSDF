@@ -611,10 +611,8 @@ class Tet32(Process):
         #if flag:
         #    out_sdf[mask_background[:] == True] = radius
 
-        """if flag:
-            out_sdf[:] = in_sdf[idx[:]]
-        else:
-            out_sdf = -f(self.sites)"""
+        if flag:
+            out_sdf = -f(self.sites)
 
         """lap_sdf = -f(self.sites)
         out_sdf[abs(out_sdf[:]) > radius] = lap_sdf[abs(out_sdf[:]) > radius]"""
@@ -763,6 +761,69 @@ class Tet32(Process):
         #    print(in_ids[3*nb_samples*i], ", ", in_ids[3*nb_samples*i + 1] , ", ", in_ids[3*nb_samples*i + 2])
 
         return nb_samples
+    
+    def make_clipped_CVT(self, sdf, gradients, filename = "", translate = None, scale = None):
+        print("Start clipping CVT")
+        import ctypes
+        
+        self.params = torch.from_numpy(np.array([-0.6,-0.6,-0.6,0.6,0.6,0.6]).astype(np.float32)).cuda()
+        
+        translate = np.ascontiguousarray(translate, dtype=np.float32)
+        translate_c = translate.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+
+        libnameCGAL = "C:/Users/Diego Thomas/Documents/Projects/inria-cvt/Python/CVT.dll"
+        cvt_libCGAL = ctypes.CDLL(libnameCGAL)
+
+        libname = "C:/Users/Diego Thomas/Documents/Projects/inria-cvt/Python/DiscreteCVT.dll"
+        cvt_lib = ctypes.CDLL(libname)
+        
+        cvt_lib.Get_nb_tets32.restype = ctypes.c_int32
+        cvt_lib.Get_nb_tets32.argtypes = [ctypes.c_void_p]
+        cvt_libCGAL.CVT.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int32, ctypes.c_float, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int32]
+
+        active_flag = torch.zeros([self.sites.shape[0]], dtype=torch.int32).cuda()
+        active_flag = active_flag.contiguous()
+        
+        counter_sites = torch.zeros([self.sites.shape[0]], dtype=torch.int32).cuda()
+        counter_sites = counter_sites.contiguous()
+        
+        cvt_lib.Gradient_sites32.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+        cvt_lib.Compute_gradient_field32.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+
+        cvt_libCGAL.CVT(self.sites.data_ptr(), sdf.data_ptr(), gradients.data_ptr(), self.params.data_ptr(),
+                                                self.sites.shape[0], scale, translate_c, filename.encode(), 0)
+
+        active_flag[:] = 1
+
+        for _ in range(2):
+            Tet_32 = cvt_lib.NewTet32(self.sites.data_ptr(), self.params.data_ptr(), self.sites.shape[0])            
+            nb_tets = cvt_lib.Get_nb_tets32(self.Tet_32)
+
+            gradients_field = torch.zeros([3*nb_tets], dtype=torch.float32).cuda()
+            gradients_field_weights = torch.zeros([4*3*nb_tets], dtype=torch.float32).cuda()
+            cvt_lib.Compute_gradient_field32(Tet_32, gradients_field.data_ptr(), gradients_field_weights.data_ptr(), sdf.data_ptr(), self.sites.data_ptr(), active_flag.data_ptr())
+            
+            counter_sites[:] = 0
+            self.gradients[:] = 0
+            cvt_lib.Gradient_sites32(Tet_32, gradients.data_ptr(), counter_sites.data_ptr(), gradients_field.data_ptr(), active_flag.data_ptr())
+            
+            cvt_libCGAL.CVT(self.sites.data_ptr(), sdf.data_ptr(), gradients.data_ptr(), self.params.data_ptr(),
+                                self.sites.shape[0], scale, translate_c, filename.encode(), 0)
+        
+        Tet_32 = cvt_lib.NewTet32(self.sites.data_ptr(), self.params.data_ptr(), self.sites.shape[0])
+        
+        nb_tets = cvt_lib.Get_nb_tets32(self.Tet_32)
+        gradients_field = torch.zeros([3*nb_tets], dtype=torch.float32).cuda()
+        gradients_field_weights = torch.zeros([4*3*nb_tets], dtype=torch.float32).cuda()
+        cvt_lib.Compute_gradient_field32(Tet_32, gradients_field.data_ptr(), gradients_field_weights.data_ptr(), sdf.data_ptr(), self.sites.data_ptr(), active_flag.data_ptr())
+        
+        counter_sites[:] = 0
+        self.gradients[:] = 0
+        cvt_lib.Gradient_sites32(Tet_32, self.gradients.data_ptr(), counter_sites.data_ptr(), gradients_field.data_ptr(), active_flag.data_ptr())#self.active_flag.data_ptr())
+        
+        cvt_libCGAL.CVT(self.sites.data_ptr(), sdf.data_ptr(), gradients.data_ptr(), self.params.data_ptr(),
+                                self.sites.shape[0], scale, translate_c, filename.encode(), 1)
+
 
 if __name__=='__main__':
     visual_hull = [-1, -1, -1, 1, 1, 1]

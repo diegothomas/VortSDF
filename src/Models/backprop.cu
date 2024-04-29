@@ -253,8 +253,8 @@ __global__ void backprop_grad_kernel(
         id_prev = cell_ids[6 * idx + i];
         id = cell_ids[6 * idx + 3 + i];
         for (int k = 0; k < 3; k++) {    
-            atomicAdd(&grad_sites[3 * id_prev + k], cell_weights[6*idx + i] * lamda * grad_samples[12 * idx + k]);              
-            atomicAdd(&grad_sites[3 * id + k], cell_weights[6*idx + 3 + i] * (1.0f - lamda) * grad_samples[12 * idx + k]);
+            atomicAdd(&grad_sites[3 * id_prev + k], cell_weights[6*idx + i] * lamda * grad_samples[3 * idx + k]);              
+            atomicAdd(&grad_sites[3 * id + k], cell_weights[6*idx + 3 + i] * (1.0f - lamda) * grad_samples[3 * idx + k]);
         }
     }
     return;
@@ -601,20 +601,20 @@ __global__ void smooth_grad_kernel(
     atomicAdd(&sdf_grad[edges[2*idx + 1]], -exp(-length_edge/(sigma*sigma)) * (sdf[edges[2*idx]] - sdf[edges[2*idx+1]]) / denom);
 
     // add bilateral smooth term with features
-    float length_feat = 0.0f;
-    /*for (int i = 0; i < DIM_L_FEAT; i++) {
+    /*float length_feat = 0.0f;
+    for (int i = 0; i < DIM_L_FEAT; i++) {
         length_feat = length_feat +  (feat[DIM_L_FEAT*edges[2*idx]+ i] - feat[DIM_L_FEAT*edges[2*idx+1]+ i])*
                                         (feat[DIM_L_FEAT*edges[2*idx]+ i] - feat[DIM_L_FEAT*edges[2*idx+1]+ i]);
     }*/
 
     for (int i = 0; i < DIM_L_FEAT; i++) {
         denom = 1.0f;//sqrt( eps +  (feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i])* (feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i]));
-        atomicAdd(&feat_grad[DIM_L_FEAT*edges[2*idx] + i], exp(-length_edge/(sigma*sigma) - length_feat/(0.2f)) * (feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i]) / denom);          
-        atomicAdd(&feat_grad[DIM_L_FEAT*edges[2*idx + 1] + i], -exp(-length_edge/(sigma*sigma) - length_feat/(0.2f)) * (feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i]) / denom);
+        atomicAdd(&feat_grad[DIM_L_FEAT*edges[2*idx] + i], exp(-length_edge/(sigma*sigma)) * (feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i]) / denom);          
+        atomicAdd(&feat_grad[DIM_L_FEAT*edges[2*idx + 1] + i], -exp(-length_edge/(sigma*sigma)) * (feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i]) / denom);
     }
     
-    atomicAdd(&counter[edges[2*idx]], exp(-length_edge/(sigma*sigma)));
-    atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/(sigma*sigma)));
+    //atomicAdd(&counter[edges[2*idx]], exp(-length_edge/(sigma*sigma)));
+    //atomicAdd(&counter[edges[2*idx + 1]], exp(-length_edge/(sigma*sigma)));
     
     //atomicAdd(&counter[2*edges[2*idx]+1], exp(-length_edge/(sigma*sigma) - length_feat/(0.2f)));
     //atomicAdd(&counter[2*edges[2*idx + 1]+1], exp(-length_edge/(sigma*sigma) - length_feat/(0.2f)));
@@ -922,7 +922,7 @@ __global__ void knn_smooth_kernel_o(
     if (activated[idx] == 0)
         return;
 
-    int nb_lvl = fmin(3, num_knn / 32); //num_knn / 32; //fmin(2, num_knn / 32);
+    int nb_lvl = 2; //fmin(3, num_knn / 32); //num_knn / 32; //fmin(2, num_knn / 32);
 
     float length_edge = 0.0f;
     int knn_id;

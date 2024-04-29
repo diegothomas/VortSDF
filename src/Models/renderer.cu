@@ -18,16 +18,16 @@
 
 #define STOP_TRANS 1.0e-10
 #define CLIP_ALPHA 60.0
-#define BACK_R 0.5f
-#define BACK_G 0.5f
-#define BACK_B 0.5f 
+#define BACK_R 0.0f
+#define BACK_G 0.0f
+#define BACK_B 0.0f 
 #define PI 3.141592653589793238462643383279502884197
 
 
 /** Device functions **/
 /** Device functions **/
 /** Device functions **/
-__device__ const float HUBER_EPS = 1.0f; //100.0f / 255.0f; //1.5f / 255.0f;
+__device__ const float HUBER_EPS = 1.5f / 255.0f;
 
 __device__ float huber_loss(float3 x) 
 {
@@ -67,6 +67,36 @@ __device__ float4 trace_ray(const float3* sdf_seg, const float3* color_samples, 
         color = color_samples[t];
 
         alpha = sdf2Alpha(sdf.y, sdf.x, inv_s);
+
+        Cpartial = Cpartial + color * (1.0f - alpha) * Tpartial;
+        *Wpartial = (*Wpartial) + (1.0f - alpha) * Tpartial;
+        Tpartial *= alpha;
+
+        if (Tpartial < STOP_TRANS) {// stop if the transmittance is low
+            break;
+        }
+
+    }
+
+    // return the total color as well as the final transmittance. The background color will be added after.
+    return make_float4(Cpartial, Tpartial);
+}
+
+__device__ float4 trace_ray_no(const float* sdf_seg, const float* color_samples, const int* offsets, float *Wpartial, float inv_s, int n) 
+{
+    float Tpartial = 1.0f;
+    float3 Cpartial = make_float3(0.0f, 0.0f, 0.0f);
+    float3 color;
+    float alpha = 0.0f;
+
+    int start = offsets[2 * n];
+    int end = offsets[2 * n + 1];
+    for (int t = start; t < start + end; t++) {
+        color.x = color_samples[3*t];
+        color.y = color_samples[3*t+1];
+        color.z = color_samples[3*t+2];
+
+        alpha = sdf2Alpha(sdf_seg[3*t + 1], sdf_seg[3*t], inv_s);
 
         Cpartial = Cpartial + color * (1.0f - alpha) * Tpartial;
         *Wpartial = (*Wpartial) + (1.0f - alpha) * Tpartial;
@@ -454,7 +484,7 @@ __global__ void render_no_grad_kernel(
     }
     
     float Wtotal = 0.0f;
-    float4 color;// = trace_ray(sdf_seg, color_samples, offsets, &Wtotal, inv_s, idx);
+    float4 color = trace_ray_no(sdf_seg, color_samples, offsets, &Wtotal, inv_s, idx);
 
     color_out[3*idx] = color.x + color.w * BACK_R;
     color_out[3*idx + 1] = color.y + color.w * BACK_G;

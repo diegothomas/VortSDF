@@ -28,5 +28,10 @@ if __name__=='__main__':
         subprocess.run(["python", "run.py", "--position_encoding", "--double_net", "--data_name", dirs])
 
         ### Compute Chamfer, IoU errors and HeatMap meshes ###
+        subprocess.run(["python src/Eval/chamfer_distance.py --GT_path", "Data/GT/"+dirs+"/GTMeshRaw.ply ", "--dir_path", "Exp/"+dirs])
         
-        ### Compute PSNR ###
+        ## Render all images
+        subprocess.run(["python", "run.py", "--position_encoding", "--double_net", "--data_name", dirs , "--is_continue --mode render_images"])
+
+        ### Compute PSNR and SSIM => output error image in Exp/data_name/err ###
+        subprocess.run(["python", "src/Eval/PSNR.py", "--data_path Data", "--exp_path Exp", "--data_name", dirs])

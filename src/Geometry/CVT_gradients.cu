@@ -1201,9 +1201,9 @@ __global__ void eikonal_grad_kernel(
                                         (elem_1 - elem_smooth_1) * Weights_curr[3*i + 1] + 
                                         (elem_2 - elem_smooth_2) * Weights_curr[3*i + 2])*volume_tet / (2.0f*weights_tot[ids[i]]));
 
-        atomicAdd(&grad_sdf[3*ids[i]], elem_0*volume_tet / weights_tot[ids[i]]);
-        atomicAdd(&grad_sdf[3*ids[i] + 1], elem_1*volume_tet / weights_tot[ids[i]]);
-        atomicAdd(&grad_sdf[3*ids[i] + 2], elem_2*volume_tet / weights_tot[ids[i]]);
+        atomicAdd(&grad_sdf[3*ids[i]], elem_smooth_0*volume_tet / weights_tot[ids[i]]);
+        atomicAdd(&grad_sdf[3*ids[i] + 1], elem_smooth_1*volume_tet / weights_tot[ids[i]]);
+        atomicAdd(&grad_sdf[3*ids[i] + 2], elem_smooth_2*volume_tet / weights_tot[ids[i]]);
 
         atomicAdd(&Loss[ids[i]], abs(sqrt(norm_grad)-1)*volume_tet / weights_tot[ids[i]]);
     }
