@@ -36,3 +36,4 @@ if __name__=='__main__':
         ### Compute PSNR and SSIM => output error image in Exp/data_name/err ###
         subprocess.run(["C:/Users/thomas/.conda/envs/VortSDF-2/python.exe", "src/Eval/PSNR.py", "--data_path", "Data", "--exp_path", "Exp", "--data_name", dirs])
 
+
