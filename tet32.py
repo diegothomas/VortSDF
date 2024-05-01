@@ -573,7 +573,7 @@ class Tet32(Process):
         cam_ids = torch.from_numpy(cam_ids).int().cuda()
                 
         self.sites = torch.from_numpy(self.sites).float().cuda()
-        in_sdf, in_feat = self.CVT(outside_flag, cam_ids, torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, radius, 0.1, lr)
+        in_sdf, in_feat = self.CVT(outside_flag, cam_ids.long(), torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, radius, 0.1, lr)
 
         #ply.save_ply("Exp/bmvs_man/testprevlvlv.ply", (self.sites[self.lvl_sites[0][:]]).transpose())
         prev_kdtree = scipy.spatial.KDTree(new_sites)
@@ -768,12 +768,12 @@ class Tet32(Process):
         translate = np.ascontiguousarray(translate, dtype=np.float32)
         translate_c = translate.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
 
-        #libnameCGAL = "C:/Users/Diego Thomas/Documents/Projects/inria-cvt/Python/CVT.dll"
-        libnameCGAL = "C:/Users/thomas/Documents/Projects/Human-AI/inria-cvt/Python/CVT.dll"
+        libnameCGAL = "C:/Users/Diego Thomas/Documents/Projects/inria-cvt/Python/CVT.dll"
+        #libnameCGAL = "C:/Users/thomas/Documents/Projects/Human-AI/inria-cvt/Python/CVT.dll"
         cvt_libCGAL = ctypes.CDLL(libnameCGAL)
 
-        #libname = "C:/Users/Diego Thomas/Documents/Projects/inria-cvt/Python/DiscreteCVT.dll"
-        libname = "C:/Users/thomas/Documents/Projects/Human-AI/inria-cvt/Python/DiscreteCVT.dll"
+        libname = "C:/Users/Diego Thomas/Documents/Projects/inria-cvt/Python/DiscreteCVT.dll"
+        #libname = "C:/Users/thomas/Documents/Projects/Human-AI/inria-cvt/Python/DiscreteCVT.dll"
         cvt_lib = ctypes.CDLL(libname)
         
         cvt_lib.Get_nb_tets32.restype = ctypes.c_int32
