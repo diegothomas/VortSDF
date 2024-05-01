@@ -605,8 +605,8 @@ class Tet32(Process):
         #if flag:
         #    out_sdf[mask_background[:] == True] = radius
 
-        if flag:
-            out_sdf = -f(self.sites)
+        #if flag:
+        #    out_sdf = -f(self.sites)
 
         """lap_sdf = -f(self.sites)
         out_sdf[abs(out_sdf[:]) > radius] = lap_sdf[abs(out_sdf[:]) > radius]"""
