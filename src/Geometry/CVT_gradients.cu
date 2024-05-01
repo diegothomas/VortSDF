@@ -241,7 +241,7 @@ __global__ void concat_feat_kernel_o(
     
     __shared__ float3 smem[96];
     
-    int lvl_curr = fmin(3, threadIdx.x / 32);
+    int lvl_curr = threadIdx.x / 32;
     int i_curr = threadIdx.x % 32;
     knn_id = neighbors[num_knn*idx + lvl_curr*32 + i_curr];
     if (knn_id != -1) {

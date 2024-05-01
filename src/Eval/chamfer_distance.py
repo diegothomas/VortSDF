@@ -306,7 +306,7 @@ def load_factory(path , device, min_B = [-np.inf, -np.inf, np.inf], max_B = [np.
         verts_tensor = torch.tensor(verts)
         face_tensor  = torch.tensor(face)
         face         = np.array(face)
-        print(path)
+        #print(path)
         #print(verts_tensor.shape)
         #print(face_tensor.shape)
         #print(face.shape)
@@ -360,6 +360,7 @@ def chamfer(GT_path, dir_path, heat_map_path, mesh_list, THRESH, device = None, 
     
     GT_f = SDF(verts_GT_tensor.reshape(-1,3).cpu().numpy(), face_GT.reshape(-1,3).cpu().numpy())
 
+    print("start computing iou")
     sdf_list = []
     iou_list = []
     mask = np.zeros(verts_GT_tensor.shape[1])
@@ -370,12 +371,13 @@ def chamfer(GT_path, dir_path, heat_map_path, mesh_list, THRESH, device = None, 
         mask = mask + (sdf_f < THRESH) 
 
         Psdf_f = abs(GT_f(verts_tensor_list[i].reshape(-1,3).cpu().numpy()))
-        iou = ((sdf_f < THRESH).sum() + (Psdf_f < THRESH).sum())/(len(verts_GT) + len(verts_list[i]))
+        iou = ((sdf_f < THRESH).sum())/(len(verts_GT))
+        #iou = ((sdf_f < THRESH).sum() + (Psdf_f < THRESH).sum())/(len(verts_GT) + len(verts_list[i]))
         iou_list.append(iou * 100)
 
     chamfer_list = []
     for i in range(len(mesh_list)):
-        mesh_name = mesh_list[i].split("/")[-1]
+        mesh_name = mesh_list[i].split("\\")[-1] # "/"
         sdf_list[i][mask == 0] = 1.0e10
         _ = save_color_mesh(sdf_list[i] , verts_GT , face_GT.cpu().numpy() , os.path.join(heat_map_path, mesh_name), vmin=0.0 , vmax=1.0*THRESH)   
         chamfer_list.append(sdf_list[i][sdf_list[i] < 1000.0].mean() * 1000)
@@ -398,6 +400,8 @@ def main():
     
     # Get list of 3D meshes in the folder
     mesh_list = sorted(glob(os.path.join(args.dir_path, '*.ply'))) #os.listdir(args.dir_path)
+    mesh_list.append(sorted(glob(os.path.join(args.dir_path, '*.obj')))) #os.listdir(args.dir_path)
+    mesh_list.pop()
     print(mesh_list)
 
     # Get bounding box

@@ -89,7 +89,7 @@ void diff_tensor_cuda(
     torch::Tensor  weights_tot
 );
 
-float eikonal_grad_cuda(
+void eikonal_grad_cuda(
     size_t num_tets,                // number of rays
     size_t num_sites,                // number of rays
     torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors

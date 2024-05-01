@@ -33,7 +33,8 @@ RUN pip install --upgrade pip
 
 RUN git clone https://github.com/PyMesh/PyMesh.git && cd PyMesh && git submodule update --init && pip install -r ./python/requirements.txt && cd third_party && python3 build.py all && cd .. && python3 setup.py build && python3 setup.py install --user && python3 -c "import pymesh; pymesh.test()"
 
-RUN pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 pykdtree pyembree # for 11.7
+#RUN pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 pykdtree pyembree # for 11.7
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
 RUN git config --global user.name "diegothomas"
 RUN git config --global github.token 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

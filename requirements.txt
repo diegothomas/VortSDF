@@ -7,3 +7,9 @@ pandas==1.3.5
 numpy
 opencv-python
 Cython==0.29.36
+ninja
+scikit-image
+tqdm
+pysdf
+icecream
+pyhocon

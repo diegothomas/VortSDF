@@ -914,7 +914,7 @@ __global__ void knn_smooth_kernel_o(
     )
 {
     const size_t idx = blockIdx.x;
-    if (idx >= num_sites || threadIdx.x >= 96)
+    if (idx >= num_sites || threadIdx.x >= 32)
     {
         return;
     }
@@ -922,7 +922,7 @@ __global__ void knn_smooth_kernel_o(
     if (activated[idx] == 0)
         return;
 
-    int nb_lvl = 2; //fmin(3, num_knn / 32); //num_knn / 32; //fmin(2, num_knn / 32);
+    int nb_lvl = 1; //fmin(3, num_knn / 32); //num_knn / 32; //fmin(2, num_knn / 32);
 
     float length_edge = 0.0f;
     int knn_id;
@@ -931,9 +931,9 @@ __global__ void knn_smooth_kernel_o(
     float3 curr_edge = make_float3(0.0,0.0,0.0);
     float max_dist = -1.0f;
 
-    __shared__ float2 smem[96];
+    __shared__ float2 smem[32];
     
-    int lvl_curr = fmin(3, threadIdx.x / 32);
+    int lvl_curr = threadIdx.x / 32;
     int i_curr = threadIdx.x % 32;
     knn_id = neighbors[num_knn*idx + lvl_curr*32 + i_curr];
     if (knn_id != -1) {
@@ -968,7 +968,7 @@ __global__ void knn_smooth_kernel_o(
     __syncthreads();
     
     if (threadIdx.x  == 0) {
-        float2 total_sdf = smem[0] + smem[1] + smem[32] + smem[32 + 1] + smem[64] + smem[64 + 1]; 
+        float2 total_sdf = smem[0] + smem[1];// + smem[32] + smem[32 + 1] + smem[64] + smem[64 + 1]; 
         sdf_smooth[idx] = total_sdf.y == 0.0f ? 0.0f : total_sdf.x/total_sdf.y;
     }
     
@@ -1007,7 +1007,7 @@ __global__ void knn_smooth_kernel(
     float total_weight = 0.0f;
     float total_sdf = 0.0f;
 
-    int nb_lvl = fmin(3, num_knn / 32); //num_knn / 32; //fmin(2, num_knn / 32);
+    int nb_lvl = 2;//fmin(3, num_knn / 32); //num_knn / 32; //fmin(2, num_knn / 32);
 
     float length_edge = 0.0f;
     int knn_id;
@@ -1811,7 +1811,7 @@ void knn_smooth_sdf_cuda(
     }));
     cudaDeviceSynchronize();*/
 
-    const int threads = 96;
+    const int threads = 32;//96;
     const int blocks = num_sites; // ceil for example 8192 + 255 / 256 = 32
     AT_DISPATCH_FLOATING_TYPES( sdf.type(),"knn_smooth_kernel_o", ([&] {  
         knn_smooth_kernel_o CUDA_KERNEL(blocks,threads) (
