@@ -151,7 +151,7 @@ class Runner:
 
     def prep_CVT(self):
         print("Preparing CVT model")
-        #self.tet32 = tet32.Tet32(self.sites, id = 0)
+        self.tet32 = tet32.Tet32(self.sites, id = 0)
         self.tet32.run(0.3) 
         self.tet32.load_cuda()
 
@@ -431,7 +431,6 @@ class Runner:
                     start = timer()   
                     self.grad_sdf_space[:] = 0.0
                     self.grad_feat_space[:] = 0.0
-                    self.grad_mean_curve[:] = 0.0
                     self.weights_grad[:] = 0.0
                     self.grad_eik[:] = 0.0
                     self.grad_norm_smooth[:] = 0.0
@@ -457,20 +456,10 @@ class Runner:
                 
                     self.grad_eik[outside_flag[:] == 1] = 0.0
                     self.grad_eik[ext_flag[:] == 1] = 0.0   
-                    #self.grad_eik[:] = self.grad_eik[:] / self.sites.shape[0]
+                    
                     self.grad_norm_smooth[outside_flag[:] == 1] = 0.0
                     self.grad_norm_smooth[ext_flag[:] == 1] = 0.0   
-                    #self.grad_norm_smooth[:] = self.grad_norm_smooth[:] / self.sites.shape[0]
-                    self.grad_mean_curve[outside_flag[:] == 1.0] = 0.0
-                    self.grad_mean_curve[ext_flag[:] == 1] = 0.0   
                     eik_loss = 0.0 #self.eik_loss.sum()
-
-                    ############## Concat multi-res features and normals ##############
-                    #with torch.no_grad():
-                    #    self.fine_features[:,8:] = 0.0
-                    self.grad_sdf_feat[:,:3] = self.grad_sdf_space[:,:3]
-                    self.grad_sdf_feat[:,3:] = 0.0
-                    cvt_grad_cuda.concat_feat(self.sites.shape[0], 96, 8, self.sites, self.activated, self.grad_sdf_feat, self.fine_features, self.tet32.knn_sites)
 
                 if verbose:
                     print('eikonal_grad time:', timer() - start)
@@ -481,7 +470,7 @@ class Runner:
             self.samples[:] = 0.0
             self.out_grads[:] = 0.0
             tet32_march_cuda.fill_samples(rays_o.shape[0], self.n_samples, rays_o, rays_d, self.sites, 
-                                        self.in_z, self.in_sdf, self.fine_features, self.in_weights, self.grad_sdf_feat, self.in_ids, 
+                                        self.in_z, self.in_sdf, self.fine_features, self.in_weights, self.grad_sdf_space, self.in_ids, 
                                         self.out_z, self.out_sdf, self.out_feat, self.out_weights, self.out_grads, self.out_ids, 
                                         self.offsets, self.samples, self.samples_rays)
             if verbose:
@@ -1233,7 +1222,6 @@ class Runner:
         
         self.grad_sdf_space[:] = 0.0
         self.grad_feat_space[:] = 0.0
-        self.grad_mean_curve[:] = 0.0
         self.weights_grad[:] = 0.0
         self.grad_eik[:] = 0.0
         self.grad_norm_smooth[:] = 0.0
@@ -1262,18 +1250,13 @@ class Runner:
             nb_samples = self.tet32.sample_rays_cuda(self.inv_s, img_idx, rays_d_batch, self.sdf, self.cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_ids, self.offsets, self.activated, self.n_samples)    
             #nb_samples = self.tet32.sample_rays_cuda(0.01, self.inv_s, self.sigma, img_idx, rays_d_batch, self.sdf, self.fine_features, cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_feat, self.in_ids, self.offsets, self.activated, self.n_samples)    
                 
-            ############## Concat multi-res features and normals ##############
-            self.grad_sdf_feat[:,:3] = self.grad_sdf_space[:,:3]
-            self.grad_sdf_feat[:,3:] = 0.0
-            cvt_grad_cuda.concat_feat(self.sites.shape[0], 96, 8, self.sites, self.activated, self.grad_sdf_feat, self.fine_features, self.tet32.knn_sites)
-
             start = timer()
             self.offsets[self.offsets[:,1] == -1] = 0                         
             start = timer()
             self.samples[:] = 0.0
             self.out_grads[:] = 0.0
             tet32_march_cuda.fill_samples(rays_o_batch.shape[0], self.n_samples, rays_o_batch, rays_d_batch, self.sites, 
-                                        self.in_z, self.in_sdf, self.fine_features, self.in_weights, self.grad_sdf_feat, self.in_ids, 
+                                        self.in_z, self.in_sdf, self.fine_features, self.in_weights, self.grad_sdf_space, self.in_ids, 
                                         self.out_z, self.out_sdf, self.out_feat, self.out_weights, self.out_grads, self.out_ids, 
                                         self.offsets, self.samples, self.samples_rays)
                         
@@ -1378,11 +1361,9 @@ class Runner:
         self.grad_sdf_net = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()          
         self.grad_sdf_norm = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()                
 
-        self.grad_sdf_feat = torch.zeros([self.sites.shape[0], 4*3]).float().cuda().contiguous()
         self.grad_sdf_space = torch.zeros([self.sites.shape[0], 3]).float().cuda().contiguous()
         self.unormed_grad = torch.zeros([self.sites.shape[0], 3]).float().cuda().contiguous()
         self.grad_feat_space = torch.zeros([self.sites.shape[0], 3, self.dim_feats]).float().cuda().contiguous()
-        self.grad_mean_curve = torch.zeros([self.sites.shape[0]]).float().cuda().contiguous()
         self.weights_grad_space = torch.zeros([3*self.tet32.KNN*self.sites.shape[0]]).float().cuda().contiguous()
         self.weights_grad = torch.zeros([self.sites.shape[0], 1]).float().cuda().contiguous()
         self.eik_loss = torch.zeros([self.sites.shape[0], 1]).float().cuda().contiguous()
@@ -1434,7 +1415,7 @@ class Runner:
         self.out_weights = torch.zeros([self.n_samples * self.batch_size, 6], dtype=torch.float32).cuda()
         self.out_weights = self.out_weights.contiguous()
         
-        self.out_grads = torch.zeros([self.n_samples * self.batch_size, 12], dtype=torch.float32).cuda().contiguous()
+        self.out_grads = torch.zeros([self.n_samples * self.batch_size, 3], dtype=torch.float32).cuda().contiguous()
 
         self.offsets = torch.zeros([self.batch_size, 2], dtype=torch.int32).cuda()
         self.offsets = self.offsets.contiguous()

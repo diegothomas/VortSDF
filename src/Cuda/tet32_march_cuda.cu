@@ -970,13 +970,13 @@ __global__ void fill_samples_kernel(
         	out_ids[6*i + l] = in_ids_rays[6 * s_id + l];
 		}
 
-		for (int l = 0; l < 12; l++) {
-			out_grads[12*i + l] = lambda*(in_weights_rays[6 * s_id + 0]*in_grads[12*in_ids_rays[6 * s_id + 0] + l] +
-												in_weights_rays[6 * s_id + 1]*in_grads[12*in_ids_rays[6 * s_id + 1] + l] +
-												in_weights_rays[6 * s_id + 2]*in_grads[12*in_ids_rays[6 * s_id + 2] + l])
-							+ (1.0f-lambda)*(in_weights_rays[6 * s_id + 3]*in_grads[12*in_ids_rays[6 * s_id + 3] + l] +
-												in_weights_rays[6 * s_id + 4]*in_grads[12*in_ids_rays[6 * s_id + 4] + l] +
-												in_weights_rays[6 * s_id + 5]*in_grads[12*in_ids_rays[6 * s_id + 5] + l]);
+		for (int l = 0; l < 3; l++) {
+			out_grads[3*i + l] = lambda*(in_weights_rays[6 * s_id + 0]*in_grads[3*in_ids_rays[6 * s_id + 0] + l] +
+												in_weights_rays[6 * s_id + 1]*in_grads[3*in_ids_rays[6 * s_id + 1] + l] +
+												in_weights_rays[6 * s_id + 2]*in_grads[3*in_ids_rays[6 * s_id + 2] + l])
+							+ (1.0f-lambda)*(in_weights_rays[6 * s_id + 3]*in_grads[3*in_ids_rays[6 * s_id + 3] + l] +
+												in_weights_rays[6 * s_id + 4]*in_grads[3*in_ids_rays[6 * s_id + 4] + l] +
+												in_weights_rays[6 * s_id + 5]*in_grads[3*in_ids_rays[6 * s_id + 5] + l]);
 		}
 
 		for (int l = 0; l < DIM_L_FEAT; l++) {
@@ -1075,14 +1075,13 @@ __global__ void fill_samples_kernel_o(
 		float3 c_weights_n = in_weights_rays[2 * s_id + 1];
 		int3 c_ids = in_ids_rays[2 * s_id];
 		int3 c_ids_n = in_ids_rays[2 * s_id + 1];
-		for (int l = 0; l < 4; l++) {
-			out_grads[4*i + l] = lambda*(c_weights.x*in_grads[4*c_ids.x + l] +
-												c_weights.y*in_grads[4*c_ids.y + l] +
-												c_weights.z*in_grads[4*c_ids.z + l])
-							+ (1.0f-lambda)*(c_weights_n.x*in_grads[4*c_ids_n.x + l] +
-												c_weights_n.y*in_grads[4*c_ids_n.y + l] +
-												c_weights_n.z*in_grads[4*c_ids_n.z + l]);
-		}
+		
+		out_grads[i] = lambda*(c_weights.x*in_grads[c_ids.x] +
+											c_weights.y*in_grads[c_ids.y] +
+											c_weights.z*in_grads[c_ids.z])
+						+ (1.0f-lambda)*(c_weights_n.x*in_grads[c_ids_n.x] +
+											c_weights_n.y*in_grads[c_ids_n.y] +
+											c_weights_n.z*in_grads[c_ids_n.z]);
 
 		for (int l = 0; l < 8; l++) { // dim feats = 32 = 4*8
 			out_feat[8*i+l] = lambda*(c_weights.x*in_feat[8*c_ids.x + l] +
