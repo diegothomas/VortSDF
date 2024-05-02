@@ -91,7 +91,7 @@ class Runner:
         self.e_w = 1.0e-6
         self.tv_w = 5.0e-3
         self.tv_f = 1.0e-8
-        self.f_w = 0.0
+        self.f_w = 5.0
 
         self.report_freq = self.conf.get_int('train.report_freq')
         self.val_freq = self.conf.get_int('train.val_freq')
@@ -1002,7 +1002,7 @@ class Runner:
                     self.e_w = 1.0e-5#1.0e-8 #5.0e-3
                     self.tv_w = 5.0e-4 #1.0e-8 #1.0e-1
                     self.tv_f = 1.0e-6
-                    self.f_w = 1.0 #1.0
+                    #self.f_w = 1.0 #1.0
                     self.learning_rate = 5e-4
                     self.learning_rate_sdf = 5.0e-4 #3.0e-4 #5
                     self.learning_rate_feat = 5.0e-2
@@ -1027,7 +1027,7 @@ class Runner:
                     #acc_it = 10
 
                     self.tv_f = 1.0e-6
-                    self.f_w = 1.0
+                    #self.f_w = 1.0
                     self.learning_rate = 5e-4
                     self.learning_rate_sdf = 1e-4
                     self.learning_rate_feat = 1e-2 #1.0e-2
@@ -1048,7 +1048,7 @@ class Runner:
                     self.e_w = 1.0e-8 #1.0e-9 #1.0e-7 #5.0e-3
                     self.tv_w = 5.0e-7 #1.0e-8 #1.0e-1
                     self.tv_f = 1.0e-8 #1.0e-4
-                    self.f_w = 1.0
+                    #self.f_w = 1.0
                     self.end_iter_loc = 20000
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 5.0e-5
