@@ -1066,28 +1066,17 @@ class Runner:
                     self.e_w = 1.0e-4
                     self.tv_w = 1.0e-2"""
                     self.s_w = 1.0e-5 #5.0e-4
-                    self.e_w = 1.0e-7
+                    self.e_w = 1.0e-6
                     self.tv_w = 5.0e-6 #1.0e-4 #1.0e-3
                     self.tv_f = 1.0e-7 #1.0e-3
                     self.end_iter_loc = 20000
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 5.0e-5
+                    self.learning_rate_sdf = 1.0e-5
                     self.learning_rate_feat = 5.0e-3
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-3
                     self.learning_rate_alpha = 1.0e-8
                     self.val_freq = 2000
                     #verbose = True
-                    
-                if (iter_step+1) == 36000:
-                    self.R = 25
-                    self.s_w = 1.0e-8
-                    self.e_w = 1.0e-10
-                    self.tv_w = 1.0e-7
-                    self.end_iter_loc = 10000
-                    self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 1.0e-5
-                    self.learning_rate_feat = 1.0e-4
-                    self.vortSDF_renderer_fine.mask_reg = 0.0
 
                 print("SIGMA => ", self.sigma)
                 #with torch.no_grad():
@@ -1106,7 +1095,7 @@ class Runner:
                 #torch.cuda.empty_cache()
 
             if iter_step % self.report_freq == 0:
-                print('iter:{:8>d} loss = {}, scale={}, grad={}, grad_feat = {}, lr={}'.format(iter_step, loss, self.inv_s, abs(self.grad_sdf[abs(self.grad_sdf) > 0.0]).mean(), abs(self.grad_features[abs(self.grad_features) > 0.0]).mean(), self.optimizer.param_groups[0]['lr']))
+                print('iter:{:8>d} loss = {}, scale={}, grad={}, grad_feat = {}, grad_nrm = {}, lr={}'.format(iter_step, loss, self.inv_s, abs(self.grad_sdf[abs(self.grad_sdf) > 0.0]).mean(), abs(self.grad_features[abs(self.grad_features) > 0.0]).mean(), abs(self.grad_sdf_norm[abs(self.grad_sdf_norm) > 0.0]).mean(), self.optimizer.param_groups[0]['lr']))
                 print('iter:{:8>d} s_w = {}, e_w = {}, tv_w = {}, nb_samples={}, lr={}'.format(iter_step, self.s_w, self.e_w, self.tv_w, nb_samples, self.optimizer_sdf.param_groups[0]['lr']))
                 #print('iter:{:8>d} loss CVT = {} lr={}'.format(iter_step, loss_cvt, self.optimizer_cvt.param_groups[0]['lr']))
                 
@@ -1170,10 +1159,63 @@ class Runner:
             self.update_learning_rate(self.loc_iter)
             self.loc_iter = self.loc_iter + 1
 
+
+        ############# Final CVT optimization ######################
+        if True:
+            self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf.detach().cpu().numpy(), 
+                                                                                     self.fine_features.detach().cpu().numpy(), 
+                                                                                     self.visual_hull, res, cam_sites, self.learning_rate_cvt, 
+                                                                                     True, self.sigma)
+            self.sdf = self.sdf.contiguous()
+            self.fine_features = self.fine_features.contiguous()
+            self.tet32.load_cuda()
+
+            sites = np.asarray(self.tet32.vertices)  
+            cam_ids = np.stack([np.where((sites == cam_sites[i,:]).all(axis = 1))[0] for i in range(cam_sites.shape[0])]).reshape(-1)
+            self.tet32.make_adjacencies(cam_ids)
+
+            self.tet32.make_multilvl_knn()
+
+            cam_ids = torch.from_numpy(cam_ids).int().cuda()
+            self.cam_ids = cam_ids
+            
+            outside_flag = np.zeros(sites.shape[0], np.int32)
+            outside_flag[sites[:,0] < self.visual_hull[0] + (self.visual_hull[3]-self.visual_hull[0])/(res)] = 1
+            outside_flag[sites[:,1] < self.visual_hull[1] + (self.visual_hull[4]-self.visual_hull[1])/(res)] = 1
+            outside_flag[sites[:,2] < self.visual_hull[2] + (self.visual_hull[5]-self.visual_hull[2])/(res)] = 1
+            outside_flag[sites[:,0] > self.visual_hull[3] - (self.visual_hull[3]-self.visual_hull[0])/(res)] = 1
+            outside_flag[sites[:,1] > self.visual_hull[4] - (self.visual_hull[4]-self.visual_hull[1])/(res)] = 1
+            outside_flag[sites[:,2] > self.visual_hull[5] - (self.visual_hull[5]-self.visual_hull[2])/(res)] = 1
+            
+            self.sites = torch.from_numpy(sites.astype(np.float32)).cuda()
+            self.sites = self.sites.contiguous()
+            self.sites.requires_grad_(True)
+
+            self.Allocate_data()
+            
+            cvt_grad_cuda.diff_tensor(self.tet32.nb_tets, self.tet32.summits, self.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff)
+            self.grad_sdf_space[:] = 0.0
+            self.grad_feat_space[:] = 0.0
+            self.weights_grad[:] = 0.0
+            self.grad_eik[:] = 0.0
+            self.grad_norm_smooth[:] = 0.0
+            self.eik_loss[:] = 0.0
+
+            cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, self.activated, self.sdf.detach(), self.sdf.detach(), self.fine_features.detach(), 
+                                        self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.eik_loss)
+            
+            self.norm_grad = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1, 1)
+            self.norm_grad[self.norm_grad == 0.0] = 1.0
+            self.unormed_grad[:] = self.grad_sdf_space[:]
+            self.grad_sdf_space = self.grad_sdf_space / self.norm_grad.expand(-1, 3)
+            
+
+
+
         #self.render_image(cam_ids, 0)
         self.save_checkpoint()  
         self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), os.path.join(self.base_exp_dir, 'final_MT.ply'), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])        
-        #self.tet32.make_clipped_CVT(self.sdf.detach(), self.fine_features.detach(), self.grad_sdf_space, self.visual_hull, outside_flag, cam_ids, "Exp/{}/final_CVT.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
+        self.tet32.make_clipped_CVT(self.sdf.detach(), self.grad_sdf_space, self.visual_hull,  "Exp/{}/final_CVT.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
         
         self.activated[:] = 1
         with torch.no_grad():
@@ -1181,8 +1223,16 @@ class Runner:
         backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.sigma_feat, 1, self.sites,  self.activated,
                                         self.grad_sdf_space, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)
             
+        self.grad_sdf_space[:] = 0.0
+        cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, self.activated, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
+                                    self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.eik_loss)
+        self.norm_grad = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1, 1)
+        self.norm_grad[self.norm_grad == 0.0] = 1.0
+        self.unormed_grad[:] = self.grad_sdf_space[:]
+        self.grad_sdf_space = self.grad_sdf_space / self.norm_grad.expand(-1, 3)
+    
         self.tet32.surface_from_sdf(self.sdf_smooth.detach().cpu().numpy().reshape(-1), os.path.join(self.base_exp_dir, 'final_MT_smooth.ply'), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
-        #self.tet32.make_clipped_CVT(self.sdf.detach(), self.fine_features.detach(), self.grad_sdf_space, self.visual_hull, outside_flag, cam_ids, "Exp/{}/final_CVT_smooth.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
+        self.tet32.make_clipped_CVT(self.sdf_smooth, self.grad_sdf_space, self.visual_hull, "Exp/{}/final_CVT_smooth.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
         
         
         #self.tet32.clipped_cvt(self.sdf.detach(), self.fine_features.detach(), outside_flag, 

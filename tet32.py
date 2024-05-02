@@ -509,56 +509,61 @@ class Tet32(Process):
         self.lvl_sites.append(np.arange(self.sites.shape[0]))
         self.nb_pre_sites = self.sites.shape[0]
 
-        ## Smooth current mesh and build sdf        
-        tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(sdf.astype(np.float64)),0.0)
-        #tri_mesh.filter_smooth_laplacian(number_of_iterations=3)
+        if self.nb_pre_sites < 1.0e6:
+            ## Smooth current mesh and build sdf        
+            tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(sdf.astype(np.float64)),0.0)
+            #tri_mesh.filter_smooth_laplacian(number_of_iterations=3)
 
-        self.tri_vertices = np.asarray(tri_mesh.vertices)
-        self.tri_faces = np.asarray(tri_mesh.triangles)
-        f = SDF(np.asarray(self.tri_vertices), np.asarray(self.tri_faces))
-        sdf = -f(self.sites.cpu().numpy())
-        
-        nb_new_sites = tet_utils.upsample_counter(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(sdf).float().cuda())
-                
-        #nb_new_sites = tet_utils.upsample_counter_tet(self.nb_tets, radius, self.summits, self.sites, torch.from_numpy(sdf).float().cuda())
-                
-        new_sites = torch.zeros([nb_new_sites,3]).float().cuda().contiguous()
-        new_sdf = torch.zeros([nb_new_sites]).float().cuda().contiguous()
-        new_feat = torch.zeros([nb_new_sites,feat.shape[1]]).float().cuda().contiguous()
+            self.tri_vertices = np.asarray(tri_mesh.vertices)
+            self.tri_faces = np.asarray(tri_mesh.triangles)
+            f = SDF(np.asarray(self.tri_vertices), np.asarray(self.tri_faces))
+            sdf = -f(self.sites.cpu().numpy())
+            
+            nb_new_sites = tet_utils.upsample_counter(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(sdf).float().cuda())
+                    
+            #nb_new_sites = tet_utils.upsample_counter_tet(self.nb_tets, radius, self.summits, self.sites, torch.from_numpy(sdf).float().cuda())
+                    
+            new_sites = torch.zeros([nb_new_sites,3]).float().cuda().contiguous()
+            new_sdf = torch.zeros([nb_new_sites]).float().cuda().contiguous()
+            new_feat = torch.zeros([nb_new_sites,feat.shape[1]]).float().cuda().contiguous()
 
-        tet_utils.upsample(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(sdf).float().cuda().contiguous(), torch.from_numpy(feat).float().cuda().contiguous(),
-                           new_sites, new_sdf, new_feat)
-        
-        #tet_utils.upsample_tet(self.nb_tets, radius, self.summits, self.sites, torch.from_numpy(sdf).float().cuda().contiguous(), torch.from_numpy(feat).float().cuda().contiguous(),
-        #                   new_sites, new_sdf, new_feat)
-        
-        new_sites = new_sites.cpu().numpy()
-        new_sdf = new_sdf.cpu().numpy()
-        new_feat = new_feat.cpu().numpy()
+            tet_utils.upsample(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(sdf).float().cuda().contiguous(), torch.from_numpy(feat).float().cuda().contiguous(),
+                            new_sites, new_sdf, new_feat)
+            
+            #tet_utils.upsample_tet(self.nb_tets, radius, self.summits, self.sites, torch.from_numpy(sdf).float().cuda().contiguous(), torch.from_numpy(feat).float().cuda().contiguous(),
+            #                   new_sites, new_sdf, new_feat)
+            
+            new_sites = new_sites.cpu().numpy()
+            new_sdf = new_sdf.cpu().numpy()
+            new_feat = new_feat.cpu().numpy()
 
-        sites = self.sites.cpu().numpy()
+            sites = self.sites.cpu().numpy()
 
-        """in_sdf = sdf
-        in_feat = feat
+            """in_sdf = sdf
+            in_feat = feat
 
-        new_sites = []
-        new_sdf = []
-        new_feat = []
-        for _, edge in enumerate(self.o3d_edges.lines):
-            edge_length = np.linalg.norm(sites[edge[0]] - sites[edge[1]], ord=2, axis=-1, keepdims=True)
-            if sdf[edge[0]]*sdf[edge[1]] <= 0.0 or min(abs(sdf[edge[0]]), abs(sdf[edge[1]])) < edge_length:
-                new_sites.append((sites[edge[0]] + sites[edge[1]])/2.0)
-                new_sdf.append((sdf[edge[0]] + sdf[edge[1]])/2.0)
-                new_feat.append((feat[edge[0]] + feat[edge[1]])/2.0)
+            new_sites = []
+            new_sdf = []
+            new_feat = []
+            for _, edge in enumerate(self.o3d_edges.lines):
+                edge_length = np.linalg.norm(sites[edge[0]] - sites[edge[1]], ord=2, axis=-1, keepdims=True)
+                if sdf[edge[0]]*sdf[edge[1]] <= 0.0 or min(abs(sdf[edge[0]]), abs(sdf[edge[1]])) < edge_length:
+                    new_sites.append((sites[edge[0]] + sites[edge[1]])/2.0)
+                    new_sdf.append((sdf[edge[0]] + sdf[edge[1]])/2.0)
+                    new_feat.append((feat[edge[0]] + feat[edge[1]])/2.0)
 
-        new_sites = np.stack(new_sites)
-        new_sdf = np.stack(new_sdf)
-        new_feat = np.stack(new_feat)"""
+            new_sites = np.stack(new_sites)
+            new_sdf = np.stack(new_sdf)
+            new_feat = np.stack(new_feat)"""
 
-        print("nb new sites: ", new_sites.shape)
-        self.sites = np.concatenate((sites, new_sites))
-        in_sdf = np.concatenate((sdf, new_sdf))
-        in_feat = np.concatenate((feat, new_feat))
+            print("nb new sites: ", new_sites.shape)
+            self.sites = np.concatenate((sites, new_sites))
+            in_sdf = np.concatenate((sdf, new_sdf))
+            in_feat = np.concatenate((feat, new_feat))
+        else:
+            in_sdf = torch.clone(sdf)
+            in_feat = torch.clone(feat)
+
         new_sites = self.sites
 
         outside_flag = np.zeros(self.sites.shape[0], np.int32)
@@ -756,10 +761,8 @@ class Tet32(Process):
 
         return nb_samples
     
-    def make_clipped_CVT(self, sdf, feat, gradients, bbox, outside_flag, cam_ids, filename = "", translate = None, scale = None):
+    def make_clipped_CVT(self, sdf, gradients, bbox, filename = "", translate = None, scale = None):
         print("Start clipping CVT")
-
-        sdf, _ = self.CVT(outside_flag, cam_ids, sdf, feat, 300, 0.003, 0.1, 1.0e-4)
 
         import ctypes
         
@@ -768,12 +771,12 @@ class Tet32(Process):
         translate = np.ascontiguousarray(translate, dtype=np.float32)
         translate_c = translate.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
 
-        libnameCGAL = "C:/Users/Diego Thomas/Documents/Projects/inria-cvt/Python/CVT.dll"
-        #libnameCGAL = "C:/Users/thomas/Documents/Projects/Human-AI/inria-cvt/Python/CVT.dll"
+        #libnameCGAL = "C:/Users/Diego Thomas/Documents/Projects/inria-cvt/Python/CVT.dll"
+        libnameCGAL = "C:/Users/thomas/Documents/Projects/Human-AI/inria-cvt/Python/CVT.dll"
         cvt_libCGAL = ctypes.CDLL(libnameCGAL)
 
-        libname = "C:/Users/Diego Thomas/Documents/Projects/inria-cvt/Python/DiscreteCVT.dll"
-        #libname = "C:/Users/thomas/Documents/Projects/Human-AI/inria-cvt/Python/DiscreteCVT.dll"
+        #libname = "C:/Users/Diego Thomas/Documents/Projects/inria-cvt/Python/DiscreteCVT.dll"
+        libname = "C:/Users/thomas/Documents/Projects/Human-AI/inria-cvt/Python/DiscreteCVT.dll"
         cvt_lib = ctypes.CDLL(libname)
         
         cvt_lib.Get_nb_tets32.restype = ctypes.c_int32
@@ -792,9 +795,7 @@ class Tet32(Process):
         cvt_lib.Gradient_sites32.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
         cvt_lib.Compute_gradient_field32.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
 
-        self.sites = torch.from_numpy(self.sites).cuda()
         cpy_sites = torch.clone(self.sites)
-        sdf = torch.from_numpy(sdf).cuda()
         cvt_libCGAL.CVT(cpy_sites.data_ptr(), sdf.data_ptr(), gradients.data_ptr(), self.params.data_ptr(),
                                                 cpy_sites.shape[0], scale, translate_c, filename.encode(), 1) #0
     

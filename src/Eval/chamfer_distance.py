@@ -428,7 +428,8 @@ def main():
         f = open(result_csv,"w")
         f.write(" " +  ",")
         for mesh in mesh_list:
-            f.write(mesh +  "," + " " +  "," ) 
+            mesh_name = mesh.split("\\")[-1].split(".")[0]
+            f.write(mesh_name +  "," + " " +  "," ) 
         f.write("\n")
         
         f.write(" " +  ",")
