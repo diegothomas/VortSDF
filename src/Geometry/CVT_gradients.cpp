@@ -54,6 +54,7 @@ float cvt_grad_cuda(
     torch::Tensor gammas, 
     torch::Tensor neighbors,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor freeze,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor grad_sites    // [N_sites, 3] for each voxel => it's vertices
 );
@@ -226,6 +227,7 @@ float cvt_grad(
     torch::Tensor gammas, 
     torch::Tensor neighbors,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor freeze,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor grad_sites    // [N_sites, 3] for each voxel => it's vertices
 ) {
@@ -243,6 +245,7 @@ float cvt_grad(
         gammas, 
         neighbors,   
         sites, 
+        freeze, 
         sdf, 
         grad_sites );
 

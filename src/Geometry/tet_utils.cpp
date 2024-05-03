@@ -29,6 +29,7 @@ void upsample_cuda(
     torch::Tensor edges,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor true_sdf,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor feats,
     torch::Tensor new_sites,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor new_sdf,    // [N_sites, 3] for each voxel => it's vertices
@@ -126,6 +127,7 @@ void upsample(
     torch::Tensor edges,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor true_sdf,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor feats,
     torch::Tensor new_sites,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor new_sdf,    // [N_sites, 3] for each voxel => it's vertices
@@ -138,6 +140,7 @@ void upsample(
         edges,    // [N_sites, 3] for each voxel => it's vertices
         sites,    // [N_sites, 3] for each voxel => it's vertices
         sdf,
+        true_sdf,    // [N_sites, 3] for each voxel => it's vertices
         feats,    // [N_sites, 3] for each voxel => it's vertices
         new_sites,    // [N_sites, 3] for each voxel => it's vertices
         new_sdf,

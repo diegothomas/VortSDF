@@ -699,6 +699,7 @@ __global__ void cvt_grad_cuda_kernel(
     const float *__restrict__ gammas, 
     const int *__restrict__ neighbors,  // [N_voxels, 4] for each voxel => it's neighbors
     const float *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices
+    const int *__restrict__ freeze,     // [N_voxels, 4] for each voxel => it's vertices
     const float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ grad_sites,     // [N_voxels, 4] for each voxel => it's vertices
     float* loss
@@ -709,6 +710,9 @@ __global__ void cvt_grad_cuda_kernel(
     {
         return;
     }
+
+    if (freeze[idx] == 1)
+        return;
 
     float ray[9] {1.0, 0.0, 0.0,
                     0.0, 1.0, 0.0,
@@ -1378,6 +1382,7 @@ float cvt_grad_cuda(
     torch::Tensor gammas, 
     torch::Tensor neighbors,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor freeze,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sdf,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor grad_sites    // [N_sites, 3] for each voxel => it's vertices
 )   {
@@ -1398,6 +1403,7 @@ float cvt_grad_cuda(
                 gammas.data_ptr<float>(),
                 neighbors.data_ptr<int>(),
                 sites.data_ptr<float>(),
+                freeze.data_ptr<int>(),
                 sdf.data_ptr<float>(),
                 grad_sites.data_ptr<float>(),
                 loss); 

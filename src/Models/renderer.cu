@@ -356,8 +356,8 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
             dc = dc * (1.0f - Wtotal) * (1.0f - Wtotal);
         }
 
-        float w_photo = fabs(dot(grad_space[t], rays[n])); //(grad_space[12 * t]*rays[3*n] + grad_space[12 * t + 1]*rays[3*n+1] + grad_space[12 * t + 2]*rays[3*n+2]);
-        dalpha = dalpha*w_photo;
+        //float w_photo = fabs(dot(grad_space[t], rays[n])); //(grad_space[12 * t]*rays[3*n] + grad_space[12 * t + 1]*rays[3*n+1] + grad_space[12 * t + 2]*rays[3*n+2]);
+        //dalpha = dalpha*w_photo;
 
         //if (MaskReg < 0.01f)
         //    dalpha = dalpha*w_color;

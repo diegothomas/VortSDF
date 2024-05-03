@@ -81,7 +81,7 @@ class Runner:
         self.learning_rate_sdf = self.conf.get_float('train.learning_rate_sdf')
         self.learning_rate_feat = self.conf.get_float('train.learning_rate_feat')
         self.learning_rate_alpha = self.conf.get_float('train.learning_rate_alpha')
-        lr=self.learning_rate_cvt = self.conf.get_float('train.learning_rate_cvt')
+        self.learning_rate_cvt = self.conf.get_float('train.learning_rate_cvt')
 
         self.dim_feats = self.conf.get_int('train.dim_feats')
 
@@ -269,7 +269,7 @@ class Runner:
         ############# CVT optimization #############################
         ############# CVT optimization #############################
         if not is_continue:
-            self.tet32.CVT(outside_flag, cam_ids.long(), self.sdf.detach(), self.fine_features.detach())
+            self.tet32.CVT(outside_flag, cam_ids.long(), self.sdf.detach(), self.fine_features.detach(), lr = self.learning_rate_cvt)
 
             self.tet32.run(0.3)
             self.tet32.load_cuda()
@@ -345,7 +345,7 @@ class Runner:
             self.R = 40
             self.s_start = 10.0
             self.inv_s = 0.1
-            self.sigma = 0.12
+            self.sigma = 0.1 #0.12
             step_size = 0.01
             self.w_g = 0.01
             
@@ -613,8 +613,10 @@ class Runner:
             if self.double_net:
                 if self.position_encoding:
                     shift_p = xyz_emb.shape[1] + viewdirs_emb.shape[1]
-                    self.fine_features_grad[:nb_samples,:] = rgb_feat.grad[:,shift_p+8:] #+ 0.5*coarse_feat.grad[:,shift_p+14:]
-                    self.norm_features_grad[:nb_samples,:] = rgb_feat.grad[:,shift_p+5:shift_p+8] + 0.5*coarse_feat.grad[:,shift_p+2:shift_p+5]
+                    self.fine_features_grad[:nb_samples,:] = math.sin(0.5*math.pi*self.loc_iter/self.end_iter_loc)*rgb_feat.grad[:,shift_p+8:] +\
+                                                                (1.0 - math.sin(0.5*math.pi*self.loc_iter/self.end_iter_loc))*coarse_feat.grad[:,shift_p+5:]
+                    self.norm_features_grad[:nb_samples,:] = math.sin(0.5*math.pi*self.loc_iter/self.end_iter_loc)*rgb_feat.grad[:,shift_p+5:shift_p+8] +\
+                                                                (1.0 - math.sin(0.5*math.pi*self.loc_iter/self.end_iter_loc))*coarse_feat.grad[:,shift_p+2:shift_p+5]
                     self.sdf_features_grad[:nb_samples,:] = rgb_feat.grad[:,shift_p+3:shift_p+5] + 0.5*coarse_feat.grad[:,shift_p:shift_p+2]
                 else:
                     fine_features_grad = rgb_feat.grad[:,36:]
@@ -690,7 +692,8 @@ class Runner:
                 #    ((1.0 - lamda_c)*self.vortSDF_renderer_fine.grads_sdf + lamda_c*self.vortSDF_renderer_coarse_net.grads_sdf)
                 #grad_sdf =  (self.vortSDF_renderer_fine.grads_sdf)
                 self.grad_sdf = self.f_w*(self.grad_sdf_net + self.grad_sdf_norm) +\
-                             (self.vortSDF_renderer_fine.grads_sdf) # + 0.5*self.vortSDF_renderer_coarse_net.grads_sdf)
+                             (math.sin(0.5*math.pi*self.loc_iter/self.end_iter_loc)*self.vortSDF_renderer_fine.grads_sdf +\
+                                (1.0 - math.sin(0.5*math.pi*self.loc_iter/self.end_iter_loc))*self.vortSDF_renderer_coarse_net.grads_sdf)
             else:
                 self.grad_sdf = self.vortSDF_renderer_fine.grads_sdf / (mask_sum + 1.0e-5) + self.f_w*self.grad_sdf_net
 
@@ -817,7 +820,7 @@ class Runner:
                 self.optimizer_sdf.zero_grad() # 0.00001*self.grad_mean_curve +\ # self.e_w*self.grad_eik +\
 
             self.norm_grad = torch.linalg.norm(self.unormed_grad, ord=2, axis=-1, keepdims=True).reshape(-1)
-            #self.grad_sdf[self.mask_background[:] == 1.0] = 0.0
+            self.grad_sdf[self.mask_background[:] == 1.0] = 0.0
 
             ###self.norm_grad * 
             if (iter_step+1) < 2000: 
@@ -848,9 +851,9 @@ class Runner:
                     self.grad_eik[self.sdf.grad[:] == 0.0] = 0.0
                     self.grad_sdf_smooth[self.sdf.grad[:] == 0.0] = 0.0
 
-                    """self.grad_norm_smooth[self.mask_background[:] == 1.0] = 0.0
+                    self.grad_norm_smooth[self.mask_background[:] == 1.0] = 0.0
                     self.grad_eik[self.mask_background[:] == 1.0] = 0.0
-                    self.grad_sdf_smooth[self.mask_background[:] == 1.0] = 0.0"""
+                    self.grad_sdf_smooth[self.mask_background[:] == 1.0] = 0.0
 
                     """if not iter_step % 3 == 0:
                         self.grad_norm_smooth[:] = 0.0
@@ -880,13 +883,15 @@ class Runner:
                 with torch.no_grad():
                     self.sdf[ext_flag[:] == 1] = 1000.0
 
+                self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/{}/meshes/test_tri_up.ply".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
+                
                 #if (iter_step+1) == 20000:
                 #    self.batch_size = 10240
 
                 #if self.sites.shape[0] > 500000:
                 #    self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, 0.0) #(iter_step+1) > 2000
                 #else:
-                self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), self.visual_hull, res, cam_sites, self.learning_rate_cvt, (iter_step+1) > 50000, self.sigma)
+                self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), self.visual_hull, res, cam_sites, self.learning_rate_cvt, False, self.sigma)
                 self.sdf = self.sdf.contiguous()
                 self.sdf.requires_grad_(True)
                 self.fine_features = self.fine_features.contiguous()
@@ -981,8 +986,8 @@ class Runner:
                     self.s_w = 1.0e-3
                     self.e_w = 1.0e-4 #5.0e-3
                     self.tv_w = 5.0e-4 #1.0e-1
-                    self.s_start = 50.0
-                    self.s_max = 200
+                    self.s_start = 30/(10.0*self.sigma) #50.0
+                    self.s_max = 60/(5.0*self.sigma) #200
                     self.learning_rate = 1e-3
                     self.learning_rate_sdf = 1.0e-3
                     self.learning_rate_feat = 1.0e-3
@@ -993,15 +998,15 @@ class Runner:
 
                 if (iter_step+1) == 10000:
                     self.R = 50
-                    self.s_start = 100.0
-                    self.s_max = 200
+                    self.s_start = 30/(10.0*self.sigma) #50.0
+                    self.s_max = 60/(5.0*self.sigma) #200
                     """self.s_w = 1.0e-3
                     self.e_w = 5.0e-4
                     self.tv_w = 1.0e-5"""
                     self.s_w = 1.0e-3 #1e-6
                     self.e_w = 1.0e-5#1.0e-8 #5.0e-3
                     self.tv_w = 5.0e-4 #1.0e-8 #1.0e-1
-                    self.tv_f = 1.0e-6
+                    self.tv_f = 1.0e-7
                     #self.f_w = 1.0 #1.0
                     self.learning_rate = 5e-4
                     self.learning_rate_sdf = 5.0e-4 #3.0e-4 #5
@@ -1014,19 +1019,19 @@ class Runner:
                 if (iter_step+1) == 30000:
                     warm_up = 1000
                     self.R = 40
-                    self.s_start = 100.0
-                    self.s_max = 300
+                    self.s_start = 30/(10.0*self.sigma) #50.0
+                    self.s_max = 60/(5.0*self.sigma) #200
                     #self.sigma = 0.02
                     """self.s_w = 5.0e-3
                     self.e_w = 1.0e-3
                     self.tv_w = 1.0e-3"""
-                    self.s_w = 1.0e-6 #5.0e-4
-                    self.e_w = 1.0e-8 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 5.0e-7 #1.0e-8 #1.0e-1
+                    self.s_w = 1.0e-4 #5.0e-4
+                    self.e_w = 1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
+                    self.tv_w = 5.0e-5 #1.0e-8 #1.0e-1
                     self.w_g = 0.0
                     #acc_it = 10
 
-                    self.tv_f = 1.0e-6
+                    self.tv_f = 1.0e-7
                     #self.f_w = 1.0
                     self.learning_rate = 5e-4
                     self.learning_rate_sdf = 1e-4
@@ -1038,15 +1043,15 @@ class Runner:
                 if (iter_step+1) == 50000:
                     #warm_up = 2000
                     self.R = 40
-                    self.s_start = 200.0
-                    self.s_max = 800
+                    self.s_start = 30/(10.0*self.sigma) #50.0
+                    self.s_max = 60/(5.0*self.sigma) #200
                     #self.sigma = 0.01
                     """self.s_w = 2.0e-4 #2.0e-6
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
-                    self.s_w = 1.0e-6 #2.0e-6
-                    self.e_w = 1.0e-8 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 5.0e-7 #1.0e-8 #1.0e-1
+                    self.s_w = 1.0e-5 #2.0e-6
+                    self.e_w = 1.0e-7 #1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
+                    self.tv_w = 5.0e-6 #1.0e-8 #1.0e-1
                     self.tv_f = 1.0e-8 #1.0e-4
                     #self.f_w = 1.0
                     self.end_iter_loc = 20000
@@ -1058,24 +1063,24 @@ class Runner:
                     
                 if (iter_step+1) == 70000:
                     self.R = 10
-                    self.s_start = 300.0 #400
-                    self.s_max = 1200
+                    self.s_start = 30/(10.0*self.sigma) #50.0
+                    self.s_max = 60/(5.0*self.sigma) #200
                     #self.sigma = 0.01
                     #self.sigma_feat = 0.02
                     """self.s_w = 1.0e-2
                     self.e_w = 1.0e-4
                     self.tv_w = 1.0e-2"""
                     self.s_w = 1.0e-5 #5.0e-4
-                    self.e_w = 1.0e-6
+                    self.e_w = 1.0e-7 #1.0e-7
                     self.tv_w = 5.0e-6 #1.0e-4 #1.0e-3
-                    self.tv_f = 1.0e-7 #1.0e-3
+                    self.tv_f = 1.0e-8 #1.0e-3
                     self.end_iter_loc = 20000
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 1.0e-5
                     self.learning_rate_feat = 5.0e-3
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-3
                     self.learning_rate_alpha = 1.0e-8
-                    self.val_freq = 2000
+                    #self.val_freq = 2000
                     #verbose = True
 
                 print("SIGMA => ", self.sigma)
@@ -1089,19 +1094,19 @@ class Runner:
 
                 #verbose = True
                 #self.tet32.save("Exp/bmvs_man/test_up.ply") 
-                #self.tet32.save_multi_lvl("Exp/bmvs_man/multi_lvl")    
+                self.tet32.save_multi_lvl("Exp/{}/multi_lvl".format(self.data_name))    
                 #self.render_image(cam_ids, img_idx)
                 #self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri_up_{}.ply".format(iter_step), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])                          
                 #torch.cuda.empty_cache()
 
-            if iter_step % self.report_freq == 0:
-                print('iter:{:8>d} loss = {}, scale={}, grad={}, grad_feat = {}, grad_nrm = {}, lr={}'.format(iter_step, loss, self.inv_s, abs(self.grad_sdf[abs(self.grad_sdf) > 0.0]).mean(), abs(self.grad_features[abs(self.grad_features) > 0.0]).mean(), abs(self.grad_sdf_norm[abs(self.grad_sdf_norm) > 0.0]).mean(), self.optimizer.param_groups[0]['lr']))
+            if (iter_step+1) % self.report_freq == 0:
+                print('iter:{:8>d} loss = {}, scale={}, grad={}, grad_feat = {}, grad_nrm = {}, grad_tv_feat = {} lr={}'.format(iter_step, loss, self.inv_s, abs(self.grad_sdf[abs(self.grad_sdf) > 0.0]).mean(), abs(self.grad_features[abs(self.grad_features) > 0.0]).mean(), abs(self.grad_sdf_norm[abs(self.grad_sdf_norm) > 0.0]).mean(), abs(self.grad_feat_smooth[abs(self.grad_feat_smooth) > 0.0]).mean(), self.optimizer.param_groups[0]['lr']))
                 print('iter:{:8>d} s_w = {}, e_w = {}, tv_w = {}, nb_samples={}, lr={}'.format(iter_step, self.s_w, self.e_w, self.tv_w, nb_samples, self.optimizer_sdf.param_groups[0]['lr']))
                 #print('iter:{:8>d} loss CVT = {} lr={}'.format(iter_step, loss_cvt, self.optimizer_cvt.param_groups[0]['lr']))
                 
 
             #if verbose and iter_step % self.val_freq == 0:
-            if iter_step % self.val_freq == 0:
+            if (iter_step+1) % self.val_freq == 0:
                 #self.inv_s = 1000     
                 self.render_image(img_idx)
                 with torch.no_grad():
@@ -1165,7 +1170,7 @@ class Runner:
             self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf.detach().cpu().numpy(), 
                                                                                      self.fine_features.detach().cpu().numpy(), 
                                                                                      self.visual_hull, res, cam_sites, self.learning_rate_cvt, 
-                                                                                     True, self.sigma)
+                                                                                     False, self.sigma)
             self.sdf = self.sdf.contiguous()
             self.fine_features = self.fine_features.contiguous()
             self.tet32.load_cuda()
@@ -1215,7 +1220,7 @@ class Runner:
         #self.render_image(cam_ids, 0)
         self.save_checkpoint()  
         self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), os.path.join(self.base_exp_dir, 'final_MT.ply'), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])        
-        self.tet32.make_clipped_CVT(self.sdf.detach(), self.grad_sdf_space, self.visual_hull,  "Exp/{}/final_CVT.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
+        #self.tet32.make_clipped_CVT(self.sdf.detach(), self.grad_sdf_space, self.visual_hull,  "Exp/{}/final_CVT.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
         
         self.activated[:] = 1
         with torch.no_grad():
@@ -1232,7 +1237,7 @@ class Runner:
         self.grad_sdf_space = self.grad_sdf_space / self.norm_grad.expand(-1, 3)
     
         self.tet32.surface_from_sdf(self.sdf_smooth.detach().cpu().numpy().reshape(-1), os.path.join(self.base_exp_dir, 'final_MT_smooth.ply'), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
-        self.tet32.make_clipped_CVT(self.sdf_smooth, self.grad_sdf_space, self.visual_hull, "Exp/{}/final_CVT_smooth.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
+        #self.tet32.make_clipped_CVT(self.sdf_smooth, self.grad_sdf_space, self.visual_hull, "Exp/{}/final_CVT_smooth.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
         
         
         #self.tet32.clipped_cvt(self.sdf.detach(), self.fine_features.detach(), outside_flag, 
