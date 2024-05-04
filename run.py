@@ -1037,7 +1037,7 @@ class Runner:
                     self.tv_f = 1.0e-7
                     #self.f_w = 1.0
                     self.learning_rate = 5e-4
-                    self.learning_rate_sdf = 1e-4
+                    self.learning_rate_sdf = 5e-5 #1e-4
                     self.learning_rate_feat = 1e-2 #1.0e-2
                     self.end_iter_loc = 20000
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-2
