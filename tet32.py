@@ -860,8 +860,12 @@ class Tet32(Process):
 
         return nb_samples
     
-    def make_clipped_CVT(self, sdf, gradients, bbox, filename = "", translate = None, scale = None):
+    def make_clipped_CVT(self, sdf, sigma, gradients, bbox, filename = "", translate = None, scale = None):
         print("Start clipping CVT")
+
+        self.sites = self.sites[abs(sdf) < sigma]
+        self.gradients = self.gradients[abs(sdf) < sigma]
+        self.sdf = self.sdf[abs(sdf) < sigma]
 
         import ctypes
         

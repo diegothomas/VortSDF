@@ -162,6 +162,7 @@ class Runner:
         prev_Feat = np.copy(self.fine_features.detach().cpu())
         new_SDF = np.copy(self.sdf.detach().cpu())
         new_Feat = np.copy(self.fine_features.detach().cpu())
+        
         _, idx = KDtree.query(self.sites, k=1)
         new_SDF[idx[:]] = prev_SDF[:] 
         new_Feat[idx[:]] = prev_Feat[:] 
@@ -188,6 +189,7 @@ class Runner:
         self.Allocate_batch_data()
 
         cvt_grad_cuda.diff_tensor(self.tet32.nb_tets, self.tet32.summits, self.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff)
+        
              
 
     def train(self, data_name, K_NN = 24, verbose = True, is_continue = False):
@@ -859,6 +861,7 @@ class Runner:
                         self.grad_norm_smooth[:] = 0.0
                         self.grad_eik[:] = 0.0
                         self.grad_sdf_smooth[:] = 0.0"""
+
                     """self.grad_norm_smooth[self.activated[:] < 2] = 0.0
                     self.grad_eik[self.activated[:] < 2] = 0.0
                     self.grad_sdf_smooth[self.activated[:] < 2] = 0.0"""
@@ -1049,9 +1052,9 @@ class Runner:
                     """self.s_w = 2.0e-4 #2.0e-6
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
-                    self.s_w = 1.0e-5 #2.0e-6
-                    self.e_w = 1.0e-7 #1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 5.0e-6 #1.0e-8 #1.0e-1
+                    self.s_w = 5.0e-5 #2.0e-6
+                    self.e_w = 1.0e-6 #1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
+                    self.tv_w = 1.0e-5 #1.0e-8 #1.0e-1
                     self.tv_f = 1.0e-8 #1.0e-4
                     #self.f_w = 1.0
                     self.end_iter_loc = 20000
@@ -1070,13 +1073,13 @@ class Runner:
                     """self.s_w = 1.0e-2
                     self.e_w = 1.0e-4
                     self.tv_w = 1.0e-2"""
-                    self.s_w = 1.0e-5 #5.0e-4
-                    self.e_w = 1.0e-7 #1.0e-7
-                    self.tv_w = 5.0e-6 #1.0e-4 #1.0e-3
+                    self.s_w = 5.0e-5 #5.0e-4
+                    self.e_w = 1.0e-6 #1.0e-7
+                    self.tv_w = 1.0e-5 #1.0e-4 #1.0e-3
                     self.tv_f = 1.0e-8 #1.0e-3
                     self.end_iter_loc = 20000
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 1.0e-5
+                    self.learning_rate_sdf = 5.0e-5
                     self.learning_rate_feat = 5.0e-3
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-3
                     self.learning_rate_alpha = 1.0e-8
@@ -1094,7 +1097,7 @@ class Runner:
 
                 #verbose = True
                 #self.tet32.save("Exp/bmvs_man/test_up.ply") 
-                self.tet32.save_multi_lvl("Exp/{}/multi_lvl".format(self.data_name))    
+                #self.tet32.save_multi_lvl("Exp/{}/multi_lvl".format(self.data_name))    
                 #self.render_image(cam_ids, img_idx)
                 #self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri_up_{}.ply".format(iter_step), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])                          
                 #torch.cuda.empty_cache()
@@ -1220,7 +1223,7 @@ class Runner:
         #self.render_image(cam_ids, 0)
         self.save_checkpoint()  
         self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), os.path.join(self.base_exp_dir, 'final_MT.ply'), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])        
-        #self.tet32.make_clipped_CVT(self.sdf.detach(), self.grad_sdf_space, self.visual_hull,  "Exp/{}/final_CVT.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
+        #self.tet32.make_clipped_CVT(self.sdf.detach(), self.sigma, self.grad_sdf_space, self.visual_hull,  "Exp/{}/final_CVT.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
         
         self.activated[:] = 1
         with torch.no_grad():
@@ -1237,7 +1240,7 @@ class Runner:
         self.grad_sdf_space = self.grad_sdf_space / self.norm_grad.expand(-1, 3)
     
         self.tet32.surface_from_sdf(self.sdf_smooth.detach().cpu().numpy().reshape(-1), os.path.join(self.base_exp_dir, 'final_MT_smooth.ply'), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
-        #self.tet32.make_clipped_CVT(self.sdf_smooth, self.grad_sdf_space, self.visual_hull, "Exp/{}/final_CVT_smooth.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
+        #self.tet32.make_clipped_CVT(self.sdf_smooth, self.sigma, self.grad_sdf_space, self.visual_hull, "Exp/{}/final_CVT_smooth.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
         
         
         #self.tet32.clipped_cvt(self.sdf.detach(), self.fine_features.detach(), outside_flag, 
@@ -1282,6 +1285,11 @@ class Runner:
         self.grad_norm_smooth[:] = 0.0
         self.eik_loss[:] = 0.0
         self.activated[:] = 1
+        
+        with torch.no_grad():
+            self.sdf_smooth[:] = 0.0
+        backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.sigma_feat, 1, self.sites,  self.activated,
+                                self.grad_sdf_space, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)
 
         cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, self.activated, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
                                             self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.eik_loss)
@@ -1668,6 +1676,7 @@ class Runner:
             self.val_freq = 2000
 
         self.mask_background = abs(self.sdf) > 10.0 #4.0*self.sigma
+        self.sigma_feat = 0.06
      
 
 if __name__=='__main__':
