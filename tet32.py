@@ -143,6 +143,9 @@ class Tet32(Process):
 
         input()"""
 
+        if self.lvl > 0:
+            new_sites = np.copy(self.sites)
+
         self.sites = np.asarray(self.vertices)
 
         start = timer()
@@ -177,6 +180,11 @@ class Tet32(Process):
         print(max_length)
         print(self.bnn_sites.shape)"""
         #input()
+
+        if self.lvl > 0:
+            for lvl_curr in range(self.lvl+1):
+                _, idx = self.KDtree.query(new_sites[self.lvl_sites[lvl_curr][:]], k=1)
+                self.lvl_sites[lvl_curr][:] = idx[:]
 
         self.d['summits'] = self.summits
         self.d['edges'] = self.edges
@@ -257,6 +265,8 @@ class Tet32(Process):
         self.KDtree = scipy.spatial.KDTree(self.sites.cpu().numpy())
         _, idx = self.KDtree.query(self.sites.cpu().numpy(), k=32)
         self.knn_sites[:,:32] = np.asarray(idx[:,:])  
+
+        print("self.lvl => ", self.lvl)
         
         curr_it = 1
         start_lvl = max(0, self.lvl-2)

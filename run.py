@@ -87,11 +87,11 @@ class Runner:
 
         self.iter_step = 0
         self.end_iter_loc = 2000
-        self.s_w = 1.0e-2
+        self.s_w = 1.0e-4
         self.e_w = 1.0e-6
-        self.tv_w = 5.0e-3
+        self.tv_w = 5.0e-5
         self.tv_f = 1.0e-8
-        self.f_w = 5.0
+        self.f_w = 1.0
 
         self.report_freq = self.conf.get_int('train.report_freq')
         self.val_freq = self.conf.get_int('train.val_freq')
@@ -151,7 +151,7 @@ class Runner:
 
     def prep_CVT(self):
         print("Preparing CVT model")
-        self.tet32 = tet32.Tet32(self.sites, id = 0)
+        #self.tet32 = tet32.Tet32(self.sites, id = 0)
         self.tet32.run(0.3) 
         self.tet32.load_cuda()
 
@@ -1079,7 +1079,7 @@ class Runner:
                     self.tv_f = 1.0e-8 #1.0e-3
                     self.end_iter_loc = 20000
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 5.0e-5
+                    self.learning_rate_sdf = 1.0e-5
                     self.learning_rate_feat = 5.0e-3
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-3
                     self.learning_rate_alpha = 1.0e-8
@@ -1217,8 +1217,9 @@ class Runner:
             self.unormed_grad[:] = self.grad_sdf_space[:]
             self.grad_sdf_space = self.grad_sdf_space / self.norm_grad.expand(-1, 3)
             
-
-
+        
+        for id_im in tqdm(range(runner.dataset.n_images)):
+            runner.render_image(img_idx = id_im)
 
         #self.render_image(cam_ids, 0)
         self.save_checkpoint()  
@@ -1551,10 +1552,10 @@ class Runner:
         print(sites_list)
         
         self.tet32 = tet32.Tet32(self.sites, id = 0)
-        self.tet32.lvl = len(sites_list)
+        self.tet32.lvl = len(sites_list)-1
 
         self.tet32.lvl_sites = []
-        for lvl_curr in range(self.tet32.lvl):
+        for lvl_curr in range(self.tet32.lvl+1):
             self.tet32.lvl_sites.append(np.load(sites_list[lvl_curr]))
 
         self.sdf = np.load(os.path.join(self.base_exp_dir, 'checkpoints', 'sdf_{:0>6d}.npy'.format(self.iter_step)))
@@ -1574,10 +1575,24 @@ class Runner:
         #self.optimizer_feat.load_state_dict(checkpoint['optimizer_feat'])
         #exit()
 
-        self.sigma = 0.12
+        self.sigma = 0.1
+        
+        if (self.iter_step+1) >= 2000:
+            self.sigma = self.sigma/2.0
+            
+        if (self.iter_step+1) >= 10000:
+            self.sigma = self.sigma/2.0
+            
+        if (self.iter_step+1) >= 30000:
+            self.sigma = self.sigma/2.0
+            
+        if (self.iter_step+1) >= 50000:
+            self.sigma = self.sigma/2.0
+            
+        if (self.iter_step+1) >= 70000:
+            self.sigma = self.sigma/2.0
 
         if (self.iter_step+1) == 2000:
-            self.sigma = 0.06
             self.R = 100
             self.s_w = 1.0e-3
             self.e_w = 1.0e-4 #5.0e-3
@@ -1591,7 +1606,6 @@ class Runner:
             self.vortSDF_renderer_fine.mask_reg = 1.0e-1
 
         if (self.iter_step+1) == 10000:
-            self.sigma = 0.03
             self.R = 50
             self.s_start = 50.0
             self.s_max = 300
@@ -1612,7 +1626,6 @@ class Runner:
             #acc_it = 10
             
         if (self.iter_step+1) == 30000:
-            self.sigma = 0.015
             warm_up = 200
             self.R = 40
             self.s_start = 100.0
@@ -1637,7 +1650,6 @@ class Runner:
             self.learning_rate_alpha = 1.0e-2
 
         if (self.iter_step+1) == 50000:
-            self.sigma = 0.0075
             #warm_up = 2000
             self.R = 40
             self.s_start = 100.0
@@ -1659,7 +1671,6 @@ class Runner:
             self.learning_rate_alpha = 1.0e-4
             
         if (self.iter_step+1) == 70000:
-            self.sigma = 0.004 #35
             self.R = 40
             self.s_start = 400.0 #400
             self.s_max = 2000
@@ -1677,6 +1688,9 @@ class Runner:
 
         self.mask_background = abs(self.sdf) > 10.0 #4.0*self.sigma
         self.sigma_feat = 0.06
+        self.inv_s = 60/(5.0*self.sigma)
+        print(self.sigma)
+        print(self.inv_s)
      
 
 if __name__=='__main__':
