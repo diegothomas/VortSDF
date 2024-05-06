@@ -517,8 +517,9 @@ class Tet32(Process):
         return sdf.cpu().numpy(), fine_features.cpu().numpy()
 
     def upsample(self, sdf, feat, visual_hull, res, cam_sites, lr, flag = True, radius = 0.3):    
-        self.lvl_sites.append(np.arange(self.sites.shape[0]))
         self.nb_pre_sites = self.sites.shape[0]
+        if self.nb_pre_sites < 1.0e6:  
+            self.lvl_sites.append(np.arange(self.sites.shape[0]))
 
         ## Smooth current mesh and build sdf        
         tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(sdf.astype(np.float64)),0.0)
@@ -603,7 +604,10 @@ class Tet32(Process):
         #new_sites = np.asarray(self.vertices)  
         self.KDtree = scipy.spatial.KDTree(self.sites)
         
-        for lvl_curr in range(self.lvl+1):
+        if self.nb_pre_sites < 1.0e6:  
+            self.lvl = self.lvl + 1
+            
+        for lvl_curr in range(self.lvl):
             _, idx = self.KDtree.query(new_sites[self.lvl_sites[lvl_curr][:]], k=1)
             self.lvl_sites[lvl_curr][:] = idx[:]
 
@@ -645,8 +649,6 @@ class Tet32(Process):
                                         torch.from_numpy(knn_sites).int().cuda().contiguous(), out_feat)
         out_feat = out_feat.cpu().numpy()
                 
-        self.lvl = self.lvl + 1
-
         self.sdf_init = torch.from_numpy(out_sdf).float().cuda()
 
         return torch.from_numpy(out_sdf).float().cuda(), torch.from_numpy(out_feat).float().cuda(), torch.from_numpy(mask_background).float().cuda()

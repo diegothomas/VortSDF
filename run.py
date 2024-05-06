@@ -1073,9 +1073,9 @@ class Runner:
                     """self.s_w = 1.0e-2
                     self.e_w = 1.0e-4
                     self.tv_w = 1.0e-2"""
-                    self.s_w = 5.0e-5 #5.0e-4
-                    self.e_w = 1.0e-6 #1.0e-7
-                    self.tv_w = 1.0e-5 #1.0e-4 #1.0e-3
+                    self.s_w = 1.0e-5 #5.0e-4
+                    self.e_w = 5.0e-7 #1.0e-7
+                    self.tv_w = 5.0e-6 #1.0e-4 #1.0e-3
                     self.tv_f = 1.0e-8 #1.0e-3
                     self.end_iter_loc = 20000
                     self.learning_rate = 1e-4
@@ -1169,7 +1169,7 @@ class Runner:
 
 
         ############# Final CVT optimization ######################
-        if True:
+        if False:
             self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf.detach().cpu().numpy(), 
                                                                                      self.fine_features.detach().cpu().numpy(), 
                                                                                      self.visual_hull, res, cam_sites, self.learning_rate_cvt, 
