@@ -87,11 +87,11 @@ class Runner:
 
         self.iter_step = 0
         self.end_iter_loc = 2000
-        self.s_w = 1.0e-4
+        self.s_w = 1.0e-3
         self.e_w = 1.0e-6
-        self.tv_w = 5.0e-5
+        self.tv_w = 5.0e-4
         self.tv_f = 1.0e-8
-        self.f_w = 1.0
+        self.f_w = 5.0
 
         self.report_freq = self.conf.get_int('train.report_freq')
         self.val_freq = self.conf.get_int('train.val_freq')
@@ -707,7 +707,7 @@ class Runner:
             backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, 1, self.sites, grad_sdf, 
                                  self.fine_features, self.tet32.edges, self.grad_sdf_smooth, self.counter_smooth)"""
             
-            """#self.activated[:] = -1
+            #self.activated[:] = -1
             start = timer()   
             #self.activated[abs(self.grad_sdf) > 0.0] = 1
             #self.activated[grad_sdf == 0.0] = -1
@@ -717,7 +717,7 @@ class Runner:
             self.grad_sdf[:] = self.grad_sdf_smooth[:]
             self.grad_sdf[outside_flag[:] == 1.0] = 0.0   
             if verbose:
-                print('knn_smooth time:', timer() - start)"""
+                print('knn_smooth time:', timer() - start)
                             
             #### SMOOTH FEATURE GRADIENT
             """self.grad_feat_smooth[:] = self.grad_features[:]
@@ -868,6 +868,11 @@ class Runner:
                     #abs(self.sdf.grad)*
 
                     #w_photo = (self.grad_sdf_space * self.samples_rays[:nb_samples,:]).sum()
+                if True: #(iter_step+1) > 70000: 
+                    self.sdf.grad = self.norm_grad * self.sdf.grad + (self.e_w*self.grad_eik+\
+                                                                    self.s_w*self.grad_norm_smooth+\
+                                                                    self.tv_w*self.grad_sdf_smooth) #abs(self.sdf.grad)*
+                else: 
                     self.sdf.grad = self.sdf.grad + (self.e_w*self.grad_eik+\
                                                                     self.s_w*self.grad_norm_smooth+\
                                                                     self.tv_w*self.grad_sdf_smooth) #abs(self.sdf.grad)*
@@ -1056,7 +1061,7 @@ class Runner:
                     self.e_w = 1.0e-6 #1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-5 #1.0e-8 #1.0e-1
                     self.tv_f = 1.0e-8 #1.0e-4
-                    #self.f_w = 1.0
+                    self.f_w = 1.0e3
                     self.end_iter_loc = 20000
                     self.learning_rate = 1e-4
                     self.learning_rate_sdf = 5.0e-5
@@ -1074,13 +1079,14 @@ class Runner:
                     self.e_w = 1.0e-4
                     self.tv_w = 1.0e-2"""
                     self.s_w = 1.0e-5 #5.0e-4
-                    self.e_w = 5.0e-7 #1.0e-7
-                    self.tv_w = 5.0e-6 #1.0e-4 #1.0e-3
+                    self.e_w = 1.0e-6 #1.0e-7
+                    self.tv_w = 5.0e-5 #1.0e-4 #1.0e-3
                     self.tv_f = 1.0e-8 #1.0e-3
+                    self.f_w = 1.0e3
                     self.end_iter_loc = 20000
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 1.0e-5
-                    self.learning_rate_feat = 5.0e-3
+                    self.learning_rate_sdf = 5.0e-5
+                    self.learning_rate_feat = 1.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-3
                     self.learning_rate_alpha = 1.0e-8
                     #self.val_freq = 2000
@@ -1224,7 +1230,7 @@ class Runner:
         #self.render_image(cam_ids, 0)
         self.save_checkpoint()  
         self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), os.path.join(self.base_exp_dir, 'final_MT.ply'), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])        
-        #self.tet32.make_clipped_CVT(self.sdf.detach(), self.sigma, self.grad_sdf_space, self.visual_hull,  "Exp/{}/final_CVT.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
+        self.tet32.make_clipped_CVT(self.sdf.detach(), 2*self.sigma, self.grad_sdf_space, self.visual_hull,  "Exp/{}/final_CVT.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
         
         self.activated[:] = 1
         with torch.no_grad():
@@ -1241,7 +1247,7 @@ class Runner:
         self.grad_sdf_space = self.grad_sdf_space / self.norm_grad.expand(-1, 3)
     
         self.tet32.surface_from_sdf(self.sdf_smooth.detach().cpu().numpy().reshape(-1), os.path.join(self.base_exp_dir, 'final_MT_smooth.ply'), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
-        #self.tet32.make_clipped_CVT(self.sdf_smooth, self.sigma, self.grad_sdf_space, self.visual_hull, "Exp/{}/final_CVT_smooth.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
+        self.tet32.make_clipped_CVT(self.sdf_smooth, 2*self.sigma, self.grad_sdf_space, self.visual_hull, "Exp/{}/final_CVT_smooth.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
         
         
         #self.tet32.clipped_cvt(self.sdf.detach(), self.fine_features.detach(), outside_flag, 

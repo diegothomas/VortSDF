@@ -371,8 +371,8 @@ def chamfer(GT_path, dir_path, heat_map_path, mesh_list, THRESH, device = None, 
         mask = mask + (sdf_f < THRESH) 
 
         Psdf_f = abs(GT_f(verts_tensor_list[i].reshape(-1,3).cpu().numpy()))
-        iou = ((sdf_f < THRESH).sum())/(len(verts_GT))
-        #iou = ((sdf_f < THRESH).sum() + (Psdf_f < THRESH).sum())/(len(verts_GT) + len(verts_list[i]))
+        #iou = ((sdf_f < THRESH).sum())/(len(verts_GT))
+        iou = ((sdf_f < THRESH).sum() + (Psdf_f < THRESH).sum())/(len(verts_GT) + len(verts_list[i]))
         iou_list.append(iou * 100)
 
     chamfer_list = []

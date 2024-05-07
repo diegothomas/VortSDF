@@ -875,9 +875,11 @@ class Tet32(Process):
     def make_clipped_CVT(self, sdf, sigma, gradients, bbox, filename = "", translate = None, scale = None):
         print("Start clipping CVT")
 
-        self.sites = self.sites[abs(sdf) < sigma]
-        self.gradients = self.gradients[abs(sdf) < sigma]
-        self.sdf = self.sdf[abs(sdf) < sigma]
+        cpy_sites = self.sites[abs(sdf) < sigma]
+        down_gradients = gradients[abs(sdf) < sigma]
+        down_sdf = sdf[abs(sdf) < sigma]
+
+        print(cpy_sites.shape)
 
         import ctypes
         
@@ -886,12 +888,12 @@ class Tet32(Process):
         translate = np.ascontiguousarray(translate, dtype=np.float32)
         translate_c = translate.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
 
-        libnameCGAL = r"C:/Users/Diego Thomas/Documents/Project/inria-cvt/Python/CVT.dll"
-        #libnameCGAL = "C:/Users/thomas/Documents/Projects/Human-AI/inria-cvt/Python/CVT.dll"
+        #libnameCGAL = r"C:/Users/Diego Thomas/Documents/Project/inria-cvt/Python/CVT.dll"
+        libnameCGAL = "C:/Users/thomas/Documents/Projects/Human-AI/inria-cvt/Python/CVT.dll"
         cvt_libCGAL = ctypes.CDLL(libnameCGAL)
 
-        libname = r"C:/Users/Diego Thomas/Documents/Project/inria-cvt/Python/DiscreteCVT.dll"
-        #libname = "C:/Users/thomas/Documents/Projects/Human-AI/inria-cvt/Python/DiscreteCVT.dll"
+        #libname = r"C:/Users/Diego Thomas/Documents/Project/inria-cvt/Python/DiscreteCVT.dll"
+        libname = "C:/Users/thomas/Documents/Projects/Human-AI/inria-cvt/Python/DiscreteCVT.dll"
         cvt_lib = ctypes.CDLL(libname)
         
         cvt_lib.Get_nb_tets32.restype = ctypes.c_int32
@@ -901,17 +903,17 @@ class Tet32(Process):
         cvt_lib.NewTet32.restype = ctypes.c_void_p
         cvt_lib.NewTet32.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int32]
 
-        active_flag = torch.zeros([self.sites.shape[0]], dtype=torch.int32).cuda()
+        active_flag = torch.zeros([cpy_sites.shape[0]], dtype=torch.int32).cuda()
         active_flag = active_flag.contiguous()
         
-        counter_sites = torch.zeros([self.sites.shape[0]], dtype=torch.int32).cuda()
+        counter_sites = torch.zeros([cpy_sites.shape[0]], dtype=torch.int32).cuda()
         counter_sites = counter_sites.contiguous()
         
         cvt_lib.Gradient_sites32.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
         cvt_lib.Compute_gradient_field32.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
 
-        cpy_sites = torch.clone(self.sites)
-        cvt_libCGAL.CVT(cpy_sites.data_ptr(), sdf.data_ptr(), gradients.data_ptr(), self.params.data_ptr(),
+        #cpy_sites = torch.clone(down_sites)
+        cvt_libCGAL.CVT(cpy_sites.data_ptr(), down_sdf.data_ptr(), down_gradients.data_ptr(), self.params.data_ptr(),
                                                 cpy_sites.shape[0], scale, translate_c, filename.encode(), 1) #0
     
         """active_flag[:] = 1

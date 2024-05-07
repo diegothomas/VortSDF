@@ -22,6 +22,8 @@ if __name__=='__main__':
     
     for dirs in os.listdir(args.data_path):
         print("Processing ", dirs)
+        if dirs == "bmvs_bear":
+            continue
 
         ### Run optimization process ###
         ## the process must output a final checkpoint in folder/checkpoints that contians final SDF, features and network state
@@ -31,7 +33,7 @@ if __name__=='__main__':
         subprocess.run(["C:/Users/thomas/.conda/envs/VortSDF-2/python.exe", "src/Eval/chamfer_distance.py", "--GT_path", "GT/"+dirs+"/GTMeshRaw.ply", "--dir_path", "Exp/"+dirs])
         
         ## Render all images
-        subprocess.run(["C:/Users/thomas/.conda/envs/VortSDF-2/python.exe", "run.py", "--position_encoding", "--double_net", "--data_name", dirs , "--is_continue", "--mode", "render_images"])
+        #subprocess.run(["C:/Users/thomas/.conda/envs/VortSDF-2/python.exe", "run.py", "--position_encoding", "--double_net", "--data_name", dirs , "--is_continue", "--mode", "render_images"])
 
         ### Compute PSNR and SSIM => output error image in Exp/data_name/err ###
         subprocess.run(["C:/Users/thomas/.conda/envs/VortSDF-2/python.exe", "src/Eval/PSNR.py", "--data_path", "Data", "--exp_path", "Exp", "--data_name", dirs])
