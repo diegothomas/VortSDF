@@ -27,7 +27,7 @@ if __name__=='__main__':
 
         ### Run optimization process ###
         ## the process must output a final checkpoint in folder/checkpoints that contians final SDF, features and network state
-        subprocess.run(["C:/Users/thomas/.conda/envs/VortSDF-2/python.exe", "run.py", "--position_encoding", "--double_net", "--data_name", dirs])
+        subprocess.run(["C:/Users/thomas/.conda/envs/VortSDF-2/python.exe", "run.py", "--position_encoding", "--double_net", "--conf", args.data_path+"/train.conf", "--data_name", dirs])
 
         ### Compute Chamfer, IoU errors and HeatMap meshes ###
         subprocess.run(["C:/Users/thomas/.conda/envs/VortSDF-2/python.exe", "src/Eval/chamfer_distance.py", "--GT_path", "GT/"+dirs+"/GTMeshRaw.ply", "--dir_path", "Exp/"+dirs])

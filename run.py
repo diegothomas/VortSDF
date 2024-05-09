@@ -87,7 +87,7 @@ class Runner:
 
         self.iter_step = 0
         self.end_iter_loc = 2000
-        self.s_w = 1.0e-3
+        self.s_w = 5.0e-3
         self.e_w = 1.0e-6
         self.tv_w = 5.0e-4
         self.tv_f = 1.0e-8
@@ -426,8 +426,8 @@ class Runner:
                 if verbose:
                     print('activate time:', timer() - start)   
                     
-                #if iter_step % 3 == 0:
-                #    self.activated[:] = 1
+                if iter_step % 10 == 0:
+                    self.activated[:] = 1
 
                 ############ Compute spatial SDF gradients
                 if iter_step % acc_it == 0:
@@ -850,16 +850,19 @@ class Runner:
                                                 self.s_w*self.grad_norm_smooth  +\
                                                 self.tv_w*self.grad_sdf_smooth) 
                 else:
-                    self.grad_norm_smooth[self.sdf.grad[:] == 0.0] = 0.0
+                    """self.grad_norm_smooth[self.sdf.grad[:] == 0.0] = 0.0
                     self.grad_eik[self.sdf.grad[:] == 0.0] = 0.0
-                    self.grad_sdf_smooth[self.sdf.grad[:] == 0.0] = 0.0
+                    self.grad_sdf_smooth[self.sdf.grad[:] == 0.0] = 0.0"""
 
                     self.grad_norm_smooth[self.mask_background[:] == 1.0] = 0.0
                     self.grad_eik[self.mask_background[:] == 1.0] = 0.0
                     self.grad_sdf_smooth[self.mask_background[:] == 1.0] = 0.0
 
-                    """if not iter_step % 3 == 0:
-                        self.grad_norm_smooth[:] = 0.0
+                    if not iter_step % 10 == 0:
+                        self.grad_norm_smooth[self.sdf.grad[:] == 0.0] = 0.0
+                        self.grad_eik[self.sdf.grad[:] == 0.0] = 0.0
+                        self.grad_sdf_smooth[self.sdf.grad[:] == 0.0] = 0.0
+                        """self.grad_norm_smooth[:] = 0.0
                         self.grad_eik[:] = 0.0
                         self.grad_sdf_smooth[:] = 0.0"""
 
@@ -992,7 +995,7 @@ class Runner:
                     self.e_w = 5.0e-6
                     self.tv_w = 1.0e-5"""
                     self.R = 100
-                    self.s_w = 1.0e-3
+                    self.s_w = 5.0e-3
                     self.e_w = 1.0e-4 #5.0e-3
                     self.tv_w = 1.0e-3 #1.0e-1
                     self.s_start = 20 #30/(10.0*self.sigma) #50.0
@@ -1012,9 +1015,9 @@ class Runner:
                     """self.s_w = 1.0e-3
                     self.e_w = 5.0e-4
                     self.tv_w = 1.0e-5"""
-                    self.s_w = 5.0e-4 #1e-6
-                    self.e_w = 1.0e-5#1.0e-8 #5.0e-3
-                    self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1
+                    self.s_w = 5.0e-3 #1e-6
+                    self.e_w = 1.0e-4#1.0e-8 #5.0e-3
+                    self.tv_w = 1.0e-3 #1.0e-8 #1.0e-1
                     self.tv_f = 1.0e-7
                     #self.f_w = 1.0 #1.0
                     self.learning_rate = 5e-4
@@ -1054,11 +1057,11 @@ class Runner:
                     self.R = 40
                     self.s_start = 300# 30/(10.0*self.sigma) #50.0
                     self.s_max = 1000# 60/(5.0*self.sigma) #200
-                    #self.sigma = 0.01
+                    self.sigma = 0.01
                     """self.s_w = 2.0e-4 #2.0e-6
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
-                    self.s_w = 5.0e-5 #2.0e-6
+                    self.s_w = 1.0e-4 #2.0e-6
                     self.e_w = 1.0e-6 #1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-5 #1.0e-8 #1.0e-1
                     self.tv_f = 1.0e-8 #1.0e-4
@@ -1074,19 +1077,19 @@ class Runner:
                     self.R = 10
                     self.s_start = 800#30/(10.0*self.sigma) #50.0
                     self.s_max = 2000#60/(5.0*self.sigma) #200
-                    #self.sigma = 0.01
+                    self.sigma = 0.006
                     #self.sigma_feat = 0.02
                     """self.s_w = 1.0e-2
                     self.e_w = 1.0e-4
                     self.tv_w = 1.0e-2"""
-                    self.s_w = 5.0e-5 #5.0e-4
+                    self.s_w = 1.0e-4 #5.0e-4
                     self.e_w = 5.0e-6 #1.0e-7
                     self.tv_w = 1.0e-4 #1.0e-4 #1.0e-3
                     self.tv_f = 1.0e-8 #1.0e-3
                     self.f_w = 1.0#1.0e3
                     self.end_iter_loc = 20000
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 1.0e-4
+                    self.learning_rate_sdf = 1.0e-5
                     self.learning_rate_feat = 1.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-3
                     self.learning_rate_alpha = 1.0e-8

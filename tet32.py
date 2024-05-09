@@ -518,7 +518,7 @@ class Tet32(Process):
 
     def upsample(self, sdf, feat, visual_hull, res, cam_sites, lr, flag = True, radius = 0.3):    
         self.nb_pre_sites = self.sites.shape[0]
-        if self.nb_pre_sites < 1.0e6:  
+        if True: #self.nb_pre_sites < 1.0e6:  
             self.lvl_sites.append(np.arange(self.sites.shape[0]))
 
         ## Smooth current mesh and build sdf        
@@ -530,7 +530,7 @@ class Tet32(Process):
         f = SDF(np.asarray(self.tri_vertices), np.asarray(self.tri_faces))
         true_sdf = -f(self.sites.cpu().numpy())
 
-        if self.nb_pre_sites < 1.0e6:            
+        if True: #self.nb_pre_sites < 1.0e6:            
             nb_new_sites = tet_utils.upsample_counter(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(true_sdf).float().cuda())
                     
             #nb_new_sites = tet_utils.upsample_counter_tet(self.nb_tets, radius, self.summits, self.sites, torch.from_numpy(sdf).float().cuda())
@@ -604,7 +604,7 @@ class Tet32(Process):
         #new_sites = np.asarray(self.vertices)  
         self.KDtree = scipy.spatial.KDTree(self.sites)
         
-        if self.nb_pre_sites < 1.0e6:  
+        if True: #self.nb_pre_sites < 1.0e6:  
             self.lvl = self.lvl + 1
             
         for lvl_curr in range(self.lvl):
