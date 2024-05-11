@@ -1175,7 +1175,8 @@ __global__ void eikonal_grad_kernel(
         elem_smooth_2 += (sdf_smooth[ids[i]] - center_sdf_smooth) * Weights_curr[3*i + 2];
     }
     
-     float norm_grad = sqrt(elem_0*elem_0 + elem_1*elem_1 + elem_2*elem_2);
+    //float norm_grad = sqrt(elem_0*elem_0 + elem_1*elem_1 + elem_2*elem_2);
+    float norm_grad = sqrt(elem_smooth_0*elem_smooth_0 + elem_smooth_1*elem_smooth_1 + elem_smooth_2*elem_smooth_2);
     //float norm_grad = elem_0*elem_0 + elem_1*elem_1 + elem_2*elem_2;
 
     float diff_loss[3]  {};

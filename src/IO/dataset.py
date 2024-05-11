@@ -230,6 +230,102 @@ class Dataset:
             self.object_bbox_min = object_bbox_min[:3]
             self.object_bbox_max = object_bbox_max[:3]
 
+        elif self.data_type == 'KINOVIS':
+            reso_level = 1
+            mask = True
+            white_bg = False
+            NCAMS = 68
+            rgb_paths = [self.data_dir + f"/ImagesUndistorted/cam-{i+1}.png" for i in range(NCAMS)]
+            mask_paths = [self.data_dir + f"/Masks/cam-{i+1}.png" for i in range(NCAMS)]
+            
+            root = ET.parse(self.data_dir + "/calibration_undistorted.xml").getroot()
+            matrices = []
+            for c in root.findall("Camera"):
+                K = np.array([float(f) for f in c.find("K").text.split(' ')]).reshape((3,3))
+                R = np.array([float(f) for f in c.find("R").text.split(' ')]).reshape((3,3))
+                T = np.array([float(f) for f in c.find("T").text.split(' ')]).reshape((3,1))
+                pose = np.eye(4)
+                pose[:3, :3] = R.T # From camera to world rotation
+                pose[:3, 3] = (-R.T @ T)[:, 0] # Camera center in world pose
+                matrices.append((K, pose))
+
+            all_intrinsics = []
+            all_poses = []
+            all_imgs = []
+            all_masks = []
+            all_min_x = []
+            all_max_x = []
+            all_min_y = []
+            all_max_y = []
+            for i in range(NCAMS):
+                print(f"Loading image {i}...")
+                intrinsic_curr = np.array(matrices[i][0])
+                intrinsic_curr[:2, :] /= reso_level
+                all_intrinsics.append(torch.from_numpy(intrinsic_curr).float())
+                all_poses.append(torch.from_numpy(matrices[i][1]).float())
+                if len(mask_paths) > 0:
+                    mask_ = (cv.imread(mask_paths[i]) / 255.).astype(np.float32)
+                    if mask_.ndim == 3:
+                        all_masks.append(mask_[...,:3])
+                    else:
+                        all_masks.append(mask_[...,None])
+                        
+                    tx = torch.linspace(0, mask_.shape[1] - 1, mask_.shape[1])
+                    ty = torch.linspace(0, mask_.shape[0] - 1, mask_.shape[0])
+                    p_x, p_y = torch.meshgrid(tx, ty)
+
+                    mask_pp = mask_[(p_y.long(), p_x.long())]
+                    p_front_x = p_x[mask_pp[:,:,0] == 1]
+                    p_front_y = p_y[mask_pp[:,:,0] == 1]
+
+                    min_x = int(p_front_x.min().numpy()) 
+                    max_x = int(p_front_x.max().numpy()) 
+                    min_y = int(p_front_y.min().numpy()) 
+                    max_y = int(p_front_y.max().numpy()) 
+
+                    all_min_x.append(min_x)
+                    all_max_x.append(max_x)
+                    all_min_y.append(min_y)
+                    all_max_y.append(max_y)
+
+                all_imgs.append((cv.imread(rgb_paths[i]) / 255.).astype(np.float32))
+                print(cv.imread(rgb_paths[i]).shape)
+            imgs = np.stack(all_imgs, 0)
+            #poses = np.stack(all_poses, 0)
+            H, W = imgs[0].shape[:2]
+            focal = all_intrinsics[0][0,0]
+            #all_intrinsics = torch.from_numpy(np.array(all_intrinsics))
+            print("Date original shape: ", H, W)
+            masks = np.stack(all_masks, 0)
+            if mask:
+                assert len(mask_paths) > 0
+                bg = 1. if white_bg else 0.
+                imgs = imgs * masks + bg * (1 - masks)
+            if reso_level > 1:
+                H, W = int(H / reso_level), int(W / reso_level)
+                imgs =  F.interpolate(torch.from_numpy(imgs).permute(0,3,1,2), size=(H, W)).permute(0,2,3,1).numpy()
+                if masks is not None:
+                    masks =  F.interpolate(torch.from_numpy(masks).permute(0,3,1,2), size=(H, W)).permute(0,2,3,1).numpy()
+                #all_intrinsics[:, :2, :] /= reso_level
+                focal /= reso_level
+
+            self.intrinsics_all = all_intrinsics
+            self.pose_all = all_poses
+            self.pose_all_inv = all_poses
+            self.images_np = imgs
+            self.masks_np = masks
+            self.n_images = NCAMS
+            self.all_min_x = np.stack(all_min_x, 0)
+            self.all_max_x = np.stack(all_max_x, 0)
+            self.all_min_y = np.stack(all_min_y, 0)
+            self.all_max_y = np.stack(all_max_y, 0)
+            
+            for i in range(self.n_images):
+                self.images_np[i][self.masks_np[i][:,:,0] == 0.0,:] = [0.0,0.0,0.0]
+                
+            # world_mat is a projection matrix from world to image
+            self.world_mats_np = [np.array([0.0, 0.0, 0.0]).astype(np.float32) for idx in range(self.n_images)]
+            self.scale_mats_np = [np.eye(4,4)] #[load_Rt_from(self.data_dir + 'Barn_trans.txt')] #
 
         else:
             print("unknown datatype")
@@ -619,6 +715,27 @@ class Dataset:
         """
         Generate random rays at world space from one camera.
         """
+        """tx = torch.linspace(0, self.W - 1, self.W)
+        ty = torch.linspace(0, self.H - 1, self.H)
+        p_x, p_y = torch.meshgrid(tx, ty)
+
+        mask = self.masks[img_idx][(p_y.long(), p_x.long())]
+        p_front_x = p_x[mask[:,:,0] == 1]
+        p_front_y = p_y[mask[:,:,0] == 1]
+        p_back_x = p_x[mask[:,:,0] == 0]
+        p_back_y = p_y[mask[:,:,0] == 0]
+
+        nb_valid = int(mask[:,:,0].sum().numpy()) #sum(sum(mask[:,:,0]))[0]
+        nb_back = int((mask[:,:,0] == 0).sum().numpy()) #sum(sum(mask[:,:,0]))[0]
+
+        ids = torch.randint(low=0, high=nb_valid, size=[int(0.9*batch_size)])
+        pixels_x = p_front_x[ids].long()
+        pixels_y = p_front_y[ids].long()
+
+        ids = torch.randint(low=0, high=nb_back, size=[int(0.1*batch_size)])
+        pixels_x = torch.concat((pixels_x, p_back_x[ids].long()))
+        pixels_y = torch.concat((pixels_y, p_back_y[ids].long()))"""
+
         pixels_x = torch.randint(low=0, high=self.W, size=[batch_size])
         pixels_y = torch.randint(low=0, high=self.H, size=[batch_size])
         if patch_size > 0:
@@ -651,12 +768,55 @@ class Dataset:
         rays_o = self.pose_all[img_idx, None, :3, 3].expand(rays_v.shape) # batch_size, 3
         return torch.cat([rays_o.cpu(), rays_v.cpu(), color, mask[:, :1]], dim=-1).cuda()     # batch_size, 10
     
-    def gen_random_rays_smooth_at(self, img_idx, batch_size, lvl = 2.0):
+    def gen_random_rays_smooth_at(self, img_idx, batch_size, lvl = 2):
         """
         Generate random rays at world space from one camera.
         """
 
+        """ If KINOVIS
         if lvl == 5.0:
+            #pixels_x = torch.randint(low=0, high=self.W_smooth_5, size=[batch_size])
+            #pixels_y = torch.randint(low=0, high=self.H_smooth_5, size=[batch_size])
+            pixels_x = torch.randint(low=self.all_min_x[img_idx]//5, high=self.all_max_x[img_idx]//5, size=[batch_size])
+            pixels_y = torch.randint(low=self.all_min_y[img_idx]//5, high=self.all_max_y[img_idx]//5, size=[batch_size])
+
+            pixels_x[pixels_x < 0] = 0
+            pixels_x[pixels_x > self.W_smooth_5-1] = self.W_smooth_5-1
+            pixels_y[pixels_y < 0] = 0
+            pixels_y[pixels_y > self.H_smooth_5-1] = self.H_smooth_5-1
+            color = self.images_smooth_5[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
+            mask = self.masks_smooth_5[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
+        elif lvl == 3.0:
+            #pixels_x = torch.randint(low=0, high=self.W_smooth_3, size=[batch_size])
+            #pixels_y = torch.randint(low=0, high=self.H_smooth_3, size=[batch_size])
+            pixels_x = torch.randint(low=self.all_min_x[img_idx]//3, high=self.all_max_x[img_idx]//3, size=[batch_size])
+            pixels_y = torch.randint(low=self.all_min_y[img_idx]//3, high=self.all_max_y[img_idx]//3, size=[batch_size])
+
+            pixels_x[pixels_x < 0] = 0
+            pixels_x[pixels_x > self.W_smooth_3-1] = self.W_smooth_3-1
+            pixels_y[pixels_y < 0] = 0
+            pixels_y[pixels_y > self.H_smooth_3-1] = self.H_smooth_3-1
+            color = self.images_smooth_3[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
+            mask = self.masks_smooth_3[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
+        elif lvl == 2.0:
+            #pixels_x = torch.randint(low=0, high=self.W_smooth_2, size=[batch_size])
+            #pixels_y = torch.randint(low=0, high=self.H_smooth_2, size=[batch_size])
+            pixels_x = torch.randint(low=self.all_min_x[img_idx]//2, high=self.all_max_x[img_idx]//2, size=[batch_size])
+            pixels_y = torch.randint(low=self.all_min_y[img_idx]//2, high=self.all_max_y[img_idx]//2, size=[batch_size])
+
+            pixels_x[pixels_x < 0] = 0
+            pixels_x[pixels_x > self.W_smooth_2-1] = self.W_smooth_2-1
+            pixels_y[pixels_y < 0] = 0
+            pixels_y[pixels_y > self.H_smooth_2-1] = self.H_smooth_2-1
+            color = self.images_smooth_2[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
+            mask = self.masks_smooth_2[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
+        else:
+            pixels_x = torch.randint(low=self.all_min_x[img_idx], high=self.all_max_x[img_idx], size=[batch_size])
+            pixels_y = torch.randint(low=self.all_min_y[img_idx], high=self.all_max_y[img_idx], size=[batch_size])
+
+        """
+
+        if lvl == 5:
             pixels_x = torch.randint(low=0, high=self.W_smooth_5, size=[batch_size])
             pixels_y = torch.randint(low=0, high=self.H_smooth_5, size=[batch_size])
 
@@ -666,7 +826,7 @@ class Dataset:
             pixels_y[pixels_y > self.H_smooth_5-1] = self.H_smooth_5-1
             color = self.images_smooth_5[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
             mask = self.masks_smooth_5[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
-        elif lvl == 3.0:
+        elif lvl == 3:
             pixels_x = torch.randint(low=0, high=self.W_smooth_3, size=[batch_size])
             pixels_y = torch.randint(low=0, high=self.H_smooth_3, size=[batch_size])
 
@@ -676,7 +836,7 @@ class Dataset:
             pixels_y[pixels_y > self.H_smooth_3-1] = self.H_smooth_3-1
             color = self.images_smooth_3[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
             mask = self.masks_smooth_3[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
-        elif lvl == 2.0:
+        elif lvl == 2:
             pixels_x = torch.randint(low=0, high=self.W_smooth_2, size=[batch_size])
             pixels_y = torch.randint(low=0, high=self.H_smooth_2, size=[batch_size])
 
@@ -687,8 +847,10 @@ class Dataset:
             color = self.images_smooth_2[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
             mask = self.masks_smooth_2[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
         else:
-            print("Level not implemented")
-            exit(0)
+            pixels_x = torch.randint(low=0, high=self.W-1, size=[batch_size])
+            pixels_y = torch.randint(low=0, high=self.H-1, size=[batch_size])
+            color = self.images[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
+            mask = self.masks[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
 
         pixels_x_f = pixels_x.float()*lvl# + torch.rand(pixels_x.shape)-0.5
         pixels_y_f = pixels_y.float()*lvl# + torch.rand(pixels_y.shape)-0.5
