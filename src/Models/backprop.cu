@@ -1234,6 +1234,33 @@ __global__ void normalize_kernel(
 }
 
 
+__global__ void sdf_smooth_kernel(
+    const size_t num_sites,   
+    const size_t dim_sdf,
+    int *__restrict__ activated,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ sdf_smooth,
+    float *__restrict__ grads
+    )
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_sites)
+    {
+        return;
+    }
+
+    if (activated[idx] == 0)
+        return;
+    
+    for (int i = 0; i < dim_sdf; i++) {
+        grads[dim_sdf*idx + i] = 2.0*(sdf[dim_sdf*idx + i] - sdf_smooth[dim_sdf*idx + i]);
+    }
+
+    return;
+}
+
+
+
 __global__ void space_reg_kernel(
     const size_t num_rays,                // number of rays
     const float *__restrict__ rays_d,       // [N_rays, 6]
@@ -1677,6 +1704,30 @@ void space_reg_cuda(
             feat_grad.data_ptr<float>());
     }));
     
+}
+
+// *************************
+void sdf_smooth_cuda(
+    size_t num_sites,
+    size_t dim_sdf,
+    torch::Tensor activated,
+    torch::Tensor sdf,
+    torch::Tensor sdf_smooth,
+    torch::Tensor grads 
+)
+{
+    const int threads = 1024;
+    const int blocks = (num_sites + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+    AT_DISPATCH_FLOATING_TYPES( sdf.type(),"sdf_smooth_kernel", ([&] {  
+        sdf_smooth_kernel CUDA_KERNEL(blocks,threads) (
+            num_sites,   
+            dim_sdf,
+            activated.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices
+            sdf.data_ptr<float>(),     // [N_voxels, 4] for each voxel => it's vertices
+            sdf_smooth.data_ptr<float>(),
+            grads.data_ptr<float>());
+    }));
+    cudaDeviceSynchronize();
 }
 
 // *************************

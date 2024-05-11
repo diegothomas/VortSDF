@@ -146,6 +146,15 @@ void knn_interpolate_cuda(
     torch::Tensor sdf_out
 );
 
+void sdf_smooth_cuda(
+    size_t num_sites,
+    size_t dim_sdf,
+    torch::Tensor activated,
+    torch::Tensor sdf,
+    torch::Tensor sdf_smooth,
+    torch::Tensor grads 
+);
+
 void geo_feat_cuda(
     size_t num_samples,
     size_t num_knn,
@@ -445,6 +454,26 @@ void knn_smooth(
         sdf_smooth);
 }
 
+
+void sdf_smooth(
+    size_t num_sites,
+    size_t dim_sdf,
+    torch::Tensor activated,
+    torch::Tensor sdf,
+    torch::Tensor sdf_smooth,
+    torch::Tensor grads 
+) {    
+    sdf_smooth_cuda(
+        num_sites,
+        dim_sdf,
+        activated,
+        sdf,
+        sdf_smooth,
+        grads);
+}
+
+
+
 void knn_interpolate(
     size_t num_sites,
     size_t num_knn,
@@ -557,4 +586,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("geo_feat", &geo_feat, "geo_feat (CPP)");
     m.def("activate_sites", &activate_sites, "activate_sites (CPP)");
     m.def("backprop_multi", &backprop_multi, "backprop_multi (CPP)");
+    m.def("sdf_smooth", &sdf_smooth, "sdf_smooth (CPP)");
 }
