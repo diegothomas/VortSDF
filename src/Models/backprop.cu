@@ -18,7 +18,7 @@
 #define FAKEINIT
 #endif
 
-#define DIM_L_FEAT 32
+#define DIM_L_FEAT 8
 #define PI 3.141592653589793238462643383279502884197
 
 /** Device functions **/
@@ -906,7 +906,7 @@ __global__ void knn_smooth_kernel_o(
     const size_t num_sites,                // number of rays
     const size_t num_knn,  
     float sigma,
-    float3 *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ activated,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ neighbors,     // [N_voxels, 4] for each voxel => it's vertices)
@@ -927,7 +927,7 @@ __global__ void knn_smooth_kernel_o(
     float length_edge = 0.0f;
     int knn_id;
 
-    float3 curr_point = vertices[idx]; //make_float3(vertices[3*idx],vertices[3*idx+1],vertices[3*idx+2]);
+    float3 curr_point = make_float3(vertices[3*idx],vertices[3*idx+1],vertices[3*idx+2]); //vertices[idx]; //make_float3(vertices[3*idx],vertices[3*idx+1],vertices[3*idx+2]);
     float3 curr_edge = make_float3(0.0,0.0,0.0);
     float max_dist = -1.0f;
 
@@ -937,7 +937,7 @@ __global__ void knn_smooth_kernel_o(
     int i_curr = threadIdx.x % 32;
     knn_id = neighbors[num_knn*idx + lvl_curr*32 + i_curr];
     if (knn_id != -1) {
-        curr_edge = curr_point - vertices[knn_id]; //make_float3(vertices[3*knn_id],vertices[3*knn_id+1],vertices[3*knn_id+2]);
+        curr_edge = curr_point - make_float3(vertices[3*knn_id],vertices[3*knn_id+1],vertices[3*knn_id+2]); //vertices[knn_id]; //make_float3(vertices[3*knn_id],vertices[3*knn_id+1],vertices[3*knn_id+2]);
         length_edge = dot(curr_edge, curr_edge);
         if (length_edge >= max_dist) {
             if (length_edge > max_dist)
@@ -1869,7 +1869,7 @@ void knn_smooth_sdf_cuda(
             num_sites,                // number of rays
             num_knn,
             sigma,
-            (float3*)thrust::raw_pointer_cast(vertices.data_ptr<float>()),       // [N_rays, 6]
+            vertices.data_ptr<float>(),  //(float3*)thrust::raw_pointer_cast(vertices.data_ptr<float>()),       // [N_rays, 6]
             activated.data_ptr<int>(),       // [N_rays, 6]
             sdf.data_ptr<float>(),       // [N_rays, 6]
             neighbors.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)

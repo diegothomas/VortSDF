@@ -17,7 +17,8 @@
 #endif
 
 #define STOP_TRANS 1.0e-10
-#define DIM_L_FEAT 32
+#define DIM_L_FEAT 8
+#define DIM_F4_FEAT 2
 #define CLIP_ALPHA 60.0
 
 /** Device functions **/
@@ -1021,13 +1022,13 @@ __global__ void fill_samples_kernel_o(
     const float3 *__restrict__ sites,       // [N_rays, 6]
     float2 *__restrict__ in_z,       // [N_rays, 6]
     float2 *__restrict__ in_sdf,       // [N_rays, 6]
-    float4 *__restrict__ in_feat,       // [N_rays, 6]
+    float *__restrict__ in_feat,       // [N_rays, 6]
     float3 *__restrict__ in_weights,     // [N_voxels, 4] for each voxel => it's vertices
     float3 *__restrict__ in_grads,     // [N_voxels, 4] for each voxel => it's vertices
     int3 *__restrict__ in_ids,       // [N_rays, 6]
     float2 *__restrict__ out_z,     // [N_voxels, 4] for each voxel => it's vertices
     float3 *__restrict__ out_sdf,     // [N_voxels, 4] for each voxel => it's vertices
-    float4 *__restrict__ out_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ out_feat,     // [N_voxels, 4] for each voxel => it's vertices
     float3 *__restrict__ out_weights,     // [N_voxels, 4] for each voxel => it's vertices
     float3 *__restrict__ out_grads,     // [N_voxels, 4] for each voxel => it's vertices
     int3 *__restrict__ out_ids,     // [N_voxels, 4] for each voxel => it's vertices
@@ -1083,14 +1084,24 @@ __global__ void fill_samples_kernel_o(
 											c_weights_n.y*in_grads[c_ids_n.y] +
 											c_weights_n.z*in_grads[c_ids_n.z]);
 
-		for (int l = 0; l < 8; l++) { // dim feats = 32 = 4*8
-			out_feat[8*i+l] = lambda*(c_weights.x*in_feat[8*c_ids.x + l] +
-												c_weights.y*in_feat[8*c_ids.y + l] +
-												c_weights.z*in_feat[8*c_ids.z + l])
-							+ (1.0f-lambda)*(c_weights_n.x*in_feat[8*c_ids_n.x + l] +
-												c_weights_n.y*in_feat[8*c_ids_n.y + l] +
-												c_weights_n.z*in_feat[8*c_ids_n.z + l]);
+		/*for (int l = 0; l < DIM_F4_FEAT; l++) { // dim feats = 32 = 4*8
+			out_feat[DIM_F4_FEAT*i+l] = lambda*(c_weights.x*in_feat[DIM_F4_FEAT*c_ids.x + l] +
+												c_weights.y*in_feat[DIM_F4_FEAT*c_ids.y + l] +
+												c_weights.z*in_feat[DIM_F4_FEAT*c_ids.z + l])
+							+ (1.0f-lambda)*(c_weights_n.x*in_feat[DIM_F4_FEAT*c_ids_n.x + l] +
+												c_weights_n.y*in_feat[DIM_F4_FEAT*c_ids_n.y + l] +
+												c_weights_n.z*in_feat[DIM_F4_FEAT*c_ids_n.z + l]);
+		}*/
+
+		for (int l = 0; l < DIM_L_FEAT; l++) { // dim feats = 32 = 4*8
+			out_feat[DIM_L_FEAT*i+l] = lambda*(c_weights.x*in_feat[DIM_L_FEAT*c_ids.x + l] +
+												c_weights.y*in_feat[DIM_L_FEAT*c_ids.y + l] +
+												c_weights.z*in_feat[DIM_L_FEAT*c_ids.z + l])
+							+ (1.0f-lambda)*(c_weights_n.x*in_feat[DIM_L_FEAT*c_ids_n.x + l] +
+												c_weights_n.y*in_feat[DIM_L_FEAT*c_ids_n.y + l] +
+												c_weights_n.z*in_feat[DIM_L_FEAT*c_ids_n.z + l]);
 		}
+
 
         sample_rays[i] = ray_d;	
 		out_weights[2*i] = in_weights_rays[2 * s_id];
@@ -1141,7 +1152,7 @@ int tet32_march_cuda(
 
         const int threads = 512;
         const int blocks = (num_rays + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
-        /*AT_DISPATCH_FLOATING_TYPES( rays.type(),"tet32_march_cuda", ([&] {  
+        AT_DISPATCH_FLOATING_TYPES( rays.type(),"tet32_march_cuda", ([&] {  
             tet32_march_cuda_kernel CUDA_KERNEL(blocks,threads) (
 	 			inv_s,
                 num_rays,
@@ -1162,9 +1173,9 @@ int tet32_march_cuda(
                 counter,
                 activate.data_ptr<int>(),
                 offset.data_ptr<int>()); 
-    	}));*/
+    	}));
 
-		AT_DISPATCH_FLOATING_TYPES( rays.type(),"tet32_march_cuda_kernel_o", ([&] {  
+		/*AT_DISPATCH_FLOATING_TYPES( rays.type(),"tet32_march_cuda_kernel_o", ([&] {  
             tet32_march_cuda_kernel_o CUDA_KERNEL(blocks,threads) (
 	 			inv_s,
                 num_rays,
@@ -1185,7 +1196,7 @@ int tet32_march_cuda(
                 counter,
                 activate.data_ptr<int>(),
                 offset.data_ptr<int>()); 
-    	}));
+    	}));*/
 	
 		cudaDeviceSynchronize();
 		int res = 0;
@@ -1220,7 +1231,7 @@ void fill_samples_cuda(
 )   {
         const int threads = 1024;
         const int blocks = (num_rays + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
-        AT_DISPATCH_FLOATING_TYPES( rays_o.type(),"fill_samples_kernel_o", ([&] {  
+        /*AT_DISPATCH_FLOATING_TYPES( rays_o.type(),"fill_samples_kernel_o", ([&] {  
             fill_samples_kernel_o CUDA_KERNEL(blocks,threads) (
                 num_rays,
                 num_samples,
@@ -1229,19 +1240,44 @@ void fill_samples_cuda(
                 (float3*)thrust::raw_pointer_cast(sites.data_ptr<float>()),
                 (float2*)thrust::raw_pointer_cast(in_z.data_ptr<float>()),
                 (float2*)thrust::raw_pointer_cast(in_sdf.data_ptr<float>()),  
-                (float4*)thrust::raw_pointer_cast(in_feat.data_ptr<float>()),    
+                in_feat.data_ptr<float>(),  //(float4*)thrust::raw_pointer_cast(in_feat.data_ptr<float>()),    
                 (float3*)thrust::raw_pointer_cast(in_weights.data_ptr<float>()),    
                 (float3*)thrust::raw_pointer_cast(in_grads.data_ptr<float>()),     
                 (int3*)thrust::raw_pointer_cast(in_ids.data_ptr<int>()),       
                 (float2*)thrust::raw_pointer_cast(out_z.data_ptr<float>()),    
                 (float3*)thrust::raw_pointer_cast(out_sdf.data_ptr<float>()),    
-                (float4*)thrust::raw_pointer_cast(out_feat.data_ptr<float>()),    
+                out_feat.data_ptr<float>(),   //(float4*)thrust::raw_pointer_cast(out_feat.data_ptr<float>()),    
                 (float3*)thrust::raw_pointer_cast(out_weights.data_ptr<float>()),     
                 (float3*)thrust::raw_pointer_cast(out_grads.data_ptr<float>()),    
                 (int3*)thrust::raw_pointer_cast(out_ids.data_ptr<int>()),    
                 offset.data_ptr<int>(),     
                 (float3*)thrust::raw_pointer_cast(samples.data_ptr<float>()),   
                 (float3*)thrust::raw_pointer_cast(sample_rays.data_ptr<float>())); 
+
+    }));*/
+
+	AT_DISPATCH_FLOATING_TYPES( rays_o.type(),"fill_samples_kernel", ([&] {  
+            fill_samples_kernel CUDA_KERNEL(blocks,threads) (
+                num_rays,
+                num_samples,
+                rays_o.data_ptr<float>(),
+                rays_d.data_ptr<float>(),
+                sites.data_ptr<float>(),
+                in_z.data_ptr<float>(),
+                in_sdf.data_ptr<float>(),  
+                in_feat.data_ptr<float>(),  //(float4*)thrust::raw_pointer_cast(in_feat.data_ptr<float>()),    
+                in_weights.data_ptr<float>(),    
+                in_grads.data_ptr<float>(),     
+                in_ids.data_ptr<int>(),       
+                out_z.data_ptr<float>(),    
+                out_sdf.data_ptr<float>(),    
+                out_feat.data_ptr<float>(),   //(float4*)thrust::raw_pointer_cast(out_feat.data_ptr<float>()),    
+                out_weights.data_ptr<float>(),     
+                out_grads.data_ptr<float>(),    
+                out_ids.data_ptr<int>(),    
+                offset.data_ptr<int>(),     
+                samples.data_ptr<float>(),   
+                sample_rays.data_ptr<float>()); 
 
     }));
     }
