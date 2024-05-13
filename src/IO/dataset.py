@@ -776,7 +776,7 @@ class Dataset:
         Generate random rays at world space from one camera.
         """
 
-        #""" If KINOVIS
+        """ If KINOVIS
         if lvl == 5.0:
             #pixels_x = torch.randint(low=0, high=self.W_smooth_5, size=[batch_size])
             #pixels_y = torch.randint(low=0, high=self.H_smooth_5, size=[batch_size])

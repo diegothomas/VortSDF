@@ -795,7 +795,7 @@ class Tet32(Process):
         self.tri_vertices = np.asarray(tri_mesh.vertices)
 
         if translate is not None:
-            self.tri_vertices = self.tri_vertices*scale + translate
+            self.tri_vertices = np.dot(self.tri_vertices, scale) + translate
 
         self.tri_faces = np.asarray(tri_mesh.triangles)
         if not filename == "":
