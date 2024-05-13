@@ -179,6 +179,9 @@ if __name__ == "__main__":
     pred_paths = natsorted(glob.glob(os.path.join(exp_path , data_name, "validations_fine/*.png"))) 
     gt_paths = natsorted(glob.glob(os.path.join(data_path, data_name, "image/*.png")))
     mask_paths = natsorted(glob.glob(os.path.join(data_path, data_name, "mask/*.png")))
+    if len(gt_paths) == 0:
+        gt_paths = natsorted(glob.glob(os.path.join(data_path, data_name, "ImagesUndistorted/*.png")))
+        mask_paths = natsorted(glob.glob(os.path.join(data_path, data_name, "Masks/*.png")))
 
     avg_psnr = psnr(os.path.join(exp_path , data_name), pred_paths, gt_paths, mask_paths, device)
     print("avg_psnr : ",avg_psnr)

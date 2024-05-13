@@ -435,9 +435,10 @@ __global__ void render_kernel(
         float3 grad_color_diff = huber_grad(integrated_color - true_color[idx]);
 
         //Wtotal
+        float mask_weight = msk > 0.5f ? mask_reg : 0.01f;
         backward(integrated_color, color.w, true_color[idx], grad_color_diff, msk,
             idx, grads_color, grads_sdf, sdf_seg, weights_seg, color_samples,
-            offsets, cell_ids, grad_space, rays, inv_s, mask_reg, 0.0f, 0.0f, 1);
+            offsets, cell_ids, grad_space, rays, inv_s, mask_weight, 0.0f, 0.0f, 1);
 
         //color_loss[3*idx] = integrated_color.x;
         //color_loss[3*idx + 1] = integrated_color.y;

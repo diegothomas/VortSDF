@@ -13,6 +13,7 @@ from src.Confs.VisHull import Load_Visual_Hull
 import cv2
 from skimage.measure import block_reduce
 import imageio
+import xml.etree.cElementTree as ET
 
 
 def load_Rt_from(filename):
@@ -324,8 +325,10 @@ class Dataset:
                 self.images_np[i][self.masks_np[i][:,:,0] == 0.0,:] = [0.0,0.0,0.0]
                 
             # world_mat is a projection matrix from world to image
+            trans_file = sorted(glob(os.path.join(self.data_dir, 'transform_*.txt')))
+            print(trans_file)
             self.world_mats_np = [np.array([0.0, 0.0, 0.0]).astype(np.float32) for idx in range(self.n_images)]
-            self.scale_mats_np = [np.eye(4,4)] #[load_Rt_from(self.data_dir + 'Barn_trans.txt')] #
+            self.scale_mats_np = [load_Rt_from(trans_file)] #
 
         else:
             print("unknown datatype")
@@ -773,7 +776,7 @@ class Dataset:
         Generate random rays at world space from one camera.
         """
 
-        """ If KINOVIS
+        #""" If KINOVIS
         if lvl == 5.0:
             #pixels_x = torch.randint(low=0, high=self.W_smooth_5, size=[batch_size])
             #pixels_y = torch.randint(low=0, high=self.H_smooth_5, size=[batch_size])
@@ -813,6 +816,8 @@ class Dataset:
         else:
             pixels_x = torch.randint(low=self.all_min_x[img_idx], high=self.all_max_x[img_idx], size=[batch_size])
             pixels_y = torch.randint(low=self.all_min_y[img_idx], high=self.all_max_y[img_idx], size=[batch_size])
+            color = self.images[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
+            mask = self.masks[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
 
         """
 
@@ -850,7 +855,7 @@ class Dataset:
             pixels_x = torch.randint(low=0, high=self.W-1, size=[batch_size])
             pixels_y = torch.randint(low=0, high=self.H-1, size=[batch_size])
             color = self.images[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
-            mask = self.masks[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
+            mask = self.masks[img_idx][(pixels_y, pixels_x)]      # batch_size, 3"""
 
         pixels_x_f = pixels_x.float()*lvl# + torch.rand(pixels_x.shape)-0.5
         pixels_y_f = pixels_y.float()*lvl# + torch.rand(pixels_y.shape)-0.5
