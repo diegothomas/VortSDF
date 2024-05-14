@@ -776,86 +776,84 @@ class Dataset:
         Generate random rays at world space from one camera.
         """
 
-        """ If KINOVIS
-        if lvl == 5.0:
-            #pixels_x = torch.randint(low=0, high=self.W_smooth_5, size=[batch_size])
-            #pixels_y = torch.randint(low=0, high=self.H_smooth_5, size=[batch_size])
-            pixels_x = torch.randint(low=self.all_min_x[img_idx]//5, high=self.all_max_x[img_idx]//5, size=[batch_size])
-            pixels_y = torch.randint(low=self.all_min_y[img_idx]//5, high=self.all_max_y[img_idx]//5, size=[batch_size])
+        if self.data_type == 'KINOVIS':
+            if lvl == 5.0:
+                #pixels_x = torch.randint(low=0, high=self.W_smooth_5, size=[batch_size])
+                #pixels_y = torch.randint(low=0, high=self.H_smooth_5, size=[batch_size])
+                pixels_x = torch.randint(low=self.all_min_x[img_idx]//5, high=self.all_max_x[img_idx]//5, size=[batch_size])
+                pixels_y = torch.randint(low=self.all_min_y[img_idx]//5, high=self.all_max_y[img_idx]//5, size=[batch_size])
 
-            pixels_x[pixels_x < 0] = 0
-            pixels_x[pixels_x > self.W_smooth_5-1] = self.W_smooth_5-1
-            pixels_y[pixels_y < 0] = 0
-            pixels_y[pixels_y > self.H_smooth_5-1] = self.H_smooth_5-1
-            color = self.images_smooth_5[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
-            mask = self.masks_smooth_5[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
-        elif lvl == 3.0:
-            #pixels_x = torch.randint(low=0, high=self.W_smooth_3, size=[batch_size])
-            #pixels_y = torch.randint(low=0, high=self.H_smooth_3, size=[batch_size])
-            pixels_x = torch.randint(low=self.all_min_x[img_idx]//3, high=self.all_max_x[img_idx]//3, size=[batch_size])
-            pixels_y = torch.randint(low=self.all_min_y[img_idx]//3, high=self.all_max_y[img_idx]//3, size=[batch_size])
+                pixels_x[pixels_x < 0] = 0
+                pixels_x[pixels_x > self.W_smooth_5-1] = self.W_smooth_5-1
+                pixels_y[pixels_y < 0] = 0
+                pixels_y[pixels_y > self.H_smooth_5-1] = self.H_smooth_5-1
+                color = self.images_smooth_5[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
+                mask = self.masks_smooth_5[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
+            elif lvl == 3.0:
+                #pixels_x = torch.randint(low=0, high=self.W_smooth_3, size=[batch_size])
+                #pixels_y = torch.randint(low=0, high=self.H_smooth_3, size=[batch_size])
+                pixels_x = torch.randint(low=self.all_min_x[img_idx]//3, high=self.all_max_x[img_idx]//3, size=[batch_size])
+                pixels_y = torch.randint(low=self.all_min_y[img_idx]//3, high=self.all_max_y[img_idx]//3, size=[batch_size])
 
-            pixels_x[pixels_x < 0] = 0
-            pixels_x[pixels_x > self.W_smooth_3-1] = self.W_smooth_3-1
-            pixels_y[pixels_y < 0] = 0
-            pixels_y[pixels_y > self.H_smooth_3-1] = self.H_smooth_3-1
-            color = self.images_smooth_3[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
-            mask = self.masks_smooth_3[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
-        elif lvl == 2.0:
-            #pixels_x = torch.randint(low=0, high=self.W_smooth_2, size=[batch_size])
-            #pixels_y = torch.randint(low=0, high=self.H_smooth_2, size=[batch_size])
-            pixels_x = torch.randint(low=self.all_min_x[img_idx]//2, high=self.all_max_x[img_idx]//2, size=[batch_size])
-            pixels_y = torch.randint(low=self.all_min_y[img_idx]//2, high=self.all_max_y[img_idx]//2, size=[batch_size])
+                pixels_x[pixels_x < 0] = 0
+                pixels_x[pixels_x > self.W_smooth_3-1] = self.W_smooth_3-1
+                pixels_y[pixels_y < 0] = 0
+                pixels_y[pixels_y > self.H_smooth_3-1] = self.H_smooth_3-1
+                color = self.images_smooth_3[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
+                mask = self.masks_smooth_3[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
+            elif lvl == 2.0:
+                #pixels_x = torch.randint(low=0, high=self.W_smooth_2, size=[batch_size])
+                #pixels_y = torch.randint(low=0, high=self.H_smooth_2, size=[batch_size])
+                pixels_x = torch.randint(low=self.all_min_x[img_idx]//2, high=self.all_max_x[img_idx]//2, size=[batch_size])
+                pixels_y = torch.randint(low=self.all_min_y[img_idx]//2, high=self.all_max_y[img_idx]//2, size=[batch_size])
 
-            pixels_x[pixels_x < 0] = 0
-            pixels_x[pixels_x > self.W_smooth_2-1] = self.W_smooth_2-1
-            pixels_y[pixels_y < 0] = 0
-            pixels_y[pixels_y > self.H_smooth_2-1] = self.H_smooth_2-1
-            color = self.images_smooth_2[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
-            mask = self.masks_smooth_2[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
+                pixels_x[pixels_x < 0] = 0
+                pixels_x[pixels_x > self.W_smooth_2-1] = self.W_smooth_2-1
+                pixels_y[pixels_y < 0] = 0
+                pixels_y[pixels_y > self.H_smooth_2-1] = self.H_smooth_2-1
+                color = self.images_smooth_2[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
+                mask = self.masks_smooth_2[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
+            else:
+                pixels_x = torch.randint(low=self.all_min_x[img_idx], high=self.all_max_x[img_idx], size=[batch_size])
+                pixels_y = torch.randint(low=self.all_min_y[img_idx], high=self.all_max_y[img_idx], size=[batch_size])
+                color = self.images[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
+                mask = self.masks[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
         else:
-            pixels_x = torch.randint(low=self.all_min_x[img_idx], high=self.all_max_x[img_idx], size=[batch_size])
-            pixels_y = torch.randint(low=self.all_min_y[img_idx], high=self.all_max_y[img_idx], size=[batch_size])
-            color = self.images[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
-            mask = self.masks[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
+            if lvl == 5:
+                pixels_x = torch.randint(low=0, high=self.W_smooth_5, size=[batch_size])
+                pixels_y = torch.randint(low=0, high=self.H_smooth_5, size=[batch_size])
 
-        """
+                pixels_x[pixels_x < 0] = 0
+                pixels_x[pixels_x > self.W_smooth_5-1] = self.W_smooth_5-1
+                pixels_y[pixels_y < 0] = 0
+                pixels_y[pixels_y > self.H_smooth_5-1] = self.H_smooth_5-1
+                color = self.images_smooth_5[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
+                mask = self.masks_smooth_5[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
+            elif lvl == 3:
+                pixels_x = torch.randint(low=0, high=self.W_smooth_3, size=[batch_size])
+                pixels_y = torch.randint(low=0, high=self.H_smooth_3, size=[batch_size])
 
-        if lvl == 5:
-            pixels_x = torch.randint(low=0, high=self.W_smooth_5, size=[batch_size])
-            pixels_y = torch.randint(low=0, high=self.H_smooth_5, size=[batch_size])
+                pixels_x[pixels_x < 0] = 0
+                pixels_x[pixels_x > self.W_smooth_3-1] = self.W_smooth_3-1
+                pixels_y[pixels_y < 0] = 0
+                pixels_y[pixels_y > self.H_smooth_3-1] = self.H_smooth_3-1
+                color = self.images_smooth_3[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
+                mask = self.masks_smooth_3[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
+            elif lvl == 2:
+                pixels_x = torch.randint(low=0, high=self.W_smooth_2, size=[batch_size])
+                pixels_y = torch.randint(low=0, high=self.H_smooth_2, size=[batch_size])
 
-            pixels_x[pixels_x < 0] = 0
-            pixels_x[pixels_x > self.W_smooth_5-1] = self.W_smooth_5-1
-            pixels_y[pixels_y < 0] = 0
-            pixels_y[pixels_y > self.H_smooth_5-1] = self.H_smooth_5-1
-            color = self.images_smooth_5[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
-            mask = self.masks_smooth_5[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
-        elif lvl == 3:
-            pixels_x = torch.randint(low=0, high=self.W_smooth_3, size=[batch_size])
-            pixels_y = torch.randint(low=0, high=self.H_smooth_3, size=[batch_size])
-
-            pixels_x[pixels_x < 0] = 0
-            pixels_x[pixels_x > self.W_smooth_3-1] = self.W_smooth_3-1
-            pixels_y[pixels_y < 0] = 0
-            pixels_y[pixels_y > self.H_smooth_3-1] = self.H_smooth_3-1
-            color = self.images_smooth_3[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
-            mask = self.masks_smooth_3[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
-        elif lvl == 2:
-            pixels_x = torch.randint(low=0, high=self.W_smooth_2, size=[batch_size])
-            pixels_y = torch.randint(low=0, high=self.H_smooth_2, size=[batch_size])
-
-            pixels_x[pixels_x < 0] = 0
-            pixels_x[pixels_x > self.W_smooth_2-1] = self.W_smooth_2-1
-            pixels_y[pixels_y < 0] = 0
-            pixels_y[pixels_y > self.H_smooth_2-1] = self.H_smooth_2-1
-            color = self.images_smooth_2[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
-            mask = self.masks_smooth_2[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
-        else:
-            pixels_x = torch.randint(low=0, high=self.W-1, size=[batch_size])
-            pixels_y = torch.randint(low=0, high=self.H-1, size=[batch_size])
-            color = self.images[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
-            mask = self.masks[img_idx][(pixels_y, pixels_x)]      # batch_size, 3"""
+                pixels_x[pixels_x < 0] = 0
+                pixels_x[pixels_x > self.W_smooth_2-1] = self.W_smooth_2-1
+                pixels_y[pixels_y < 0] = 0
+                pixels_y[pixels_y > self.H_smooth_2-1] = self.H_smooth_2-1
+                color = self.images_smooth_2[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
+                mask = self.masks_smooth_2[img_idx][(pixels_y, pixels_x)]      # batch_size, 3
+            else:
+                pixels_x = torch.randint(low=0, high=self.W-1, size=[batch_size])
+                pixels_y = torch.randint(low=0, high=self.H-1, size=[batch_size])
+                color = self.images[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
+                mask = self.masks[img_idx][(pixels_y, pixels_x)]      # batch_size, 3"""
 
         pixels_x_f = pixels_x.float()*lvl# + torch.rand(pixels_x.shape)-0.5
         pixels_y_f = pixels_y.float()*lvl# + torch.rand(pixels_y.shape)-0.5

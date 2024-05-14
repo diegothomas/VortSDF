@@ -20,7 +20,7 @@
 #define PI 3.141592653589793238462643383279502884197
 #define _MAX_K_NN 24
 #define _BUFF_SIZE 2048
-#define DIM_L_FEAT 8
+#define DIM_L_FEAT 32
 
 /** Device functions **/
 /** Device functions **/

@@ -18,7 +18,7 @@
 #define FAKEINIT
 #endif
 
-#define DIM_L_FEAT 8
+#define DIM_L_FEAT 32
 #define PI 3.141592653589793238462643383279502884197
 
 /** Device functions **/
