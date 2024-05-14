@@ -1030,7 +1030,7 @@ class Runner:
                 self.e_w = self.e_w / 10.0
                 self.learning_rate_sdf = 1.0e-4
                 self.tv_w = self.tv_w / 2.0
-                self.learning_rate_cvt = self.learning_rate_cvt / 2.0
+                self.learning_rate_cvt = self.learning_rate_cvt / 1.5 #2.0
 
                 self.sigma = self.sigma / 2.0
                 self.w_g = 1.0
@@ -1110,7 +1110,7 @@ class Runner:
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
                     self.s_w = 1.0e-3 #2.0e-6
                     self.e_w = 0.0 #1.0e-4 #1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 1.0e-5 #1.0e-8 #1.0e-1
+                    self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1
                     self.tv_f = 1.0e-5 #1.0e-4
                     self.f_w = 1.0
                     self.end_iter_loc = up_iters[4] - up_iters[3]
@@ -1129,10 +1129,10 @@ class Runner:
                     """self.s_w = 1.0e-2
                     self.e_w = 1.0e-4
                     self.tv_w = 1.0e-2"""
-                    self.s_w = 5.0e-5 #5.0e-4
+                    self.s_w = 1.0e-4 #5.0e-4
                     self.e_w = 0.0 #1.0e-6 #1.0e-7
-                    self.tv_w = 1.0e-6 #1.0e-4 #1.0e-3
-                    self.tv_f = 1.0e-8 #1.0e-3
+                    self.tv_w = 1.0e-5 #1.0e-4 #1.0e-3
+                    self.tv_f = 1.0e-7 #1.0e-3
                     self.f_w = 1.0#1.0e3
                     self.end_iter_loc = self.end_iter - up_iters[4]
                     self.learning_rate = 1e-4
