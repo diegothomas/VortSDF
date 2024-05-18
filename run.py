@@ -90,9 +90,9 @@ class Runner:
 
         self.iter_step = 0
         self.end_iter_loc = 2000
-        self.s_w = 5.0e-4
+        self.s_w = 1.0e-3
         self.e_w = 0.0#1.0e-6
-        self.tv_w = 5.0e-5
+        self.tv_w = 1.0e-4
         self.tv_f = 1.0e-5
         self.f_w = 1.0
 
