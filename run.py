@@ -90,9 +90,9 @@ class Runner:
 
         self.iter_step = 0
         self.end_iter_loc = 2000
-        self.s_w = 5.0e-3
+        self.s_w = 5.0e-4
         self.e_w = 0.0#1.0e-6
-        self.tv_w = 5.0e-4
+        self.tv_w = 5.0e-5
         self.tv_f = 1.0e-5
         self.f_w = 1.0
 
@@ -110,6 +110,7 @@ class Runner:
             self.vortSDF_renderer_coarse = VortSDFDirectRenderer(**self.conf['model.cvt_renderer'])
 
         self.vortSDF_renderer_fine = VortSDFRenderer(**self.conf['model.cvt_renderer'])
+        self.vortSDF_renderer_fine.mask_reg = 1.0e-2
         
         if self.double_net:
             self.color_coarse = ColorNetwork(**self.conf['model.color_geo_network']).to(self.device)
@@ -1044,15 +1045,15 @@ class Runner:
                     self.e_w = 5.0e-6
                     self.tv_w = 1.0e-5"""
                     self.R = 100
-                    self.s_w = 1.0e-3
+                    self.s_w = 1.0e-4
                     self.e_w = 0.0#1.0e-4 #5.0e-3
-                    self.tv_w = 5.0e-4 #1.0e-1
+                    self.tv_w = 5.0e-5 #1.0e-1
                     self.tv_f = 1.0e-5
                     self.s_start = 20 #30/(10.0*self.sigma) #50.0
                     self.s_max = 100 #60/(5.0*self.sigma) #200
                     self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 5.0e-2
-                    self.learning_rate_feat = 5.0e-2
+                    self.learning_rate_sdf = 1.0e-2
+                    self.learning_rate_feat = 1.0e-2
                     self.end_iter_loc = up_iters[1] - up_iters[0]
                     self.learning_rate_alpha = 1.0e-1
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-2
@@ -1065,7 +1066,7 @@ class Runner:
                     """self.s_w = 1.0e-3
                     self.e_w = 5.0e-4
                     self.tv_w = 1.0e-5"""
-                    self.s_w = 1.0e-3 #1e-6
+                    self.s_w = 1.0e-5 #1e-6
                     self.e_w = 0.0#1.0e-6 #5.0e-3
                     self.tv_w = 5.0e-6 #1.0e-8 #1.0e-1
                     self.tv_f = 1.0e-5
@@ -1087,9 +1088,9 @@ class Runner:
                     """self.s_w = 5.0e-3
                     self.e_w = 1.0e-3
                     self.tv_w = 1.0e-3"""
-                    self.s_w = 1.0e-3 #5.0e-4
+                    self.s_w = 1.0e-5 #5.0e-4
                     self.e_w = 0.0 #1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 5.0e-4 #1.0e-8 #1.0e-1
+                    self.tv_w = 5.0e-6 #1.0e-8 #1.0e-1
                     #self.w_g = 0.0
                     #acc_it = 10
 
@@ -1139,8 +1140,8 @@ class Runner:
                     self.f_w = 1.0#1.0e3
                     self.end_iter_loc = self.end_iter - up_iters[4]
                     self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 1.0e-5
-                    self.learning_rate_feat = 1.0e-5
+                    self.learning_rate_sdf = 5.0e-5
+                    self.learning_rate_feat = 5.0e-5
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-6
                     self.learning_rate_alpha = 1.0e-3
                     #self.val_freq = 2000
@@ -1406,14 +1407,14 @@ class Runner:
            
             
             if self.double_net:
-                coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:2], self.out_grads[:nb_samples,:3]], -1)       
+                coarse_feat = torch.cat([xyz_emb, viewdirs_emb, self.out_sdf[:nb_samples,:], self.out_grads[:nb_samples,:3]], -1)       
                 colors_feat = self.color_coarse.rgb(coarse_feat)   
                 self.colors = torch.sigmoid(colors_feat)
                 self.colors = self.colors.contiguous()
 
             if self.double_net:
                 if self.position_encoding:
-                    rgb_feat = torch.cat([xyz_emb, viewdirs_emb, colors_feat, self.out_sdf[:nb_samples,:2], self.out_grads[:nb_samples,:3], self.out_feat[:nb_samples,:32]], -1)
+                    rgb_feat = torch.cat([xyz_emb, viewdirs_emb, colors_feat, self.out_sdf[:nb_samples,:2], self.out_grads[:nb_samples,:3], self.out_feat[:nb_samples,:self.dim_feats]], -1)
                 else:
                     rgb_feat = torch.cat([viewdirs_emb, colors_feat.detach(), self.out_grads[:nb_samples,:3], self.out_feat[:nb_samples,:]], -1) #, self.out_weights[:nb_samples,:]
             else:
