@@ -363,6 +363,8 @@ def chamfer(GT_path, dir_path, heat_map_path, mesh_list, THRESH, device = None, 
     print("start computing iou")
     sdf_list = []
     iou_list = []
+    chamfer_list1 = []
+    chamfer_list2 = []
     mask = np.zeros(verts_GT_tensor.shape[1])
     for i in range(len(mesh_list)):
         f = SDF(verts_tensor_list[i].reshape(-1,3).cpu().numpy(), face_list[i].reshape(-1,3).cpu().numpy())
@@ -375,6 +377,15 @@ def chamfer(GT_path, dir_path, heat_map_path, mesh_list, THRESH, device = None, 
         iou = ((sdf_f < THRESH).sum() + (Psdf_f < THRESH).sum())/(len(verts_GT) + len(verts_list[i]))
         iou_list.append(iou * 100)
 
+        dist0 = np.copy(sdf_f)
+        dist1 = np.copy(Psdf_f)
+        dist0[dist0 > 0.1] = 0.1
+        dist1[dist1 > 0.1] = 0.1
+        cd0 = float(np.mean(dist0))
+        cd1 = float(np.mean(dist1))
+        chamfer_list1.append(cd0)
+        chamfer_list2.append(cd1)
+
     chamfer_list = []
     for i in range(len(mesh_list)):
         mesh_name = mesh_list[i].split("\\")[-1] # "/"
@@ -382,7 +393,7 @@ def chamfer(GT_path, dir_path, heat_map_path, mesh_list, THRESH, device = None, 
         _ = save_color_mesh(sdf_list[i] , verts_GT , face_GT.cpu().numpy() , os.path.join(heat_map_path, mesh_name), vmin=0.0 , vmax=1.0*THRESH)   
         chamfer_list.append(sdf_list[i][sdf_list[i] < 1000.0].mean() * 1000)
 
-    return chamfer_list, iou_list      
+    return chamfer_list, chamfer_list1, chamfer_list2, iou_list      
 
 def main():
     parser = argparse.ArgumentParser(description='chamfer distance')
@@ -439,11 +450,11 @@ def main():
     else:
         f = open(result_csv,"a")
 
-    Chamfer_results, IoU_results = chamfer(args.GT_path, args.dir_path, heat_map_path,mesh_list,  0.02, device, min_B, max_B)
+    Chamfer_results, Chamfer_results1, Chamfer_results2,  IoU_results = chamfer(args.GT_path, args.dir_path, heat_map_path,mesh_list,  0.02, device, min_B, max_B)
     
     f.write(data_name +  ",")
-    for chm, iou in zip(Chamfer_results, IoU_results):
-        f.write("{} , {} ,".format(chm, iou)) 
+    for chm, chm1, chm2, iou in zip(Chamfer_results, Chamfer_results1, Chamfer_results2, IoU_results):
+        f.write("{} , {} , {} , {} ,".format(chm, chm1, chm2, iou)) 
     f.write("\n")
 
     f.close()

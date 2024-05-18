@@ -330,6 +330,11 @@ class Dataset:
             self.world_mats_np = [np.array([0.0, 0.0, 0.0]).astype(np.float32) for idx in range(self.n_images)]
             self.scale_mats_np = [load_Rt_from(trans_file[0])] #
 
+            GTtrans = load_Rt_from(trans_file[0]) #
+            rot_inv = GTtrans[:3,:3] 
+            t_inv = -np.dot(GTtrans[:3,3].T, rot_inv)
+            GTtrans[:3,3] = t_inv[:]
+            self.scale_mats_np = [GTtrans]
         else:
             print("unknown datatype")
             exit()
