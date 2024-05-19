@@ -51,14 +51,14 @@ __device__ float mid_loss(float3 x, float3 y)
 
 __device__ float3 mid_grad(float3 x, float3 y) 
 {
-    /*float3 ra = x*x;
+    float3 ra = x*x;
     float3 rb = y*y;
-    return (x-y)/(min(sqrt(ra.x + ra.y + ra.z), sqrt(rb.x + rb.y + rb.z)) + 0.005f);*/
-    float3 r = x-y;
+    return (x-y)/(min(sqrt(ra.x + ra.y + ra.z), sqrt(rb.x + rb.y + rb.z)) + 0.005f);
+    /*float3 r = x-y;
     r.x = r.x/(min(abs(x.x), abs(y.x)) + 0.005f);
     r.y = r.y/(min(abs(x.y), abs(y.y)) + 0.005f);
     r.z = r.z/(min(abs(x.z), abs(y.z)) + 0.005f);
-    return r;
+    return r;*/
 }
 
 
