@@ -31,7 +31,7 @@ backprop_cuda = load('backprop_cuda', ['src/Models/backprop.cpp', 'src/Models/ba
 
 cvt_grad_cuda = load('cvt_grad_cuda', ['src/Geometry/CVT_gradients.cpp', 'src/Geometry/CVT_gradients.cu'], verbose=True)
 
-up_iters = [2000, 10000, 20000, 30000, 40000]
+up_iters = [2000, 5000, 10000, 15000, 20000]
 
 class Runner:
     def __init__(self, conf_path, data_name, mode='train', is_continue=False, checkpoint = '', position_encoding = True, double_net = True):
@@ -1097,11 +1097,11 @@ class Runner:
                     self.tv_f = 1.0e-7
                     self.f_w = 0.0 #1.0
                     self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 5e-4 #1e-4
-                    self.learning_rate_feat = 5e-4 #1.0e-2
+                    self.learning_rate_sdf = 1e-3 #1e-4
+                    self.learning_rate_feat = 1e-3 #1.0e-2
                     self.end_iter_loc = up_iters[3] - up_iters[2]
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-4
-                    self.learning_rate_alpha = 1.0e-1
+                    self.learning_rate_alpha = 1.0e-3
 
                 if (iter_step+1) == up_iters[3]:
                     #warm_up = 2000
@@ -1112,17 +1112,17 @@ class Runner:
                     """self.s_w = 2.0e-4 #2.0e-6
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
-                    self.s_w = 1.0e-5 #2.0e-6
+                    self.s_w = 1.0e-4 #2.0e-6
                     self.e_w = 0.0#1.0e-8 #1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 1.0e-5 #1.0e-8 #1.0e-1
-                    self.tv_f = 1.0e-8 #1.0e-4
+                    self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1
+                    self.tv_f = 1.0e-6 #1.0e-4
                     self.f_w = 0.0 #1.0
                     self.end_iter_loc = up_iters[4] - up_iters[3]
                     self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 1.0e-4
-                    self.learning_rate_feat = 1.0e-4
+                    self.learning_rate_sdf = 1.0e-3
+                    self.learning_rate_feat = 1.0e-3
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-5
-                    self.learning_rate_alpha = 1.0e-1
+                    self.learning_rate_alpha = 1.0e-3
                     
                 if (iter_step+1) == up_iters[4]:
                     self.R = 10
@@ -1133,17 +1133,17 @@ class Runner:
                     """self.s_w = 1.0e-2
                     self.e_w = 1.0e-4
                     self.tv_w = 1.0e-2"""
-                    self.s_w = 5.0e-6 #5.0e-4
+                    self.s_w = 1.0e-4 #5.0e-4
                     self.e_w = 0.0 #1.0e-8 #1.0e-7
-                    self.tv_w = 1.0e-5 #1.0e-4 #1.0e-3
-                    self.tv_f = 0.0 #1.0e-8 #1.0e-3
-                    self.f_w = 0.1#10.0#1.0e3
+                    self.tv_w = 2.0e-4 #1.0e-4 #1.0e-3
+                    self.tv_f = 1.0e-8 #1.0e-3
+                    self.f_w = 0.01#10.0#1.0e3
                     self.end_iter_loc = self.end_iter - up_iters[4]
                     self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 5.0e-5
-                    self.learning_rate_feat = 5.0e-5
+                    self.learning_rate_sdf = 1.0e-3
+                    self.learning_rate_feat = 1.0e-3
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-6
-                    self.learning_rate_alpha = 1.0e-3
+                    self.learning_rate_alpha = 1.0e-4
                     #self.val_freq = 2000
                     #verbose = True
                     #full_reg = 10
