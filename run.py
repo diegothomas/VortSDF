@@ -1067,7 +1067,7 @@ class Runner:
                     self.learning_rate_sdf = 5.0e-2
                     self.learning_rate_feat = 5.0e-2
                     self.end_iter_loc = up_iters[1] - up_iters[0]
-                    self.learning_rate_alpha = 1.0e-1
+                    self.learning_rate_alpha = 1.0e-2
                     self.vortSDF_renderer_fine.mask_reg = 1.0#1.0e-2
                     #verbose = True
                     
@@ -1079,14 +1079,14 @@ class Runner:
                     """self.s_w = 1.0e-3
                     self.e_w = 5.0e-4
                     self.tv_w = 1.0e-5"""
-                    self.s_w = 1.0e-2 #1e-6
+                    self.s_w = 5.0e-4 #1e-6
                     self.e_w = 0.0#1.0e-5#5.0e-5 #1.0e-8 #5.0e-3
-                    self.tv_w = 0.0#1.0e-7 #1.0e-8 #1.0e-1
-                    self.tv_f = 0.0#1.0e-7
+                    self.tv_w = 5.0e-4 #1.0e-8 #1.0e-1
+                    self.tv_f = 1.0e-5
                     self.f_w = 1.0 #1.0
                     self.learning_rate = 3e-3
-                    self.learning_rate_sdf = 1.0e-2
-                    self.learning_rate_feat = 1.0e-2
+                    self.learning_rate_sdf = 5.0e-3
+                    self.learning_rate_feat = 5.0e-3
                     self.end_iter_loc = up_iters[2] - up_iters[1]
                     self.learning_rate_alpha = 1.0e-1
                     self.vortSDF_renderer_fine.mask_reg = 1.0#e-3
@@ -1102,20 +1102,20 @@ class Runner:
                     """self.s_w = 5.0e-3
                     self.e_w = 1.0e-3
                     self.tv_w = 1.0e-3"""
-                    self.s_w = 1.0e-2 #5.0e-4
+                    self.s_w = 5.0e-4 #5.0e-4
                     self.e_w =  0.0#1.0e-5#1.0e-5 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 0.0#1.0e-7#1.0e-7 #1.0e-8 #1.0e-1
+                    self.tv_w = 5.0e-4#1.0e-7#1.0e-7 #1.0e-8 #1.0e-1
                     #self.w_g = 0.0
                     #acc_it = 10
 
-                    self.tv_f = 0.0# 1.0e-7 #1.0e-7
+                    self.tv_f = 1.0e-5# 1.0e-7 #1.0e-7
                     self.f_w = 1.0
                     self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 5e-4 #1e-4
-                    self.learning_rate_feat = 5e-4 #1.0e-2
+                    self.learning_rate_sdf = 1e-3 #1e-4
+                    self.learning_rate_feat = 1e-3 #1.0e-2
                     self.end_iter_loc = up_iters[3] - up_iters[2]
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-2
-                    self.learning_rate_alpha = 1.0e-1
+                    self.learning_rate_alpha = 1.0e-2
                     
 
                 if (iter_step+1) == up_iters[3]:
@@ -1127,19 +1127,20 @@ class Runner:
                     """self.s_w = 2.0e-4 #2.0e-6
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
-                    self.s_w = 1.0e-2 #2.0e-6
+                    self.s_w = 1.0e-4 #2.0e-6
                     self.e_w =  0.0#1.0e-5#1.0e-8 #1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 0.0#1.0e-7 #1.0e-8 #1.0e-1
-                    self.tv_f = 0.0#1.0e-7 #1.0e-4
-                    self.f_w = 1.0
+                    self.tv_w = 1.0e-4#1.0e-7 #1.0e-8 #1.0e-1
+                    self.tv_f = 5.0e-6#1.0e-7 #1.0e-4
+                    self.f_w = 10.0
+                    self.w_g = 0.1
                     self.end_iter_loc = up_iters[4] - up_iters[3]
-                    self.learning_rate = 5e-4
+                    self.learning_rate = 1e-3
                     self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-2
-                    self.learning_rate_alpha = 1.0e-1
+                    self.learning_rate_alpha = 1.0e-2
                     lamda_c = 0.5
-                    full_reg = 6
+                    full_reg = 3
                     
                 if (iter_step+1) == up_iters[4]:
                     self.R = 10
@@ -1150,21 +1151,22 @@ class Runner:
                     """self.s_w = 1.0e-2
                     self.e_w = 1.0e-4
                     self.tv_w = 1.0e-2"""
-                    self.s_w = 1.0e-2 #5.0e-4
+                    self.w_g = 0.01
+                    self.s_w = 5.0e-5 #5.0e-4
                     self.e_w = 0.0#1.0e-6 #1.0e-7
-                    self.tv_w = 0.0#1.0e-8 #1.0e-4 #1.0e-3
-                    self.tv_f = 0.0#1.0e-8 #1.0e-3
-                    self.f_w = 2.0#10.0#1.0e3
+                    self.tv_w = 1.0e-4#1.0e-8 #1.0e-4 #1.0e-3
+                    self.tv_f = 1.0e-7#1.0e-8 #1.0e-3
+                    self.f_w = 10.0#10.0#1.0e3
                     self.end_iter_loc = self.end_iter - up_iters[4]
                     self.learning_rate = 5e-4
-                    self.learning_rate_sdf = 5.0e-5
+                    self.learning_rate_sdf = 1.0e-4
                     self.learning_rate_feat = 1.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-3
-                    self.learning_rate_alpha = 1.0e-1
+                    self.learning_rate_alpha = 1.0e-3
                     lamda_c = 0.0
                     #self.val_freq = 2000
                     #verbose = True
-                    full_reg = 10
+                    full_reg = 6
 
                 print("SIGMA => ", self.sigma)
                 #with torch.no_grad():
@@ -1221,9 +1223,9 @@ class Runner:
             #    self.s_w = 1.0e-6
             #    #self.learning_rate_sdf = 1.0e-5
 
-            if iter_step > up_iters[4] and self.loc_iter == round(0.7*self.end_iter_loc): #iter_step == up_iters[3] + 0.6*self.end_iter_loc:
+            """if iter_step > up_iters[4] and self.loc_iter == round(0.7*self.end_iter_loc): #iter_step == up_iters[3] + 0.6*self.end_iter_loc:
                 with torch.no_grad():
-                    self.sdf[:] = self.sdf[:] * 4.096
+                    self.sdf[:] = self.sdf[:] * 4.096"""
 
             """if iter_step > up_iters[3] and self.loc_iter == round(0.5*self.end_iter_loc): #iter_step == up_iters[3] + 0.6*self.end_iter_loc:
                 #self.w_g = 2.0

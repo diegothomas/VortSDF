@@ -591,14 +591,16 @@ __global__ void smooth_grad_kernel(
     if (!(activated[edges[2*idx]] >= 1 || activated[edges[2*idx + 1]] >= 1))
         return;
     
-    float length_edge = (vertices[3*edges[2*idx]] - vertices[3*edges[2*idx+1]])*(vertices[3*edges[2*idx]] - vertices[3*edges[2*idx+1]]) +
+    float length_edge = sqrt((vertices[3*edges[2*idx]] - vertices[3*edges[2*idx+1]])*(vertices[3*edges[2*idx]] - vertices[3*edges[2*idx+1]]) +
                             (vertices[3*edges[2*idx] + 1] - vertices[3*edges[2*idx+1] + 1])*(vertices[3*edges[2*idx] + 1] - vertices[3*edges[2*idx+1] + 1]) +
-                            (vertices[3*edges[2*idx] + 2] - vertices[3*edges[2*idx+1] + 2])*(vertices[3*edges[2*idx] + 2] - vertices[3*edges[2*idx+1] + 2]);
+                            (vertices[3*edges[2*idx] + 2] - vertices[3*edges[2*idx+1] + 2])*(vertices[3*edges[2*idx] + 2] - vertices[3*edges[2*idx+1] + 2]));
     
     float eps= 1.0e-10;
     float denom = 1.0f;//sqrt( eps + (sdf[edges[2*idx]] - sdf[edges[2*idx+1]])*(sdf[edges[2*idx]] - sdf[edges[2*idx+1]]));
-    atomicAdd(&sdf_grad[edges[2*idx]], exp(-length_edge/(sigma*sigma)) * (sdf[edges[2*idx]] - sdf[edges[2*idx+1]]) / denom);          
-    atomicAdd(&sdf_grad[edges[2*idx + 1]], -exp(-length_edge/(sigma*sigma)) * (sdf[edges[2*idx]] - sdf[edges[2*idx+1]]) / denom);
+    float sdf_a = sdf[edges[2*idx]] + (sigma/length_edge)*(sdf[edges[2*idx+1]] - sdf[edges[2*idx]]);
+    atomicAdd(&sdf_grad[edges[2*idx]], (sdf[edges[2*idx]] - sdf_a)) ; //exp(-length_edge/(sigma*sigma)) * (sdf[edges[2*idx]] - sdf[edges[2*idx+1]]) / denom);     
+    sdf_a = sdf[edges[2*idx+1]] + (sigma/length_edge)*(sdf[edges[2*idx]] - sdf[edges[2*idx+1]]);    
+    atomicAdd(&sdf_grad[edges[2*idx + 1]], (sdf[edges[2*idx+1]] - sdf_a));
 
     // add bilateral smooth term with features
     /*float length_feat = 0.0f;
@@ -609,8 +611,10 @@ __global__ void smooth_grad_kernel(
 
     for (int i = 0; i < DIM_L_FEAT; i++) {
         denom = 1.0f;//sqrt( eps +  (feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i])* (feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i]));
-        atomicAdd(&feat_grad[DIM_L_FEAT*edges[2*idx] + i], exp(-length_edge/(sigma*sigma)) * (feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i]) / denom);          
-        atomicAdd(&feat_grad[DIM_L_FEAT*edges[2*idx + 1] + i], -exp(-length_edge/(sigma*sigma)) * (feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i]) / denom);
+        sdf_a = sdf[edges[2*idx]] + (sigma/length_edge)*(feat[DIM_L_FEAT*edges[2*idx+1] + i] - feat[DIM_L_FEAT*edges[2*idx] + i]);
+        atomicAdd(&feat_grad[DIM_L_FEAT*edges[2*idx] + i], (feat[DIM_L_FEAT*edges[2*idx] + i] - sdf_a)) ; //exp(-length_edge/(sigma*sigma)) * (feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i]) / denom); 
+        sdf_a = sdf[edges[2*idx]] + (sigma/length_edge)*(feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i]);         
+        atomicAdd(&feat_grad[DIM_L_FEAT*edges[2*idx + 1] + i], (feat[DIM_L_FEAT*edges[2*idx+1] + i] - sdf_a)) ; //-exp(-length_edge/(sigma*sigma)) * (feat[DIM_L_FEAT*edges[2*idx] + i] - feat[DIM_L_FEAT*edges[2*idx+1] + i]) / denom);
     }
     
     //atomicAdd(&counter[edges[2*idx]], exp(-length_edge/(sigma*sigma)));
