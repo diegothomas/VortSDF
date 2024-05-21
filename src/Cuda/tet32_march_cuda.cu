@@ -860,7 +860,12 @@ __global__ void tet32_march_cuda_kernel_o(
 					activate[ids_s[l]] = 1;
 				}
 
-				s_id++;
+				//if (prev_sdf*next_sdf <= 0.0 && s_id < num_samples - 11) {
+				//	s_id+=10;
+				//} else {
+					s_id++;
+				//}
+
 				if (s_id > num_samples - 1) {
 					break;
 				}
@@ -1118,6 +1123,151 @@ __global__ void fill_samples_kernel_o(
 
     return;
 }
+
+
+/*__global__ void fill_samples_kernel_o_sub(
+    const size_t num_rays,                // number of rays
+    const size_t num_samples,                // number of rays
+    const float3 *__restrict__ rays_o,       // [N_rays, 6]
+    const float3 *__restrict__ rays_d,       // [N_rays, 6]
+    const float3 *__restrict__ sites,       // [N_rays, 6]
+    float2 *__restrict__ in_z,       // [N_rays, 6]
+    float2 *__restrict__ in_sdf,       // [N_rays, 6]
+    float *__restrict__ in_feat,       // [N_rays, 6]
+    float3 *__restrict__ in_weights,     // [N_voxels, 4] for each voxel => it's vertices
+    float3 *__restrict__ in_grads,     // [N_voxels, 4] for each voxel => it's vertices
+    int3 *__restrict__ in_ids,       // [N_rays, 6]
+    float2 *__restrict__ out_z,     // [N_voxels, 4] for each voxel => it's vertices
+    float3 *__restrict__ out_sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ out_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    float3 *__restrict__ out_weights,     // [N_voxels, 4] for each voxel => it's vertices
+    float3 *__restrict__ out_grads,     // [N_voxels, 4] for each voxel => it's vertices
+    int3 *__restrict__ out_ids,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ offset,     // [N_voxels, 4] for each voxel => it's vertices
+    float3 *__restrict__ samples,     // [N_voxels, 4] for each voxel => it's vertices
+    float3 *__restrict__ sample_rays     // [N_voxels, 4] for each voxel => it's vertices
+)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_rays)
+    {
+        return;
+    }
+
+	float3 ray_o = rays_o[idx];
+	float3 ray_d = rays_d[idx];
+
+    float2* in_z_rays = &in_z[num_samples * idx];
+    int3* in_ids_rays = &in_ids[2*num_samples * idx];
+    float2* in_sdf_rays = &in_sdf[num_samples * idx];
+    float3* in_weights_rays = &in_weights[2*num_samples * idx];
+
+    int start = offset[2*idx];
+    int end = offset[2*idx+1];
+    int s_id = 0;
+	int i = start;
+    while (i < start+end) {
+		float2 c_sdf = in_sdf_rays[s_id];
+		if (c_sdf.x*c_sdf.y <= 0.0f && && i < num_samples - 11) {
+			for (int sub_i = 0; sub_i < 10; sub_i++) {
+				float step = (in_z_rays[s_id].y - in_z_rays[s_id].x)/10.0f;
+				float w_curr = float(sub_i)*step;
+				out_z[i] = make_float2((1.0f-w_curr)*out_z[i].x + w_curr*out_z[i].y, 
+										(1.0f-(w_curr+step))*out_z[i].x + (w_curr+step)*out_z[i].y);
+
+				out_sdf[i] = make_float3((1.0f-w_curr)*c_sdf.x + w_curr*c_sdf.y, 
+										(1.0f-(w_curr+step))*c_sdf.x + (w_curr+step)*c_sdf.y, (1.0f-w_curr));
+
+				out_ids[2*i] = in_ids_rays[2 * s_id];
+				out_ids[2*i + 1] = in_ids_rays[2 * s_id + 1];
+
+				float3 c_weights = in_weights_rays[2 * s_id];
+				float3 c_weights_n = in_weights_rays[2 * s_id + 1];
+				int3 c_ids = in_ids_rays[2 * s_id];
+				int3 c_ids_n = in_ids_rays[2 * s_id + 1];
+				
+				float lambda = w_curr+step/2.0f;
+				out_grads[i] = lambda*(c_weights.x*in_grads[c_ids.x] +
+													c_weights.y*in_grads[c_ids.y] +
+													c_weights.z*in_grads[c_ids.z])
+								+ (1.0f-lambda)*(c_weights_n.x*in_grads[c_ids_n.x] +
+													c_weights_n.y*in_grads[c_ids_n.y] +
+													c_weights_n.z*in_grads[c_ids_n.z]);
+
+				for (int l = 0; l < DIM_L_FEAT; l++) { // dim feats = 32 = 4*8
+					out_feat[DIM_L_FEAT*i+l] = lambda*(c_weights.x*in_feat[DIM_L_FEAT*c_ids.x + l] +
+														c_weights.y*in_feat[DIM_L_FEAT*c_ids.y + l] +
+														c_weights.z*in_feat[DIM_L_FEAT*c_ids.z + l])
+									+ (1.0f-lambda)*(c_weights_n.x*in_feat[DIM_L_FEAT*c_ids_n.x + l] +
+														c_weights_n.y*in_feat[DIM_L_FEAT*c_ids_n.y + l] +
+														c_weights_n.z*in_feat[DIM_L_FEAT*c_ids_n.z + l]);
+				}
+
+
+				sample_rays[i] = ray_d;	
+				out_weights[2*i] = in_weights_rays[2 * s_id];
+				out_weights[2*i + 1] = in_weights_rays[2 * s_id + 1];
+
+				samples[i] = ray_o + (1.0f-lambda)*out_z[i].x + lambda*out_z[i].y)*ray_d;
+
+				i++;
+			}
+		} else {
+			out_z[i] = in_z_rays[s_id];
+
+			float lambda = 0.5f;
+			if (c_sdf.x*c_sdf.y <= 0.0f) {
+				lambda = fabs(c_sdf.y)/(fabs(c_sdf.x)+fabs(c_sdf.y));
+				if (lambda < 0.5f) {
+					c_sdf.x = 2.0f*lambda*c_sdf.x + (1.0f-2.0f*lambda)*c_sdf.y;
+				} else {
+					c_sdf.y = (1.0-2.0f*lambda)*c_sdf.x + (1.0f-(1.0-2.0f*lambda))*c_sdf.y;
+				}
+			}
+			out_sdf[i] = make_float3(c_sdf.x, c_sdf.y, lambda);
+
+			out_ids[2*i] = in_ids_rays[2 * s_id];
+			out_ids[2*i + 1] = in_ids_rays[2 * s_id + 1];
+
+			float3 c_weights = in_weights_rays[2 * s_id];
+			float3 c_weights_n = in_weights_rays[2 * s_id + 1];
+			int3 c_ids = in_ids_rays[2 * s_id];
+			int3 c_ids_n = in_ids_rays[2 * s_id + 1];
+			
+			out_grads[i] = lambda*(c_weights.x*in_grads[c_ids.x] +
+												c_weights.y*in_grads[c_ids.y] +
+												c_weights.z*in_grads[c_ids.z])
+							+ (1.0f-lambda)*(c_weights_n.x*in_grads[c_ids_n.x] +
+												c_weights_n.y*in_grads[c_ids_n.y] +
+												c_weights_n.z*in_grads[c_ids_n.z]);
+
+			for (int l = 0; l < DIM_L_FEAT; l++) { // dim feats = 32 = 4*8
+				out_feat[DIM_L_FEAT*i+l] = lambda*(c_weights.x*in_feat[DIM_L_FEAT*c_ids.x + l] +
+													c_weights.y*in_feat[DIM_L_FEAT*c_ids.y + l] +
+													c_weights.z*in_feat[DIM_L_FEAT*c_ids.z + l])
+								+ (1.0f-lambda)*(c_weights_n.x*in_feat[DIM_L_FEAT*c_ids_n.x + l] +
+													c_weights_n.y*in_feat[DIM_L_FEAT*c_ids_n.y + l] +
+													c_weights_n.z*in_feat[DIM_L_FEAT*c_ids_n.z + l]);
+			}
+
+
+			sample_rays[i] = ray_d;	
+			out_weights[2*i] = in_weights_rays[2 * s_id];
+			out_weights[2*i + 1] = in_weights_rays[2 * s_id + 1];
+
+			if (lambda < 0.5f) {
+				samples[i] = ray_o + (2.0f*lambda*out_z[i].x + (1.0f-2.0f*lambda)*out_z[i].y)*ray_d;
+			} else {
+				samples[i] = ray_o + ((1.0-2.0f*lambda)*out_z[i].x + (1.0f-(1.0-2.0f*lambda))*out_z[i].y)*ray_d;	
+			}
+			i++;
+		}
+
+        s_id++;
+    }
+
+    return;
+}*/
 
 /** CPU functions **/
 /** CPU functions **/
