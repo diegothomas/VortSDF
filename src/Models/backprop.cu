@@ -145,13 +145,13 @@ __global__ void backprop_feat_kernel(
     int id_prev, id;
     ////////////////////////Linear interpolation//////////////////////////
     //////////////////////////////////////////////////////////////
-    float lamda = sdf[3*idx + 2] ;
+    float lamda = cell_weights[7*idx + 6] ;
     for (int i = 0; i < 3; i++) {
         id_prev = cell_ids[6 * idx + i];
         id = cell_ids[6 * idx + 3 + i];
         for (int k = 0; k < dim_feats; k++) {    
-            atomicAdd(&grad_feat[dim_feats * id_prev + k], cell_weights[6*idx + i] * lamda * grad_samples[dim_feats * idx + k]);              
-            atomicAdd(&grad_feat[dim_feats * id + k], cell_weights[6*idx + 3 + i] * (1.0f - lamda) * grad_samples[dim_feats * idx + k]);
+            atomicAdd(&grad_feat[dim_feats * id_prev + k], cell_weights[7*idx + i] * lamda * grad_samples[dim_feats * idx + k]);              
+            atomicAdd(&grad_feat[dim_feats * id + k], cell_weights[7*idx + 3 + i] * (1.0f - lamda) * grad_samples[dim_feats * idx + k]);
         }
     }
     return;
@@ -248,13 +248,13 @@ __global__ void backprop_grad_kernel(
     int id_prev, id;
     ////////////////////////Linear interpolation//////////////////////////
     //////////////////////////////////////////////////////////////
-    float lamda = sdf[3*idx + 2] ;
+    float lamda = cell_weights[7*idx + 6] ;
     for (int i = 0; i < 3; i++) {
         id_prev = cell_ids[6 * idx + i];
         id = cell_ids[6 * idx + 3 + i];
         for (int k = 0; k < 3; k++) {    
-            atomicAdd(&grad_sites[3 * id_prev + k], cell_weights[6*idx + i] * lamda * grad_samples[3 * idx + k]);              
-            atomicAdd(&grad_sites[3 * id + k], cell_weights[6*idx + 3 + i] * (1.0f - lamda) * grad_samples[3 * idx + k]);
+            atomicAdd(&grad_sites[3 * id_prev + k], cell_weights[7*idx + i] * lamda * grad_samples[3 * idx + k]);              
+            atomicAdd(&grad_sites[3 * id + k], cell_weights[7*idx + 3 + i] * (1.0f - lamda) * grad_samples[3 * idx + k]);
         }
     }
     return;
@@ -330,7 +330,7 @@ __global__ void backprop_grad_kernel_o(
 
 __global__ void backprop_sdf_kernel(
     const size_t num_samples,
-    float3 *__restrict__ sdf,
+    float4 *__restrict__ sdf,
     float *__restrict__ grad_sdf,
     const float2 *__restrict__ grad_sdf_samples,
     const int3 *__restrict__ cell_ids,
@@ -345,7 +345,7 @@ __global__ void backprop_sdf_kernel(
     int3 id_prev, id;
     ////////////////////////Linear interpolation//////////////////////////
     //////////////////////////////////////////////////////////////
-    float lamda = sdf[idx].z ;
+    //float lamda = sdf[idx].z ;
     id_prev = cell_ids[2 * idx ];
     id = cell_ids[2 * idx + 1];
 
@@ -1536,7 +1536,7 @@ void backprop_sdf_cuda(
     AT_DISPATCH_FLOATING_TYPES( grad_sdf.type(),"backprop_sdf_kernel", ([&] {  
         backprop_sdf_kernel CUDA_KERNEL(blocks,threads) (
             num_samples,
-            (float3*)thrust::raw_pointer_cast(sdf.data_ptr<float>()),
+            (float4*)thrust::raw_pointer_cast(sdf.data_ptr<float>()),
             grad_sdf.data_ptr<float>(),
             (float2*)thrust::raw_pointer_cast(grad_sdf_samples.data_ptr<float>()),
             (int3*)thrust::raw_pointer_cast(cell_ids.data_ptr<int>()),

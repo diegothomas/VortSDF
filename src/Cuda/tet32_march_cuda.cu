@@ -578,7 +578,12 @@ __global__ void tet32_march_cuda_kernel(
 					atomicExch(&activate[ids_s[l]], 1);
 				}
 
-				s_id++;
+				//if (prev_sdf*next_sdf <= 0.0 && s_id < num_samples - 11) {
+				//	s_id+=10;
+				//} else {
+					s_id++;
+				//}
+
 				if (s_id > num_samples - 1) {
 					break;
 				}
@@ -860,11 +865,11 @@ __global__ void tet32_march_cuda_kernel_o(
 					activate[ids_s[l]] = 1;
 				}
 
-				//if (prev_sdf*next_sdf <= 0.0 && s_id < num_samples - 11) {
-				//	s_id+=10;
-				//} else {
+				if (prev_sdf*next_sdf <= 0.0 && s_id < num_samples - 11) {
+					s_id+=10;
+				} else {
 					s_id++;
-				//}
+				}
 
 				if (s_id > num_samples - 1) {
 					break;
@@ -1124,6 +1129,158 @@ __global__ void fill_samples_kernel_o(
     return;
 }
 
+__global__ void fill_samples_kernel_sub(
+    const size_t num_rays,                // number of rays
+    const size_t num_samples,                // number of rays
+    const float *__restrict__ rays_o,       // [N_rays, 6]
+    const float *__restrict__ rays_d,       // [N_rays, 6]
+    const float *__restrict__ sites,       // [N_rays, 6]
+    float *__restrict__ in_z,       // [N_rays, 6]
+    float *__restrict__ in_sdf,       // [N_rays, 6]
+    float *__restrict__ in_feat,       // [N_rays, 6]
+    float *__restrict__ in_weights,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ in_grads,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ in_ids,       // [N_rays, 6]
+    float *__restrict__ out_z,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ out_sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ out_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ out_weights,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ out_grads,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ out_ids,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ offset,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ samples,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ sample_rays     // [N_voxels, 4] for each voxel => it's vertices
+)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_rays)
+    {
+        return;
+    }
+
+    Ray ray = {
+        {rays_o[idx * 3], rays_o[idx * 3 + 1], rays_o[idx * 3 + 2]},
+        {rays_d[idx * 3], rays_d[idx * 3 + 1], rays_d[idx * 3 + 2]}};
+    int num_knn = 24;
+
+    float* in_z_rays = &in_z[2*num_samples * idx];
+    int* in_ids_rays = &in_ids[6*num_samples * idx];
+    float* in_sdf_rays = &in_sdf[2*num_samples * idx];
+    float* in_weights_rays = &in_weights[6*num_samples * idx];
+
+    int start = offset[2*idx];
+    int end = offset[2*idx+1];
+    int s_id = 0;
+	int i = start;
+    while (i < start+end) {
+        out_z[2*i] = in_z_rays[2*s_id];
+		out_z[2*i + 1] = in_z_rays[2*s_id+1];
+
+		if (false) { //(in_sdf_rays[2*s_id]*in_sdf_rays[2*s_id+1]<= 0.0f && (i-start) < num_samples - 11) {
+			for (int sub_i = 0; sub_i < 10; sub_i++) {
+				float step = (in_z_rays[2*s_id+1] - in_z_rays[2*s_id])/10.0f;
+				float w_curr = float(sub_i)*step;
+				out_z[2*i] = (1.0f-w_curr)*in_z_rays[2*s_id] + w_curr*in_z_rays[2*s_id+1];
+				out_z[2*i + 1] = (1.0f-(w_curr+step))*in_z_rays[2*s_id] + (w_curr+step)*in_z_rays[2*s_id+1];
+
+				out_sdf[4*i] = (1.0f-w_curr)*in_sdf_rays[2*s_id] + w_curr*in_sdf_rays[2*s_id+1];
+				out_sdf[4*i + 1] = (1.0f-(w_curr+step))*in_sdf_rays[2*s_id] + (w_curr+step)*in_sdf_rays[2*s_id+1];
+				out_sdf[4*i+2] = (1.0f-w_curr);
+				out_sdf[4*i+3] = (1.0f-(w_curr+step));
+
+				out_ids[2*i] = in_ids_rays[2 * s_id];
+				out_ids[2*i + 1] = in_ids_rays[2 * s_id + 1];
+
+				for (int l = 0; l < 6; l++) {
+					out_ids[6*i + l] = in_ids_rays[6 * s_id + l];
+				}
+
+				float lambda = 1.0f-(w_curr+step/2.0f);
+				for (int l = 0; l < 3; l++) {
+					out_grads[3*i + l] = lambda*(in_weights_rays[6 * s_id + 0]*in_grads[3*in_ids_rays[6 * s_id + 0] + l] +
+													in_weights_rays[6 * s_id + 1]*in_grads[3*in_ids_rays[6 * s_id + 1] + l] +
+													in_weights_rays[6 * s_id + 2]*in_grads[3*in_ids_rays[6 * s_id + 2] + l])
+								+ (1.0f-lambda)*(in_weights_rays[6 * s_id + 3]*in_grads[3*in_ids_rays[6 * s_id + 3] + l] +
+													in_weights_rays[6 * s_id + 4]*in_grads[3*in_ids_rays[6 * s_id + 4] + l] +
+													in_weights_rays[6 * s_id + 5]*in_grads[3*in_ids_rays[6 * s_id + 5] + l]);
+				}
+
+				for (int l = 0; l < DIM_L_FEAT; l++) {
+					out_feat[DIM_L_FEAT*i+l] = lambda*(in_weights_rays[6 * s_id + 0]*in_feat[DIM_L_FEAT*in_ids_rays[6 * s_id + 0] + l] +
+														in_weights_rays[6 * s_id + 1]*in_feat[DIM_L_FEAT*in_ids_rays[6 * s_id + 1] + l] +
+														in_weights_rays[6 * s_id + 2]*in_feat[DIM_L_FEAT*in_ids_rays[6 * s_id + 2] + l])
+									+ (1.0f-lambda)*(in_weights_rays[6 * s_id + 3]*in_feat[DIM_L_FEAT*in_ids_rays[6 * s_id + 3] + l] +
+														in_weights_rays[6 * s_id + 4]*in_feat[DIM_L_FEAT*in_ids_rays[6 * s_id + 4] + l] +
+														in_weights_rays[6 * s_id + 5]*in_feat[DIM_L_FEAT*in_ids_rays[6 * s_id + 5] + l]);			
+				}
+
+				sample_rays[3 * i] = ray.direction[0];
+				sample_rays[3 * i + 1] = ray.direction[1];
+				sample_rays[3 * i + 2] = ray.direction[2];		
+
+				for (int l = 0; l < 6; l++) {
+					out_weights[7*i + l] = in_weights_rays[6 * s_id + l];
+				}
+				out_weights[7*i + 6] = lambda;
+
+				samples[3 * i] = ray.origin[0] + (0.5f*out_z[2*i] + 0.5f*out_z[2*i+1])*ray.direction[0];
+				samples[3 * i + 1] = ray.origin[1] + (0.5f*out_z[2*i] + 0.5f*out_z[2*i+1])*ray.direction[1];
+				samples[3 * i + 2] = ray.origin[2] + (0.5f*out_z[2*i] + 0.5f*out_z[2*i+1])*ray.direction[2];
+
+				i++;
+			}
+		} else {
+
+			out_sdf[4*i] = in_sdf_rays[2*s_id];
+			out_sdf[4*i + 1] = in_sdf_rays[2*s_id+1];
+
+			float lambda = 0.5f;
+			out_sdf[4*i+2] = 1.0f;
+			out_sdf[4*i+3] = 0.0f;
+
+			for (int l = 0; l < 6; l++) {
+				out_ids[6*i + l] = in_ids_rays[6 * s_id + l];
+			}
+
+			for (int l = 0; l < 3; l++) {
+				out_grads[3*i + l] = lambda*(in_weights_rays[6 * s_id + 0]*in_grads[3*in_ids_rays[6 * s_id + 0] + l] +
+													in_weights_rays[6 * s_id + 1]*in_grads[3*in_ids_rays[6 * s_id + 1] + l] +
+													in_weights_rays[6 * s_id + 2]*in_grads[3*in_ids_rays[6 * s_id + 2] + l])
+								+ (1.0f-lambda)*(in_weights_rays[6 * s_id + 3]*in_grads[3*in_ids_rays[6 * s_id + 3] + l] +
+													in_weights_rays[6 * s_id + 4]*in_grads[3*in_ids_rays[6 * s_id + 4] + l] +
+													in_weights_rays[6 * s_id + 5]*in_grads[3*in_ids_rays[6 * s_id + 5] + l]);
+			}
+
+			for (int l = 0; l < DIM_L_FEAT; l++) {
+				out_feat[DIM_L_FEAT*i+l] = lambda*(in_weights_rays[6 * s_id + 0]*in_feat[DIM_L_FEAT*in_ids_rays[6 * s_id + 0] + l] +
+													in_weights_rays[6 * s_id + 1]*in_feat[DIM_L_FEAT*in_ids_rays[6 * s_id + 1] + l] +
+													in_weights_rays[6 * s_id + 2]*in_feat[DIM_L_FEAT*in_ids_rays[6 * s_id + 2] + l])
+								+ (1.0f-lambda)*(in_weights_rays[6 * s_id + 3]*in_feat[DIM_L_FEAT*in_ids_rays[6 * s_id + 3] + l] +
+													in_weights_rays[6 * s_id + 4]*in_feat[DIM_L_FEAT*in_ids_rays[6 * s_id + 4] + l] +
+													in_weights_rays[6 * s_id + 5]*in_feat[DIM_L_FEAT*in_ids_rays[6 * s_id + 5] + l]);			
+			}
+
+			sample_rays[3 * i] = ray.direction[0];
+			sample_rays[3 * i + 1] = ray.direction[1];
+			sample_rays[3 * i + 2] = ray.direction[2];		
+
+			for (int l = 0; l < 6; l++) {
+				out_weights[7*i + l] = in_weights_rays[6 * s_id + l];
+			}
+			out_weights[7*i + 6] = lambda;
+			
+			samples[3 * i] = ray.origin[0] + ((1.0f-lambda)*out_z[2*i] + lambda*out_z[2*i+1])*ray.direction[0];
+			samples[3 * i + 1] = ray.origin[1] + ((1.0f-lambda)*out_z[2*i] + lambda*out_z[2*i+1])*ray.direction[1];
+			samples[3 * i + 2] = ray.origin[2] + ((1.0f-lambda)*out_z[2*i] + lambda*out_z[2*i+1])*ray.direction[2];
+
+			i++;
+		}
+
+        s_id++;
+    }
+
+    return;
+}
 
 /*__global__ void fill_samples_kernel_o_sub(
     const size_t num_rays,                // number of rays
@@ -1216,15 +1373,7 @@ __global__ void fill_samples_kernel_o(
 			out_z[i] = in_z_rays[s_id];
 
 			float lambda = 0.5f;
-			if (c_sdf.x*c_sdf.y <= 0.0f) {
-				lambda = fabs(c_sdf.y)/(fabs(c_sdf.x)+fabs(c_sdf.y));
-				if (lambda < 0.5f) {
-					c_sdf.x = 2.0f*lambda*c_sdf.x + (1.0f-2.0f*lambda)*c_sdf.y;
-				} else {
-					c_sdf.y = (1.0-2.0f*lambda)*c_sdf.x + (1.0f-(1.0-2.0f*lambda))*c_sdf.y;
-				}
-			}
-			out_sdf[i] = make_float3(c_sdf.x, c_sdf.y, lambda);
+			out_sdf[i] = make_float3(c_sdf.x, c_sdf.y, 1.0f);
 
 			out_ids[2*i] = in_ids_rays[2 * s_id];
 			out_ids[2*i + 1] = in_ids_rays[2 * s_id + 1];
@@ -1255,11 +1404,7 @@ __global__ void fill_samples_kernel_o(
 			out_weights[2*i] = in_weights_rays[2 * s_id];
 			out_weights[2*i + 1] = in_weights_rays[2 * s_id + 1];
 
-			if (lambda < 0.5f) {
-				samples[i] = ray_o + (2.0f*lambda*out_z[i].x + (1.0f-2.0f*lambda)*out_z[i].y)*ray_d;
-			} else {
-				samples[i] = ray_o + ((1.0-2.0f*lambda)*out_z[i].x + (1.0f-(1.0-2.0f*lambda))*out_z[i].y)*ray_d;	
-			}
+			samples[i] = ray_o + lambda*out_z[i].x + (1.0f-lambda)*out_z[i].y)*ray_d;
 			i++;
 		}
 
@@ -1406,8 +1551,8 @@ void fill_samples_cuda(
 
     }));*/
 
-	AT_DISPATCH_FLOATING_TYPES( rays_o.type(),"fill_samples_kernel", ([&] {  
-            fill_samples_kernel CUDA_KERNEL(blocks,threads) (
+	AT_DISPATCH_FLOATING_TYPES( rays_o.type(),"fill_samples_kernel_sub", ([&] {  
+            fill_samples_kernel_sub CUDA_KERNEL(blocks,threads) (
                 num_rays,
                 num_samples,
                 rays_o.data_ptr<float>(),

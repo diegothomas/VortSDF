@@ -73,14 +73,14 @@ __device__ float sdf2Alpha(float sdf, float sdf_prev, float inv_s)
     return 1.0f;
 }
 
-__device__ float4 trace_ray(const float3* sdf_seg, const float3* color_samples, const int* offsets, float *Wpartial, float inv_s, int n) 
+__device__ float4 trace_ray(const float4* sdf_seg, const float3* color_samples, const int* offsets, float *Wpartial, float inv_s, int n) 
 {
     float Tpartial = 1.0f;
     float3 Cpartial = make_float3(0.0f, 0.0f, 0.0f);
     float3 color;
     float alpha = 0.0f;
 
-    float3 sdf;
+    float4 sdf;
 
     int start = offsets[2 * n];
     int end = offsets[2 * n + 1];
@@ -118,7 +118,7 @@ __device__ float4 trace_ray_no(const float* sdf_seg, const float* color_samples,
         color.y = color_samples[3*t+1];
         color.z = color_samples[3*t+2];
 
-        alpha = sdf2Alpha(sdf_seg[3*t + 1], sdf_seg[3*t], inv_s);
+        alpha = sdf2Alpha(sdf_seg[4*t + 1], sdf_seg[4*t], inv_s);
 
         Cpartial = Cpartial + color * (1.0f - alpha) * Tpartial;
         *Wpartial = (*Wpartial) + (1.0f - alpha) * Tpartial;
@@ -292,8 +292,8 @@ __global__ void render_no_sdf_kernel(
 
 
 __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 grad_color_diff, float Mask, int n,
-                        float3* grads_color, float* grads_sdf, const float3* sdf_seg, 
-                        const float3 * weights_seg, const float3* color_samples, const int* offsets, const int3* cell_ids,
+                        float3* grads_color, float* grads_sdf, const float4* sdf_seg, 
+                        const float * weights_seg, const float3* color_samples, const int* offsets, const int3* cell_ids,
                         const float3 * grad_space, const float3 *rays,
                         float inv_s, float MaskReg = 0.0f, float colorDiscrepancyReg = 0.0f, float BackgroundEntropyReg = 0.0f, int NoColorSpilling = 0) 
 {
@@ -308,14 +308,13 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
     float3 sample_color_diff = make_float3(0.0f, 0.0f, 0.0f);
     float3 A = make_float3(0.0f, 0.0f, 0.0f);
 
-    float3 sdf; 
+    float4 sdf; 
 
     int num_knn = 8;
 
     float alpha, dalpha_dsdf_p, dalpha_dsdf_n, dalpha, contrib;
     double sdf_prev_clamp, sdf_clamp, inv_clipped_p, inv_clipped;
     int3 id, id_prev;
-    float3 weights_seg_prev, weights_seg_next;
 
     float w_color = 1.0f;//  exp(-norm_2(Ctotal - TrueColor)/0.01f);
 
@@ -385,12 +384,19 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
         //    dalpha = dalpha*w_color;
 
         //////////////////////////////////////////////////////////////
-        float lambda = sdf.z;
-        weights_seg_prev = weights_seg[2 * t];
-        weights_seg_next = weights_seg[2 * t + 1];
+        float lambda1 = sdf.z;
+        float lambda2 = sdf.w;
         id_prev = cell_ids[2 * t];
         id = cell_ids[2 * t + 1];
-        if (lambda < 0.5f) {
+        atomicAdd(&grads_sdf[id_prev.x], weights_seg[7 * t] * lambda1 * dalpha * dalpha_dsdf_p + (1.0-lambda1)*dalpha * dalpha_dsdf_n);
+        atomicAdd(&grads_sdf[id.x],  weights_seg[7 * t + 3] * lambda2 * dalpha * dalpha_dsdf_p + (1.0-lambda2)*dalpha * dalpha_dsdf_n);
+        
+        atomicAdd(&grads_sdf[id_prev.y], weights_seg[7 * t + 1] * lambda1 * dalpha * dalpha_dsdf_p + (1.0-lambda1)*dalpha * dalpha_dsdf_n);
+        atomicAdd(&grads_sdf[id.y],  weights_seg[7 * t + 4]  * lambda2 * dalpha * dalpha_dsdf_p + (1.0-lambda2)*dalpha * dalpha_dsdf_n);
+        
+        atomicAdd(&grads_sdf[id_prev.z], weights_seg[7 * t + 2] * lambda1 * dalpha * dalpha_dsdf_p + (1.0-lambda1)*dalpha * dalpha_dsdf_n);
+        atomicAdd(&grads_sdf[id.z],  weights_seg[7 * t + 5]* lambda2 * dalpha * dalpha_dsdf_p + (1.0-lambda2)*dalpha * dalpha_dsdf_n);
+        /*if (lambda < 0.5f) {
             atomicAdd(&grads_sdf[id_prev.x], weights_seg_prev.x * 2.0f * lambda * dalpha * dalpha_dsdf_p);
             atomicAdd(&grads_sdf[id.x],  weights_seg_next.x * ((1.0f-2.0f*lambda) * dalpha * dalpha_dsdf_p + dalpha * dalpha_dsdf_n));
             
@@ -408,7 +414,7 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
             
             atomicAdd(&grads_sdf[id_prev.z], weights_seg_prev.z * (2.0f*lambda * dalpha * dalpha_dsdf_p + (1.0-2.0f*lambda)*dalpha * dalpha_dsdf_n));
             atomicAdd(&grads_sdf[id.z],  weights_seg_next.z * (1.0f-(1.0-2.0f*lambda)) * dalpha * dalpha_dsdf_n);
-        }
+        }*/
 
         if (Mask > 0.0f) {
             grads_color[t] = dc;
@@ -428,8 +434,8 @@ __global__ void render_kernel(
     const size_t num_rays,
     const float inv_s,
     const float mask_reg,
-    const float3 *__restrict__ sdf_seg,
-    const float3 *__restrict__ weights_seg,
+    const float4 *__restrict__ sdf_seg,
+    const float *__restrict__ weights_seg,
     const float3 *__restrict__ color_samples,
     const float3 *__restrict__ true_color,
     const float *__restrict__ mask,
@@ -552,8 +558,8 @@ void render_cuda(
                 num_rays,
                 inv_s,
                 mask_reg,
-                (float3*)thrust::raw_pointer_cast(sdf_seg.data_ptr<float>()),
-                (float3*)thrust::raw_pointer_cast(weights_seg.data_ptr<float>()),
+                (float4*)thrust::raw_pointer_cast(sdf_seg.data_ptr<float>()),
+                weights_seg.data_ptr<float>(),
                 (float3*)thrust::raw_pointer_cast(color_samples.data_ptr<float>()),
                 (float3*)thrust::raw_pointer_cast(true_color.data_ptr<float>()),
                 mask.data_ptr<float>(),
