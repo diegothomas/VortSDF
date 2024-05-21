@@ -1119,7 +1119,7 @@ class Runner:
                     
 
                 if (iter_step+1) == up_iters[3]:
-                    #warm_up = 2000
+                    warm_up = 500
                     self.R = 40
                     self.s_start = 200# 30/(10.0*self.sigma) #50.0
                     self.s_max = 800# 60/(5.0*self.sigma) #200
