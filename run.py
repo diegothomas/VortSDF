@@ -90,7 +90,7 @@ class Runner:
 
         self.iter_step = 0
         self.end_iter_loc = 5000
-        self.s_w = 1.0e-3
+        self.s_w = 1.0e-2
         self.e_w = 0.0#1.0e-5#1.0e-6
         self.tv_w = 1.0e-10
         self.tv_f = 1.0e-12
@@ -484,7 +484,7 @@ class Runner:
                     self.grad_eik[ext_flag[:] == 1] = 0.0   
                     
                     self.grad_norm_smooth[outside_flag[:] == 1] = 0.0
-                    self.grad_norm_smooth[ext_flag[:] == 1] = 0.0   
+                    #self.grad_norm_smooth[ext_flag[:] == 1] = 0.0   
                     eik_loss = 0.0 #self.eik_loss.sum()
 
                 if verbose:
@@ -919,7 +919,7 @@ class Runner:
                                                                                 self.tv_w*self.grad_sdf_smooth) #abs(self.sdf.grad)*
                 else: 
                     self.sdf.grad = self.sdf.grad + self.w_g * (self.e_w*self.grad_eik+\
-                                                                    self.s_w*(self.grad_norm_smooth + self.grad_sdf_L2)+\
+                                                                    self.s_w*(self.grad_norm_smooth + 10.0*self.grad_sdf_L2)+\
                                                                     self.tv_w*self.grad_sdf_smooth) #abs(self.sdf.grad)*
                     
                 """self.activated[:] = 0
@@ -1058,9 +1058,9 @@ class Runner:
                     self.e_w = 5.0e-6
                     self.tv_w = 1.0e-5"""
                     self.R = 100
-                    self.s_w = 1.0e-3
+                    self.s_w = 1.0e-2
                     self.e_w = 0.0#1.0e-5#1.0e-4 #5.0e-3
-                    self.tv_w = 5.0e-8 #1.0e-1
+                    self.tv_w = 5.0e-4 #1.0e-1
                     self.tv_f = 1.0e-11 #1.0e-6
                     self.s_start = 10 #30/(10.0*self.sigma) #50.0
                     self.s_max = 100 #60/(5.0*self.sigma) #200
@@ -1080,9 +1080,9 @@ class Runner:
                     """self.s_w = 1.0e-3
                     self.e_w = 5.0e-4
                     self.tv_w = 1.0e-5"""
-                    self.s_w = 1.0e-3 #1e-6
+                    self.s_w = 5.0e-3 #1e-6
                     self.e_w = 0.0#1.0e-5#5.0e-5 #1.0e-8 #5.0e-3
-                    self.tv_w = 1.0e-7 #1.0e-8 #1.0e-1
+                    self.tv_w = 1.0e-5 #1.0e-8 #1.0e-1
                     self.tv_f = 1.0e-10
                     self.f_w = 1.0 #1.0
                     self.learning_rate = 1e-3
@@ -1128,10 +1128,10 @@ class Runner:
                     """self.s_w = 2.0e-4 #2.0e-6
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
-                    self.s_w = 1.0e-3 #2.0e-6
+                    self.s_w = 1.0e-4 #2.0e-6
                     self.e_w =  0.0#1.0e-5#1.0e-8 #1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 1.0e-5#1.0e-7 #1.0e-8 #1.0e-1
-                    self.tv_f = 5.0e-8#1.0e-7 #1.0e-4
+                    self.tv_w = 1.0e-6#1.0e-7 #1.0e-8 #1.0e-1
+                    self.tv_f = 1.0e-9#1.0e-7 #1.0e-4
                     self.f_w = 10.0
                     #self.w_g = 0.1
                     self.end_iter_loc = up_iters[4] - up_iters[3]
@@ -1141,7 +1141,7 @@ class Runner:
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-2
                     self.learning_rate_alpha = 1.0e-2
                     lamda_c = 0.5
-                    full_reg = 3
+                    full_reg = 6
                     
                 if (iter_step+1) == up_iters[4]:
                     self.R = 10
@@ -1156,7 +1156,7 @@ class Runner:
                     self.s_w = 1.0e-4 #5.0e-4
                     self.e_w = 0.0#1.0e-6 #1.0e-7
                     self.tv_w = 1.0e-4#1.0e-8 #1.0e-4 #1.0e-3
-                    self.tv_f = 1.0e-8#1.0e-8 #1.0e-3
+                    self.tv_f = 1.0e-9#1.0e-8 #1.0e-3
                     self.f_w = 10.0#10.0#1.0e3
                     self.end_iter_loc = self.end_iter - up_iters[4]
                     self.learning_rate = 5e-4
@@ -1186,7 +1186,7 @@ class Runner:
                 #torch.cuda.empty_cache()
 
             if (iter_step+1) % self.report_freq == 0:
-                print('iter:{:8>d} loss = {}, scale={}, grad={}, grad_feat = {}, grad_nrm = {}, grad_tv_feat = {} lr={}'.format(iter_step, loss, self.inv_s, abs(self.grad_sdf[abs(self.grad_sdf) > 0.0]).mean(), abs(self.grad_features[abs(self.grad_features) > 0.0]).mean(), abs(self.grad_sdf_norm[abs(self.grad_sdf_norm) > 0.0]).mean(), abs(self.grad_feat_smooth[abs(self.grad_feat_smooth) > 0.0]).mean(), self.optimizer.param_groups[0]['lr']))
+                print('iter:{:8>d} loss = {}, scale={}, grad={}, grad_feat = {}, grad_nrm = {}, grad_tv_feat = {} lr={}'.format(iter_step, loss, self.inv_s, abs(self.grad_sdf[abs(self.grad_sdf) > 0.0]).mean(), abs(self.grad_features[abs(self.grad_features) > 0.0]).mean(), abs(self.grad_norm_smooth[abs(self.grad_norm_smooth) > 0.0]).mean(), abs(self.grad_feat_smooth[abs(self.grad_feat_smooth) > 0.0]).mean(), self.optimizer.param_groups[0]['lr']))
                 print('iter:{:8>d} grad_tv={}, grad_sdf_L2 = {}'.format(iter_step, abs(self.grad_sdf_smooth[abs(self.grad_sdf_smooth) > 0.0]).mean(), abs(self.grad_sdf_L2[abs(self.grad_sdf_L2) > 0.0]).mean()))
                 print('iter:{:8>d} s_w = {}, e_w = {}, tv_w = {}, nb_samples={}, sigma={}, w_g={}, full_reg={}, lr={}'.format(iter_step, self.s_w, self.e_w, self.tv_w, nb_samples, self.sigma, self.w_g, full_reg, self.optimizer_sdf.param_groups[0]['lr']))
                 #print('iter:{:8>d} loss CVT = {} lr={}'.format(iter_step, loss_cvt, self.optimizer_cvt.param_groups[0]['lr']))
