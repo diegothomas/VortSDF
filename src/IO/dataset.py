@@ -130,7 +130,7 @@ class Dataset:
                     self.masks_np[i][mark == 1,:] = 0
                     
             for i in range(self.n_images):
-                self.images_np[i][self.masks_np[i][:,:,0] == 0.0,:] = [0.0,1.0,0.0]
+                self.images_np[i][self.masks_np[i][:,:,0] == 0.0,:] = [1.0,1.0,1.0]
             
             self.intrinsics_all = []
             self.pose_all = []
@@ -322,7 +322,7 @@ class Dataset:
             self.all_max_y = np.stack(all_max_y, 0)
             
             for i in range(self.n_images):
-                self.images_np[i][self.masks_np[i][:,:,0] == 0.0,:] = [0.0,0.0,0.0]
+                self.images_np[i][self.masks_np[i][:,:,0] == 0.0,:] = [1.0,1.0,1.0]
                 
             # world_mat is a projection matrix from world to image
             trans_file = sorted(glob(os.path.join(self.data_dir, 'transform_*.txt')))

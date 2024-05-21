@@ -619,7 +619,7 @@ class Tet32(Process):
         _, idx = prev_kdtree.query(self.sites, k=32)
         knn_sites[:,:32] = np.asarray(idx[:,:])
         out_sdf = torch.zeros(self.sites.shape[0]).float().cuda().contiguous()
-        backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius/2.0, 1, torch.from_numpy(new_sites).float().cuda().contiguous(), 
+        backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius/4.0, 1, torch.from_numpy(new_sites).float().cuda().contiguous(), 
                                         torch.from_numpy(self.sites).float().cuda().contiguous(), torch.from_numpy(in_sdf).float().cuda().contiguous(), 
                                         torch.from_numpy(knn_sites).int().cuda().contiguous(), out_sdf)
         out_sdf = out_sdf.cpu().numpy()
@@ -631,9 +631,9 @@ class Tet32(Process):
         #    out_sdf[mask_background[:] == True] = radius
 
         if False:
-            #out_sdf = -f(self.sites)
-            out_sdf[abs(out_sdf) > 0] = -f(self.sites)[abs(out_sdf) > 0]
-            out_sdf[out_sdf < 0] = -radius/2.0
+            out_sdf = -f(self.sites)
+            #out_sdf[abs(out_sdf) > 0] = -f(self.sites)[abs(out_sdf) > 0]
+            #out_sdf[out_sdf < 0] = -radius/2.0
 
         """lap_sdf = -f(self.sites)
         out_sdf[abs(out_sdf[:]) > radius] = lap_sdf[abs(out_sdf[:]) > radius]"""
@@ -646,7 +646,7 @@ class Tet32(Process):
 
         
         out_feat = torch.zeros(self.sites.shape[0],feat.shape[1]).float().cuda().contiguous()
-        backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius/2.0, feat.shape[1], torch.from_numpy(new_sites).float().cuda().contiguous(), 
+        backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius/4.0, feat.shape[1], torch.from_numpy(new_sites).float().cuda().contiguous(), 
                                         torch.from_numpy(self.sites).float().cuda().contiguous(), torch.from_numpy(in_feat).float().cuda().contiguous(), 
                                         torch.from_numpy(knn_sites).int().cuda().contiguous(), out_feat)
         out_feat = out_feat.cpu().numpy()
