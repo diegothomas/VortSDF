@@ -511,6 +511,7 @@ __global__ void tet32_march_cuda_kernel(
 	prev_tet_id = -1;
 	float prev_dist = 0.0f;
 	int s_id = 0;
+	int extra = 0;
 	int iter_max = 0;
 	float curr_z = 0.0f;
 	float curr_p[3] = { ray_o[0] + ray_d[0] * curr_z,
@@ -578,13 +579,13 @@ __global__ void tet32_march_cuda_kernel(
 					atomicExch(&activate[ids_s[l]], 1);
 				}
 
-				//if (prev_sdf*next_sdf <= 0.0 && s_id < num_samples - 11) {
-				//	s_id+=10;
-				//} else {
-					s_id++;
+				//if (prev_sdf*next_sdf <= 0.0 && s_id + extra < num_samples - 6) {
+				//	extra+=4;
 				//}
 
-				if (s_id > num_samples - 1) {
+				s_id++;
+
+				if (s_id + extra > num_samples - 1) {
 					break;
 				}
 			}
@@ -625,8 +626,8 @@ __global__ void tet32_march_cuda_kernel(
 		iter_max++;
 	}
 
-	offset[2 * idx] = atomicAdd(counter, s_id);
-	offset[2 * idx + 1] = s_id;
+	offset[2 * idx] = atomicAdd(counter, s_id+extra);
+	offset[2 * idx + 1] = s_id+extra;
 
     return;
 }
@@ -1176,15 +1177,15 @@ __global__ void fill_samples_kernel_sub(
         out_z[2*i] = in_z_rays[2*s_id];
 		out_z[2*i + 1] = in_z_rays[2*s_id+1];
 
-		if (false) { //(in_sdf_rays[2*s_id]*in_sdf_rays[2*s_id+1]<= 0.0f && (i-start) < num_samples - 11) {
-			for (int sub_i = 0; sub_i < 10; sub_i++) {
-				float step = (in_z_rays[2*s_id+1] - in_z_rays[2*s_id])/10.0f;
+		if (false) {//(in_sdf_rays[2*s_id]*in_sdf_rays[2*s_id+1]<= 0.0f && (i-start) < num_samples - 6) {
+			for (int sub_i = 0; sub_i < 5; sub_i++) {
+				float step = 1.0f/5.0f;
 				float w_curr = float(sub_i)*step;
 				out_z[2*i] = (1.0f-w_curr)*in_z_rays[2*s_id] + w_curr*in_z_rays[2*s_id+1];
 				out_z[2*i + 1] = (1.0f-(w_curr+step))*in_z_rays[2*s_id] + (w_curr+step)*in_z_rays[2*s_id+1];
 
 				out_sdf[4*i] = (1.0f-w_curr)*in_sdf_rays[2*s_id] + w_curr*in_sdf_rays[2*s_id+1];
-				out_sdf[4*i + 1] = (1.0f-(w_curr+step))*in_sdf_rays[2*s_id] + (w_curr+step)*in_sdf_rays[2*s_id+1];
+				out_sdf[4*i+1] = (1.0f-(w_curr+step))*in_sdf_rays[2*s_id] + (w_curr+step)*in_sdf_rays[2*s_id+1];
 				out_sdf[4*i+2] = (1.0f-w_curr);
 				out_sdf[4*i+3] = (1.0f-(w_curr+step));
 
