@@ -954,7 +954,7 @@ class Runner:
                 #if self.sites.shape[0] > 500000:
                 #    self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, 0.0) #(iter_step+1) > 2000
                 #else:
-                self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), self.visual_hull, res, cam_sites, self.learning_rate_cvt, False, self.sigma)
+                self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), self.visual_hull, res, cam_sites, self.learning_rate_cvt, (iter_step+1) <= up_iters[2], self.sigma)
                 self.sdf = self.sdf.contiguous()
                 self.sdf.requires_grad_(True)
                 self.fine_features = self.fine_features.contiguous()
@@ -1097,8 +1097,8 @@ class Runner:
                 if (iter_step+1) == up_iters[2]:
                     #warm_up = 500
                     self.R = 40
-                    self.s_start = 200 #30/(10.0*self.sigma) #50.0
-                    self.s_max = 600 #60/(5.0*self.sigma) #200
+                    self.s_start = 100 #30/(10.0*self.sigma) #50.0
+                    self.s_max = 300 #60/(5.0*self.sigma) #200
                     #self.sigma = 0.02
                     """self.s_w = 5.0e-3
                     self.e_w = 1.0e-3
@@ -1122,8 +1122,8 @@ class Runner:
                 if (iter_step+1) == up_iters[3]:
                     warm_up = 500
                     self.R = 40
-                    self.s_start = 500# 30/(10.0*self.sigma) #50.0
-                    self.s_max = 1500# 60/(5.0*self.sigma) #200
+                    self.s_start = 200# 30/(10.0*self.sigma) #50.0
+                    self.s_max = 600# 60/(5.0*self.sigma) #200
                     #self.sigma = 0.01
                     """self.s_w = 2.0e-4 #2.0e-6
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
@@ -1136,7 +1136,7 @@ class Runner:
                     #self.w_g = 0.1
                     self.end_iter_loc = up_iters[4] - up_iters[3]
                     self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 1.0e-2
+                    self.learning_rate_sdf = 3.0e-2
                     self.learning_rate_feat = 1.0e-2
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-2
                     self.learning_rate_alpha = 1.0e-8
@@ -1145,8 +1145,8 @@ class Runner:
                     
                 if (iter_step+1) == up_iters[4]:
                     self.R = 10
-                    self.s_start = 1000#30/(10.0*self.sigma) #50.0
-                    self.s_max = 4000#60/(5.0*self.sigma) #200
+                    self.s_start = 400#30/(10.0*self.sigma) #50.0
+                    self.s_max = 2000#60/(5.0*self.sigma) #200
                     #self.sigma = 0.006
                     #self.sigma_feat = 0.02
                     """self.s_w = 1.0e-2
