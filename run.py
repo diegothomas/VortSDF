@@ -387,7 +387,7 @@ class Runner:
 
             ## Generate rays
             lvl = 1
-            if iter_step +1 < up_iters[0]:
+            """if iter_step +1 < up_iters[0]:
                 lvl = 5
                 num_rays = 512
             elif iter_step+1 < up_iters[1]:
@@ -399,7 +399,7 @@ class Runner:
             elif iter_step+1 < up_iters[4]:
                 num_rays = 4096
             else:
-                num_rays = self.batch_size
+                num_rays = self.batch_size"""
             num_rays = self.batch_size
 
             #data = self.dataset.gen_random_rays_zbuff_at(img_idx, num_rays, 0) 
@@ -1095,7 +1095,7 @@ class Runner:
                     
                     
                 if (iter_step+1) == up_iters[2]:
-                    #warm_up = 500
+                    warm_up = 500
                     self.R = 40
                     self.s_start = 100 #30/(10.0*self.sigma) #50.0
                     self.s_max = 300 #60/(5.0*self.sigma) #200
@@ -1103,17 +1103,17 @@ class Runner:
                     """self.s_w = 5.0e-3
                     self.e_w = 1.0e-3
                     self.tv_w = 1.0e-3"""
-                    self.s_w = 0.001 #5.0e-4
+                    self.s_w = 0.01 #5.0e-4
                     self.e_w =  0.0#1.0e-5#1.0e-5 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 1.0e-4#1.0e-7#1.0e-7 #1.0e-8 #1.0e-1
+                    self.tv_w = 1.0e-3#1.0e-7#1.0e-7 #1.0e-8 #1.0e-1
                     #self.w_g = 0.0
                     #acc_it = 10
 
                     self.tv_f = 1.0e-10# 1.0e-7 #1.0e-7
                     self.f_w = 1.0
-                    self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 1.0e-2 #1e-4
-                    self.learning_rate_feat = 1.0e-2 #1.0e-2
+                    self.learning_rate = 5e-4
+                    self.learning_rate_sdf = 5.0e-4 #1e-4
+                    self.learning_rate_feat = 5.0e-4 #1.0e-2
                     self.end_iter_loc = up_iters[3] - up_iters[2]
                     self.vortSDF_renderer_fine.mask_reg = 1.0
                     self.learning_rate_alpha = 1.0e-8
@@ -1123,24 +1123,24 @@ class Runner:
                     warm_up = 500
                     self.R = 40
                     self.s_start = 200# 30/(10.0*self.sigma) #50.0
-                    self.s_max = 2000# 60/(5.0*self.sigma) #200
+                    self.s_max = 1500# 60/(5.0*self.sigma) #200
                     #self.sigma = 0.01
                     """self.s_w = 2.0e-4 #2.0e-6
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
-                    self.s_w = 1.0e-5 #2.0e-6
+                    self.s_w = 1.0e-2 #2.0e-6
                     self.e_w =  0.0#1.0e-5#1.0e-8 #1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 5.0e-6#1.0e-7 #1.0e-8 #1.0e-1
-                    self.tv_f = 1.0e-10#1.0e-7 #1.0e-4
+                    self.tv_w = 1.0e-4#1.0e-7 #1.0e-8 #1.0e-1
+                    self.tv_f = 0.0#1.0e-10#1.0e-7 #1.0e-4
                     self.f_w = 10.0
                     #self.w_g = 0.1
                     self.end_iter_loc = up_iters[4] - up_iters[3]
-                    self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 1.0e-3
-                    self.learning_rate_feat = 1.0e-3
+                    self.learning_rate = 3e-4
+                    self.learning_rate_sdf = 3.0e-4
+                    self.learning_rate_feat = 3.0e-4
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-2
-                    self.learning_rate_alpha = 1.0e-8
-                    lamda_c = 0.5
+                    self.learning_rate_alpha = 1.0e-6
+                    lamda_c = 0.2
                     #full_reg = 3
                     
                 if (iter_step+1) == up_iters[4]:
@@ -1229,11 +1229,9 @@ class Runner:
                 with torch.no_grad():
                     self.sdf[:] = self.sdf[:] * 4.096"""
 
-            if iter_step > up_iters[3] and self.loc_iter == round(0.5*self.end_iter_loc): #iter_step == up_iters[3] + 0.6*self.end_iter_loc:
-                self.w_g = 0.1
+            #if iter_step > up_iters[3] and self.loc_iter == round(0.5*self.end_iter_loc): #iter_step == up_iters[3] + 0.6*self.end_iter_loc:
+            #    self.w_g = 0.1
 
-            if iter_step > up_iters[3] and self.loc_iter == round(0.8*self.end_iter_loc): #iter_step == up_iters[3] + 0.6*self.end_iter_loc:
-                self.w_g = 0.01
                 
             """if iter_step == 23000 or iter_step == 33000: # self.loc_iter == round(0.9*self.end_iter_loc):          
                 self.s_w = 10.0*self.s_w 

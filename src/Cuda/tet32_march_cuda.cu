@@ -579,9 +579,9 @@ __global__ void tet32_march_cuda_kernel(
 					atomicExch(&activate[ids_s[l]], 1);
 				}
 
-				//if (prev_sdf*next_sdf <= 0.0 && s_id + extra < num_samples - 6) {
-				//	extra+=4;
-				//}
+				if (prev_sdf*next_sdf <= 0.0 && s_id + extra < num_samples - 6) {
+					extra+=4;
+				}
 
 				s_id++;
 
@@ -1177,7 +1177,7 @@ __global__ void fill_samples_kernel_sub(
         out_z[2*i] = in_z_rays[2*s_id];
 		out_z[2*i + 1] = in_z_rays[2*s_id+1];
 
-		if (false) {//(in_sdf_rays[2*s_id]*in_sdf_rays[2*s_id+1]<= 0.0f && (i-start) < num_samples - 6) {
+		if (in_sdf_rays[2*s_id]*in_sdf_rays[2*s_id+1]<= 0.0f && (i-start) < num_samples - 6) {
 			for (int sub_i = 0; sub_i < 5; sub_i++) {
 				float step = 1.0f/5.0f;
 				float w_curr = float(sub_i)*step;
@@ -1186,8 +1186,8 @@ __global__ void fill_samples_kernel_sub(
 
 				out_sdf[4*i] = (1.0f-w_curr)*in_sdf_rays[2*s_id] + w_curr*in_sdf_rays[2*s_id+1];
 				out_sdf[4*i+1] = (1.0f-(w_curr+step))*in_sdf_rays[2*s_id] + (w_curr+step)*in_sdf_rays[2*s_id+1];
-				out_sdf[4*i+2] = (1.0f-w_curr);
-				out_sdf[4*i+3] = (1.0f-(w_curr+step));
+				out_sdf[4*i+2] = (1.0f-w_curr) / 3.0f;
+				out_sdf[4*i+3] = (1.0f-(w_curr+step)) / 3.0f;
 
 				out_ids[2*i] = in_ids_rays[2 * s_id];
 				out_ids[2*i + 1] = in_ids_rays[2 * s_id + 1];
@@ -1222,7 +1222,7 @@ __global__ void fill_samples_kernel_sub(
 				for (int l = 0; l < 6; l++) {
 					out_weights[7*i + l] = in_weights_rays[6 * s_id + l];
 				}
-				out_weights[7*i + 6] = lambda;
+				out_weights[7*i + 6] = lambda/3.0f;
 
 				samples[3 * i] = ray.origin[0] + (0.5f*out_z[2*i] + 0.5f*out_z[2*i+1])*ray.direction[0];
 				samples[3 * i + 1] = ray.origin[1] + (0.5f*out_z[2*i] + 0.5f*out_z[2*i+1])*ray.direction[1];
