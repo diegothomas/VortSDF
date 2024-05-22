@@ -1090,7 +1090,7 @@ class Runner:
                     self.learning_rate_feat = 1.0e-2
                     self.end_iter_loc = up_iters[2] - up_iters[1]
                     self.learning_rate_alpha = 1.0e-2
-                    self.vortSDF_renderer_fine.mask_reg = 1.0#e-3
+                    self.vortSDF_renderer_fine.mask_reg = 1.0e-1
                     #acc_it = 10
                     
                     
@@ -1115,7 +1115,7 @@ class Runner:
                     self.learning_rate_sdf = 1.0e-2 #1e-4
                     self.learning_rate_feat = 1.0e-2 #1.0e-2
                     self.end_iter_loc = up_iters[3] - up_iters[2]
-                    self.vortSDF_renderer_fine.mask_reg = 1.0
+                    self.vortSDF_renderer_fine.mask_reg = 1.0-2
                     self.learning_rate_alpha = 1.0e-2
                     
 
