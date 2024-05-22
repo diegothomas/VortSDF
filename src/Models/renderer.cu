@@ -386,16 +386,17 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
         //////////////////////////////////////////////////////////////
         float lambda1 = sdf.z;
         float lambda2 = sdf.w;
+        float fact1 = lambda1 == 1.0? 1.0f : 1.0f/3.0f;
         id_prev = cell_ids[2 * t];
         id = cell_ids[2 * t + 1];
-        atomicAdd(&grads_sdf[id_prev.x], weights_seg[7 * t] * lambda1 * dalpha * dalpha_dsdf_p + (1.0-lambda1)*dalpha * dalpha_dsdf_n);
-        atomicAdd(&grads_sdf[id.x],  weights_seg[7 * t + 3] * lambda2 * dalpha * dalpha_dsdf_p + (1.0-lambda2)*dalpha * dalpha_dsdf_n);
+        atomicAdd(&grads_sdf[id_prev.x], weights_seg[7 * t] * fact1 * (lambda1 * dalpha * dalpha_dsdf_p + (1.0-lambda1)*dalpha * dalpha_dsdf_n));
+        atomicAdd(&grads_sdf[id.x],  weights_seg[7 * t + 3] * fact1 * (lambda2 * dalpha * dalpha_dsdf_p + (1.0-lambda2)*dalpha * dalpha_dsdf_n));
         
-        atomicAdd(&grads_sdf[id_prev.y], weights_seg[7 * t + 1] * lambda1 * dalpha * dalpha_dsdf_p + (1.0-lambda1)*dalpha * dalpha_dsdf_n);
-        atomicAdd(&grads_sdf[id.y],  weights_seg[7 * t + 4]  * lambda2 * dalpha * dalpha_dsdf_p + (1.0-lambda2)*dalpha * dalpha_dsdf_n);
+        atomicAdd(&grads_sdf[id_prev.y], weights_seg[7 * t + 1] * fact1 * (lambda1 * dalpha * dalpha_dsdf_p + (1.0-lambda1)*dalpha * dalpha_dsdf_n));
+        atomicAdd(&grads_sdf[id.y],  weights_seg[7 * t + 4]  * fact1 * (lambda2 * dalpha * dalpha_dsdf_p + (1.0-lambda2)*dalpha * dalpha_dsdf_n));
         
-        atomicAdd(&grads_sdf[id_prev.z], weights_seg[7 * t + 2] * lambda1 * dalpha * dalpha_dsdf_p + (1.0-lambda1)*dalpha * dalpha_dsdf_n);
-        atomicAdd(&grads_sdf[id.z],  weights_seg[7 * t + 5]* lambda2 * dalpha * dalpha_dsdf_p + (1.0-lambda2)*dalpha * dalpha_dsdf_n);
+        atomicAdd(&grads_sdf[id_prev.z], weights_seg[7 * t + 2] * fact1 * (lambda1 * dalpha * dalpha_dsdf_p + (1.0-lambda1)*dalpha * dalpha_dsdf_n));
+        atomicAdd(&grads_sdf[id.z],  weights_seg[7 * t + 5]* fact1 * (lambda2 * dalpha * dalpha_dsdf_p + (1.0-lambda2)*dalpha * dalpha_dsdf_n));
         /*if (lambda < 0.5f) {
             atomicAdd(&grads_sdf[id_prev.x], weights_seg_prev.x * 2.0f * lambda * dalpha * dalpha_dsdf_p);
             atomicAdd(&grads_sdf[id.x],  weights_seg_next.x * ((1.0f-2.0f*lambda) * dalpha * dalpha_dsdf_p + dalpha * dalpha_dsdf_n));

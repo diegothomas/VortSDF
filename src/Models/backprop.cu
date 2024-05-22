@@ -146,12 +146,13 @@ __global__ void backprop_feat_kernel(
     ////////////////////////Linear interpolation//////////////////////////
     //////////////////////////////////////////////////////////////
     float lamda = cell_weights[7*idx + 6] ;
+    float fact = lamda == 0.5? 1.0f : 1.0f/3.0f;
     for (int i = 0; i < 3; i++) {
         id_prev = cell_ids[6 * idx + i];
         id = cell_ids[6 * idx + 3 + i];
         for (int k = 0; k < dim_feats; k++) {    
-            atomicAdd(&grad_feat[dim_feats * id_prev + k], cell_weights[7*idx + i] * lamda * grad_samples[dim_feats * idx + k]);              
-            atomicAdd(&grad_feat[dim_feats * id + k], cell_weights[7*idx + 3 + i] * (1.0f - lamda) * grad_samples[dim_feats * idx + k]);
+            atomicAdd(&grad_feat[dim_feats * id_prev + k], cell_weights[7*idx + i] * fact * lamda * grad_samples[dim_feats * idx + k]);              
+            atomicAdd(&grad_feat[dim_feats * id + k], cell_weights[7*idx + 3 + i] * fact * (1.0f - lamda) * grad_samples[dim_feats * idx + k]);
         }
     }
     return;
@@ -249,12 +250,13 @@ __global__ void backprop_grad_kernel(
     ////////////////////////Linear interpolation//////////////////////////
     //////////////////////////////////////////////////////////////
     float lamda = cell_weights[7*idx + 6] ;
+    float fact = lamda == 0.5? 1.0f : 1.0f/3.0f;
     for (int i = 0; i < 3; i++) {
         id_prev = cell_ids[6 * idx + i];
         id = cell_ids[6 * idx + 3 + i];
         for (int k = 0; k < 3; k++) {    
-            atomicAdd(&grad_sites[3 * id_prev + k], cell_weights[7*idx + i] * lamda * grad_samples[3 * idx + k]);              
-            atomicAdd(&grad_sites[3 * id + k], cell_weights[7*idx + 3 + i] * (1.0f - lamda) * grad_samples[3 * idx + k]);
+            atomicAdd(&grad_sites[3 * id_prev + k], cell_weights[7*idx + i] * fact * lamda * grad_samples[3 * idx + k]);              
+            atomicAdd(&grad_sites[3 * id + k], cell_weights[7*idx + 3 + i] * fact * (1.0f - lamda) * grad_samples[3 * idx + k]);
         }
     }
     return;
