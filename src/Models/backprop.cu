@@ -183,48 +183,49 @@ __global__ void backprop_feat_kernel_o(
     float3 cell_weights_prev = cell_weights[2 * idx ];
     float3 cell_weights_curr = cell_weights[2 * idx + 1];
 
+    float fact = lamda == 0.5? 1.0f : 1.0f/3.0f;
     float4 val;
     for (int k = 0; k < dim_feats; k++) {    
         val = grad_samples[dim_feats * idx + k];
-        atomicAdd(&(grad_feat[dim_feats * id_prev.x + k].x), cell_weights_prev.x * lamda * val.x);
-        atomicAdd(&(grad_feat[dim_feats * id_prev.x + k].y), cell_weights_prev.x * lamda * val.y);
-        atomicAdd(&(grad_feat[dim_feats * id_prev.x + k].z), cell_weights_prev.x * lamda * val.z);
-        atomicAdd(&(grad_feat[dim_feats * id_prev.x + k].w), cell_weights_prev.x * lamda * val.w);
+        atomicAdd(&(grad_feat[dim_feats * id_prev.x + k].x), cell_weights_prev.x * fact * lamda * val.x);
+        atomicAdd(&(grad_feat[dim_feats * id_prev.x + k].y), cell_weights_prev.x * fact * lamda * val.y);
+        atomicAdd(&(grad_feat[dim_feats * id_prev.x + k].z), cell_weights_prev.x * fact * lamda * val.z);
+        atomicAdd(&(grad_feat[dim_feats * id_prev.x + k].w), cell_weights_prev.x * fact * lamda * val.w);
         //atomicAdd(&grad_feat[dim_feats * id_prev.x + k], cell_weights_prev.x * lamda * grad_samples[dim_feats * idx + k]);
         
         //val = cell_weights_curr.x * (1.0f - lamda) * grad_samples[dim_feats * idx + k];   
-        atomicAdd(&(grad_feat[dim_feats * id.x + k].x), cell_weights_curr.x * (1.0f - lamda) * val.x);
-        atomicAdd(&(grad_feat[dim_feats * id.x + k].y), cell_weights_curr.x * (1.0f - lamda) * val.y);
-        atomicAdd(&(grad_feat[dim_feats * id.x + k].z), cell_weights_curr.x * (1.0f - lamda) * val.z);      
-        atomicAdd(&(grad_feat[dim_feats * id.x + k].w), cell_weights_curr.x * (1.0f - lamda) * val.w);     
+        atomicAdd(&(grad_feat[dim_feats * id.x + k].x), cell_weights_curr.x * fact * (1.0f - lamda) * val.x);
+        atomicAdd(&(grad_feat[dim_feats * id.x + k].y), cell_weights_curr.x * fact * (1.0f - lamda) * val.y);
+        atomicAdd(&(grad_feat[dim_feats * id.x + k].z), cell_weights_curr.x * fact * (1.0f - lamda) * val.z);      
+        atomicAdd(&(grad_feat[dim_feats * id.x + k].w), cell_weights_curr.x * fact * (1.0f - lamda) * val.w);     
         //atomicAdd(&grad_feat[dim_feats * id.x + k], cell_weights_curr.x * (1.0f - lamda) * grad_samples[dim_feats * idx + k]);
         
         //val = cell_weights_prev.y * lamda * grad_samples[dim_feats * idx + k];     
-        atomicAdd(&(grad_feat[dim_feats * id_prev.y + k].x), cell_weights_prev.y * lamda * val.x);
-        atomicAdd(&(grad_feat[dim_feats * id_prev.y + k].y), cell_weights_prev.y * lamda * val.y);
-        atomicAdd(&(grad_feat[dim_feats * id_prev.y + k].z), cell_weights_prev.y * lamda * val.z);     
-        atomicAdd(&(grad_feat[dim_feats * id_prev.y + k].w), cell_weights_prev.y * lamda * val.w);      
+        atomicAdd(&(grad_feat[dim_feats * id_prev.y + k].x), cell_weights_prev.y * fact * lamda * val.x);
+        atomicAdd(&(grad_feat[dim_feats * id_prev.y + k].y), cell_weights_prev.y * fact * lamda * val.y);
+        atomicAdd(&(grad_feat[dim_feats * id_prev.y + k].z), cell_weights_prev.y * fact * lamda * val.z);     
+        atomicAdd(&(grad_feat[dim_feats * id_prev.y + k].w), cell_weights_prev.y * fact * lamda * val.w);      
         //atomicAdd(&grad_feat[dim_feats * id_prev.y + k], cell_weights_prev.y * lamda * grad_samples[dim_feats * idx + k]);     
 
         //val = cell_weights_curr.y * (1.0f - lamda) * grad_samples[dim_feats * idx + k];   
-        atomicAdd(&(grad_feat[dim_feats * id.y + k].x), cell_weights_curr.y * (1.0f - lamda) * val.x);
-        atomicAdd(&(grad_feat[dim_feats * id.y + k].y), cell_weights_curr.y * (1.0f - lamda) * val.y);
-        atomicAdd(&(grad_feat[dim_feats * id.y + k].z), cell_weights_curr.y * (1.0f - lamda) * val.z);     
-        atomicAdd(&(grad_feat[dim_feats * id.y + k].w), cell_weights_curr.y * (1.0f - lamda) * val.w);  
+        atomicAdd(&(grad_feat[dim_feats * id.y + k].x), cell_weights_curr.y * fact * (1.0f - lamda) * val.x);
+        atomicAdd(&(grad_feat[dim_feats * id.y + k].y), cell_weights_curr.y * fact * (1.0f - lamda) * val.y);
+        atomicAdd(&(grad_feat[dim_feats * id.y + k].z), cell_weights_curr.y * fact * (1.0f - lamda) * val.z);     
+        atomicAdd(&(grad_feat[dim_feats * id.y + k].w), cell_weights_curr.y * fact * (1.0f - lamda) * val.w);  
         //atomicAdd(&grad_feat[dim_feats * id.y + k], cell_weights_curr.y * (1.0f - lamda) * grad_samples[dim_feats * idx + k]);
         
         //val = cell_weights_prev.z * lamda * grad_samples[dim_feats * idx + k];   
-        atomicAdd(&(grad_feat[dim_feats * id_prev.z + k].x), cell_weights_prev.z * lamda * val.x);
-        atomicAdd(&(grad_feat[dim_feats * id_prev.z + k].y), cell_weights_prev.z * lamda * val.y);
-        atomicAdd(&(grad_feat[dim_feats * id_prev.z + k].z), cell_weights_prev.z * lamda * val.z);    
-        atomicAdd(&(grad_feat[dim_feats * id_prev.z + k].w), cell_weights_prev.z * lamda * val.w); 
+        atomicAdd(&(grad_feat[dim_feats * id_prev.z + k].x), cell_weights_prev.z * fact * lamda * val.x);
+        atomicAdd(&(grad_feat[dim_feats * id_prev.z + k].y), cell_weights_prev.z * fact * lamda * val.y);
+        atomicAdd(&(grad_feat[dim_feats * id_prev.z + k].z), cell_weights_prev.z * fact * lamda * val.z);    
+        atomicAdd(&(grad_feat[dim_feats * id_prev.z + k].w), cell_weights_prev.z * fact * lamda * val.w); 
         //atomicAdd(&grad_feat[dim_feats * id_prev.z + k], cell_weights_prev.z * lamda * grad_samples[dim_feats * idx + k]);              
         
         //val = cell_weights_curr.z * (1.0f - lamda) * grad_samples[dim_feats * idx + k];   
-        atomicAdd(&(grad_feat[dim_feats * id.z + k].x), cell_weights_curr.z * (1.0f - lamda) * val.x);
-        atomicAdd(&(grad_feat[dim_feats * id.z + k].y), cell_weights_curr.z * (1.0f - lamda) * val.y);
-        atomicAdd(&(grad_feat[dim_feats * id.z + k].z), cell_weights_curr.z * (1.0f - lamda) * val.z);     
-        atomicAdd(&(grad_feat[dim_feats * id.z + k].w), cell_weights_curr.z * (1.0f - lamda) * val.w);  
+        atomicAdd(&(grad_feat[dim_feats * id.z + k].x), cell_weights_curr.z * fact * (1.0f - lamda) * val.x);
+        atomicAdd(&(grad_feat[dim_feats * id.z + k].y), cell_weights_curr.z * fact * (1.0f - lamda) * val.y);
+        atomicAdd(&(grad_feat[dim_feats * id.z + k].z), cell_weights_curr.z * fact * (1.0f - lamda) * val.z);     
+        atomicAdd(&(grad_feat[dim_feats * id.z + k].w), cell_weights_curr.z * fact * (1.0f - lamda) * val.w);  
         //atomicAdd(&grad_feat[dim_feats * id.xz + k], cell_weights_curr.z * (1.0f - lamda) * grad_samples[dim_feats * idx + k]);*/
     }
 

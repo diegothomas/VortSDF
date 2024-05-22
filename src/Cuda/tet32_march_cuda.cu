@@ -1224,9 +1224,9 @@ __global__ void fill_samples_kernel_sub(
 				}
 				out_weights[7*i + 6] = lambda;
 
-				samples[3 * i] = ray.origin[0] + (0.5f*out_z[2*i] + 0.5f*out_z[2*i+1])*ray.direction[0];
-				samples[3 * i + 1] = ray.origin[1] + (0.5f*out_z[2*i] + 0.5f*out_z[2*i+1])*ray.direction[1];
-				samples[3 * i + 2] = ray.origin[2] + (0.5f*out_z[2*i] + 0.5f*out_z[2*i+1])*ray.direction[2];
+				samples[3 * i] = ray.origin[0] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[0];
+				samples[3 * i + 1] = ray.origin[1] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[1];
+				samples[3 * i + 2] = ray.origin[2] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[2];
 
 				i++;
 			}
@@ -1270,9 +1270,9 @@ __global__ void fill_samples_kernel_sub(
 			}
 			out_weights[7*i + 6] = lambda;
 			
-			samples[3 * i] = ray.origin[0] + ((1.0f-lambda)*out_z[2*i] + lambda*out_z[2*i+1])*ray.direction[0];
-			samples[3 * i + 1] = ray.origin[1] + ((1.0f-lambda)*out_z[2*i] + lambda*out_z[2*i+1])*ray.direction[1];
-			samples[3 * i + 2] = ray.origin[2] + ((1.0f-lambda)*out_z[2*i] + lambda*out_z[2*i+1])*ray.direction[2];
+			samples[3 * i] = ray.origin[0] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[0];
+			samples[3 * i + 1] = ray.origin[1] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[1];
+			samples[3 * i + 2] = ray.origin[2] + (lambda*out_z[2*i] + (1.0f-lambda)*out_z[2*i+1])*ray.direction[2];
 
 			i++;
 		}
