@@ -146,7 +146,7 @@ __global__ void backprop_feat_kernel(
     ////////////////////////Linear interpolation//////////////////////////
     //////////////////////////////////////////////////////////////
     float lamda = cell_weights[7*idx + 6] ;
-    float fact = lamda == 0.5? 1.0f : 1.0f/3.0f;
+    float fact = lamda == 0.5? 1.0f : 1.0f;///3.0f;
     for (int i = 0; i < 3; i++) {
         id_prev = cell_ids[6 * idx + i];
         id = cell_ids[6 * idx + 3 + i];
@@ -251,7 +251,7 @@ __global__ void backprop_grad_kernel(
     ////////////////////////Linear interpolation//////////////////////////
     //////////////////////////////////////////////////////////////
     float lamda = cell_weights[7*idx + 6] ;
-    float fact = lamda == 0.5? 1.0f : 1.0f/3.0f;
+    float fact = lamda == 0.5? 1.0f : 1.0f;///3.0f;
     for (int i = 0; i < 3; i++) {
         id_prev = cell_ids[6 * idx + i];
         id = cell_ids[6 * idx + 3 + i];

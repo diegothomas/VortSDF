@@ -1064,7 +1064,7 @@ class Runner:
                     self.tv_f = 1.0e-11 #1.0e-6
                     self.s_start = 50 #30/(10.0*self.sigma) #50.0
                     self.s_max = 200 #60/(5.0*self.sigma) #200
-                    self.learning_rate = 3e-3
+                    self.learning_rate = 1e-3
                     self.learning_rate_sdf = 1.0e-2
                     self.learning_rate_feat = 1.0e-2
                     self.end_iter_loc = up_iters[1] - up_iters[0]
@@ -1086,8 +1086,8 @@ class Runner:
                     self.tv_f = 1.0e-10
                     self.f_w = 1.0 #1.0
                     self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 5.0e-3
-                    self.learning_rate_feat = 5.0e-3
+                    self.learning_rate_sdf = 1.0e-2
+                    self.learning_rate_feat = 1.0e-2
                     self.end_iter_loc = up_iters[2] - up_iters[1]
                     self.learning_rate_alpha = 1.0e-2
                     self.vortSDF_renderer_fine.mask_reg = 1.0#e-3
@@ -1103,17 +1103,17 @@ class Runner:
                     """self.s_w = 5.0e-3
                     self.e_w = 1.0e-3
                     self.tv_w = 1.0e-3"""
-                    self.s_w = 0.005 #5.0e-4
+                    self.s_w = 0.0001 #5.0e-4
                     self.e_w =  0.0#1.0e-5#1.0e-5 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 1.0e-4#1.0e-7#1.0e-7 #1.0e-8 #1.0e-1
+                    self.tv_w = 1.0e-5#1.0e-7#1.0e-7 #1.0e-8 #1.0e-1
                     #self.w_g = 0.0
                     #acc_it = 10
 
                     self.tv_f = 1.0e-10# 1.0e-7 #1.0e-7
                     self.f_w = 1.0
-                    self.learning_rate = 1e-4
-                    self.learning_rate_sdf = 1.0e-4 #1e-4
-                    self.learning_rate_feat = 1.0e-4 #1.0e-2
+                    self.learning_rate = 1e-3
+                    self.learning_rate_sdf = 1.0e-2 #1e-4
+                    self.learning_rate_feat = 1.0e-2 #1.0e-2
                     self.end_iter_loc = up_iters[3] - up_iters[2]
                     self.vortSDF_renderer_fine.mask_reg = 1.0
                     self.learning_rate_alpha = 1.0e-2
@@ -1128,19 +1128,19 @@ class Runner:
                     """self.s_w = 2.0e-4 #2.0e-6
                     self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
                     self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
-                    self.s_w = 1.0e-3 #2.0e-6
+                    self.s_w = 1.0e-4 #2.0e-6
                     self.e_w =  0.0#1.0e-5#1.0e-8 #1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 1.0e-4#1.0e-7 #1.0e-8 #1.0e-1
+                    self.tv_w = 1.0e-5#1.0e-7 #1.0e-8 #1.0e-1
                     self.tv_f = 0.0#1.0e-10#1.0e-7 #1.0e-4
                     self.f_w = 10.0
                     #self.w_g = 0.1
                     self.end_iter_loc = up_iters[4] - up_iters[3]
-                    self.learning_rate = 5e-4
-                    self.learning_rate_sdf = 5.0e-4
-                    self.learning_rate_feat = 5.0e-4
+                    self.learning_rate = 1e-3
+                    self.learning_rate_sdf = 1.0e-2
+                    self.learning_rate_feat = 1.0e-2
                     self.vortSDF_renderer_fine.mask_reg = 1.0e-2
                     self.learning_rate_alpha = 1.0e-3
-                    lamda_c = 0.2
+                    lamda_c = 0.5
                     #full_reg = 3
                     
                 if (iter_step+1) == up_iters[4]:

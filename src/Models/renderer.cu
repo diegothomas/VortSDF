@@ -386,7 +386,7 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
         //////////////////////////////////////////////////////////////
         float lambda1 = sdf.z;
         float lambda2 = sdf.w;
-        float fact1 = lambda1 == 1.0? 1.0f : 1.0f/3.0f;
+        float fact1 = lambda1 == 1.0? 1.0f : 1.0f;///3.0f;
         id_prev = cell_ids[2 * t];
         id = cell_ids[2 * t + 1];
         atomicAdd(&grads_sdf[id_prev.x], weights_seg[7 * t] * fact1 * (lambda1 * dalpha * dalpha_dsdf_p + (1.0-lambda1)*dalpha * dalpha_dsdf_n));
