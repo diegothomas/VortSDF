@@ -18,9 +18,9 @@
 
 #define STOP_TRANS 1.0e-10
 #define CLIP_ALPHA 60.0
-#define BACK_R 1.0f
-#define BACK_G 1.0f
-#define BACK_B 1.0f 
+#define BACK_R 0.5f
+#define BACK_G 0.5f
+#define BACK_B 0.5f 
 #define PI 3.141592653589793238462643383279502884197
 
 
@@ -46,7 +46,7 @@ __device__ float mid_loss(float3 x, float3 y)
     float3 ra = x*x;
     float3 rb = y*y;
     float3 r = (x-y)*(x-y);
-    return 0.5f * (r.x + r.y + r.z)/(min(sqrt(ra.x + ra.y + ra.z), sqrt(rb.x + rb.y + rb.z)) + 0.005f);
+    return 0.5f * (r.x + r.y + r.z);///(min(sqrt(ra.x + ra.y + ra.z), sqrt(rb.x + rb.y + rb.z)) + 0.005f);
 }
 
 __device__ float3 mid_grad(float3 x, float3 y) 
@@ -55,9 +55,9 @@ __device__ float3 mid_grad(float3 x, float3 y)
     float3 rb = y*y;
     return (x-y)/(min(sqrt(ra.x + ra.y + ra.z), sqrt(rb.x + rb.y + rb.z)) + 0.005f);*/
     float3 r = x-y;
-    r.x = r.x/(min(abs(x.x), abs(y.x)) + 0.005f);
-    r.y = r.y/(min(abs(x.y), abs(y.y)) + 0.005f);
-    r.z = r.z/(min(abs(x.z), abs(y.z)) + 0.005f);
+    r.x = r.x/(fabs(y.x) + 0.005f);
+    r.y = r.y/(fabs(y.y) + 0.005f);
+    r.z = r.z/(fabs(y.z) + 0.005f);
     return r;
     //return (x-y);
 }
@@ -417,9 +417,9 @@ __device__ void backward(float3 Ctotal, float Wtotal, float3 TrueColor, float3 g
             atomicAdd(&grads_sdf[id.z],  weights_seg_next.z * (1.0f-(1.0-2.0f*lambda)) * dalpha * dalpha_dsdf_n);
         }*/
 
-        if (Mask > 0.0f) {
+        //if (Mask > 0.0f) {
             grads_color[t] = dc;
-        }  
+        //}  
 
         Tpartial = Tpartial * alpha;
 
@@ -458,10 +458,10 @@ __global__ void render_kernel(
     float Wtotal = 0.0f;
     float4 color = trace_ray(sdf_seg, color_samples, offsets, &Wtotal, inv_s, idx);
 
-    if (color.w < 1.0f) {
+    //if (color.w < 1.0f) {
         float msk = mask[idx] > 0.5f ? 1.0f : 0.0f;
         float3 integrated_color = make_float3(color.x + color.w * BACK_R, color.y + color.w * BACK_G, color.z + color.w * BACK_B);
-        //float3 grad_color_diff = huber_grad(integrated_color - true_color[idx]);
+        //loat3 grad_color_diff = huber_grad(integrated_color - true_color[idx]);
         float3 grad_color_diff = mid_grad(integrated_color, true_color[idx]);
 
         //Wtotal
@@ -477,7 +477,7 @@ __global__ void render_kernel(
         color_loss[idx] = msk*mid_loss(integrated_color, true_color[idx]);  
         //color_loss[idx] = msk*(fabs(grad_color_diff.x) + fabs(grad_color_diff.y) + fabs(grad_color_diff.z));    
         mask_loss[idx] = (msk - Wtotal)*(msk - Wtotal); //-(msk * logf(Wtotal) + (1.0f - msk) * logf(1.0f-Wtotal));
-    }
+    //}
     return;
 }
 

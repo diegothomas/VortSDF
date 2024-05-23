@@ -337,7 +337,7 @@ __global__ void backprop_sdf_kernel(
     float *__restrict__ grad_sdf,
     const float2 *__restrict__ grad_sdf_samples,
     const int3 *__restrict__ cell_ids,
-    const float3 *__restrict__ cell_weights)
+    const float *__restrict__ cell_weights)
 {
     const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= num_samples)
@@ -352,18 +352,16 @@ __global__ void backprop_sdf_kernel(
     id_prev = cell_ids[2 * idx ];
     id = cell_ids[2 * idx + 1];
 
-    float3 cell_weights_prev = cell_weights[2 * idx ];
-    float3 cell_weights_curr = cell_weights[2 * idx + 1];
     float2 grad_curr = grad_sdf_samples[idx];
 
-    atomicAdd(&grad_sdf[id_prev.x], cell_weights_prev.x * grad_curr.x);       
-    atomicAdd(&grad_sdf[id.x], cell_weights_curr.x * grad_curr.y);  
+    atomicAdd(&grad_sdf[id_prev.x], cell_weights[7 * idx] * grad_curr.x);       
+    atomicAdd(&grad_sdf[id.x], cell_weights[7 * idx + 3]  * grad_curr.y);  
     
-    atomicAdd(&grad_sdf[id_prev.y], cell_weights_prev.y * grad_curr.x);       
-    atomicAdd(&grad_sdf[id.y], cell_weights_curr.y * grad_curr.y);  
+    atomicAdd(&grad_sdf[id_prev.y], cell_weights[7 * idx + 1] * grad_curr.x);       
+    atomicAdd(&grad_sdf[id.y], cell_weights[7 * idx + 4]  * grad_curr.y);  
     
-    atomicAdd(&grad_sdf[id_prev.z], cell_weights_prev.z * grad_curr.x);       
-    atomicAdd(&grad_sdf[id.z], cell_weights_curr.z * grad_curr.y);  
+    atomicAdd(&grad_sdf[id_prev.z], cell_weights[7 * idx + 2]  * grad_curr.x);       
+    atomicAdd(&grad_sdf[id.z], cell_weights[7 * idx + 5]  * grad_curr.y);  
 
     return;
 }
@@ -944,14 +942,18 @@ __global__ void knn_smooth_kernel_o(
     int i_curr = threadIdx.x % 32;
     knn_id = neighbors[num_knn*idx + lvl_curr*32 + i_curr];
     if (knn_id != -1 && threadIdx.x < 16) {
-        curr_edge = curr_point - make_float3(vertices[3*knn_id],vertices[3*knn_id+1],vertices[3*knn_id+2]); //vertices[knn_id]; //make_float3(vertices[3*knn_id],vertices[3*knn_id+1],vertices[3*knn_id+2]);
-        length_edge = dot(curr_edge, curr_edge);
-        if (length_edge >= max_dist) {
-            if (length_edge > max_dist)
-                max_dist = length_edge;
-            
-            smem[32*lvl_curr + i_curr] = make_float2(exp(-length_edge/(sigma*sigma)) * sdf[knn_id], exp(-length_edge/(sigma*sigma)));
-        }
+        if (activated[knn_id] == 2) {
+            curr_edge = curr_point - make_float3(vertices[3*knn_id],vertices[3*knn_id+1],vertices[3*knn_id+2]); //vertices[knn_id]; //make_float3(vertices[3*knn_id],vertices[3*knn_id+1],vertices[3*knn_id+2]);
+            length_edge = dot(curr_edge, curr_edge);
+            if (length_edge >= max_dist) {
+                if (length_edge > max_dist)
+                    max_dist = length_edge;
+                
+                smem[32*lvl_curr + i_curr] = make_float2(exp(-length_edge/(sigma*sigma)) * sdf[knn_id], exp(-length_edge/(sigma*sigma)));
+            } 
+        } else {
+            smem[32*lvl_curr + i_curr] = make_float2(0.0f, 0.0f);
+        }        
     } else {
         smem[32*lvl_curr + i_curr] = make_float2(0.0f, 0.0f);
     }
@@ -1413,7 +1415,7 @@ __global__ void activate_knn_kernel_o(
     const size_t id_thread = blockIdx.x * blockDim.x + threadIdx.x;
     const size_t idx = id_thread / num_knn;
     const size_t idx_k = id_thread % num_knn;
-    if (id_thread >= num_knn*num_sites)
+    if (id_thread >= num_knn*num_sites || idx_k >= 32)
     {
         return;
     }
@@ -1424,7 +1426,8 @@ __global__ void activate_knn_kernel_o(
     int knn_id = neighbors[num_knn*idx + idx_k];
 
     if (knn_id != -1)
-        activated[knn_id] = 1;
+        atomicExch(&activated[knn_id], 1);
+        //activated[knn_id] = 1;
 
     return;
 }
@@ -1543,7 +1546,7 @@ void backprop_sdf_cuda(
             grad_sdf.data_ptr<float>(),
             (float2*)thrust::raw_pointer_cast(grad_sdf_samples.data_ptr<float>()),
             (int3*)thrust::raw_pointer_cast(cell_ids.data_ptr<int>()),
-            (float3*)thrust::raw_pointer_cast(cell_weights.data_ptr<float>()));
+            cell_weights.data_ptr<float>());
     }));
     cudaDeviceSynchronize();
 }
