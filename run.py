@@ -361,7 +361,8 @@ class Runner:
             self.R = 40
             self.s_start = 10.0
             self.inv_s = 0.1
-            self.sigma = min((self.visual_hull[3]-self.visual_hull[0]), (self.visual_hull[4]-self.visual_hull[1]), (self.visual_hull[5]-self.visual_hull[2]))/res #0.1 #
+            self.sigma_start = min((self.visual_hull[3]-self.visual_hull[0]), (self.visual_hull[4]-self.visual_hull[1]), (self.visual_hull[5]-self.visual_hull[2]))/res #0.1 #
+            self.sigma_max = self.sigma_start / 2.0
             self.w_g = 1.0
 
         lamda_c = 1.0
@@ -387,6 +388,7 @@ class Runner:
             #self.inv_s = min(self.s_max, self.loc_iter/self.R + self.s_start)
             #self.inv_s = self.s_start + (self.s_max-self.s_start)*(1.0 - math.cos(0.5*math.pi*self.loc_iter/self.end_iter_loc))
             self.inv_s = self.s_start + (self.s_max-self.s_start)*(self.loc_iter/self.end_iter_loc)
+            self.sigma = self.sigma_start + (self.sigma_max-self.sigma_start)*(self.loc_iter/self.end_iter_loc)
 
 
             ## Generate rays
@@ -1057,6 +1059,8 @@ class Runner:
                 self.tv_w = self.tv_w / 2.0
                 self.learning_rate_cvt = self.learning_rate_cvt / 1.5 #2.0
 
+                self.sigma_start = self.sigma_start/2.0
+                self.sigma_max = self.sigma_max/2.0
                 self.sigma = self.sigma / 2.0
                 self.w_g = 1.0
                 #full_reg = self.end_iter
@@ -1119,9 +1123,9 @@ class Runner:
                     """self.s_w = 5.0e-3
                     self.e_w = 1.0e-3
                     self.tv_w = 1.0e-3"""
-                    self.s_w = 0.01 #5.0e-4
+                    self.s_w = 0.005 #5.0e-4
                     self.e_w =  0.0#1.0e-5#1.0e-5 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 1.0e-3#1.0e-7#1.0e-7 #1.0e-8 #1.0e-1
+                    self.tv_w = 1.0e-4#1.0e-7#1.0e-7 #1.0e-8 #1.0e-1
                     #self.w_g = 0.0
                     #acc_it = 10
 
@@ -1135,6 +1139,7 @@ class Runner:
                     if self.double_net:
                         self.vortSDF_renderer_coarse_net.mask_reg = 1.0
                     self.learning_rate_alpha = 1.0e-2
+                    lamda_c = 0.5
                     
 
                 if (iter_step+1) == up_iters[3]:
@@ -1160,7 +1165,7 @@ class Runner:
                     if self.double_net:
                         self.vortSDF_renderer_coarse_net.mask_reg = 1.0e-1
                     self.learning_rate_alpha = 1.0e-3
-                    lamda_c = 0.5
+                    lamda_c = 0.2
                     #full_reg = 3
                     
                 if (iter_step+1) == up_iters[4]:
@@ -1767,9 +1772,9 @@ class Runner:
             """self.s_w = 5.0e-3
             self.e_w = 1.0e-3
             self.tv_w = 1.0e-3"""
-            self.s_w = 0.01 #5.0e-4
+            self.s_w = 0.005 #5.0e-4
             self.e_w =  0.0#1.0e-5#1.0e-5 #1.0e-9 #1.0e-7 #5.0e-3
-            self.tv_w = 1.0e-3#1.0e-7#1.0e-7 #1.0e-8 #1.0e-1
+            self.tv_w = 1.0e-4#1.0e-7#1.0e-7 #1.0e-8 #1.0e-1
             #self.w_g = 0.0
             #acc_it = 10
 
@@ -1783,6 +1788,9 @@ class Runner:
             if self.double_net:
                 self.vortSDF_renderer_coarse_net.mask_reg = 1.0
             self.learning_rate_alpha = 1.0e-2
+
+            self.sigma_start = 0.012
+            self.sigma_max = 0.006
             
 
         if (self.iter_step+1) == up_iters[3]:

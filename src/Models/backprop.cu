@@ -1415,7 +1415,7 @@ __global__ void activate_knn_kernel_o(
     const size_t id_thread = blockIdx.x * blockDim.x + threadIdx.x;
     const size_t idx = id_thread / num_knn;
     const size_t idx_k = id_thread % num_knn;
-    if (id_thread >= num_knn*num_sites || idx_k >= 32)
+    if (id_thread >= num_knn*num_sites || idx_k >= 16)
     {
         return;
     }
