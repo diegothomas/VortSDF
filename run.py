@@ -31,7 +31,7 @@ backprop_cuda = load('backprop_cuda', ['src/Models/backprop.cpp', 'src/Models/ba
 
 cvt_grad_cuda = load('cvt_grad_cuda', ['src/Geometry/CVT_gradients.cpp', 'src/Geometry/CVT_gradients.cu'], verbose=True)
 
-up_iters = [2000, 6000, 13000, 20000, 40100]
+up_iters = [2000, 6000, 13000, 20000, 30000]
 
 class Runner:
     def __init__(self, conf_path, data_name, mode='train', is_continue=False, checkpoint = '', position_encoding = True, double_net = True):
@@ -79,21 +79,34 @@ class Runner:
         self.end_iter = self.conf.get_int('train.end_iter')
         self.n_samples = self.conf.get_int('model.cvt_renderer.n_samples')
         self.batch_size = self.conf.get_int('train.batch_size')
-        self.learning_rate = self.conf.get_float('train.learning_rate')
-        self.learning_rate_sdf = self.conf.get_float('train.learning_rate_sdf')
-        self.learning_rate_feat = self.conf.get_float('train.learning_rate_feat')
-        self.learning_rate_alpha = self.conf.get_float('train.learning_rate_alpha')
-        self.learning_rate_cvt = self.conf.get_float('train.learning_rate_cvt')
-        self.res = self.conf.get_int('train.res')
+        self.learning_rate_list = self.conf.get_list('train.learning_rate')
+        self.learning_rate_sdf_list = self.conf.get_list('train.learning_rate_sdf')
+        self.learning_rate_feat_list = self.conf.get_list('train.learning_rate_feat')
+        self.learning_rate_alpha_list = self.conf.get_list('train.learning_rate_alpha')
+        self.learning_rate_cvt_list = self.conf.get_list('train.learning_rate_cvt')
 
+        
+        self.mask_w_list = self.conf.get_list('train.mask_weight')
+        self.s_w_list = self.conf.get_list('train.smooth_weight')
+        self.e_w_list = self.conf.get_list('train.eik_weight')
+        self.tv_w_list= self.conf.get_list('train.tv_weight')
+        self.tv_f_list = self.conf.get_list('train.tv_f_weight')
+
+        self.res = self.conf.get_int('train.res')        
         self.dim_feats = self.conf.get_int('train.dim_feats')
+
+        self.learning_rate = self.learning_rate_list[0]
+        self.learning_rate_sdf = self.learning_rate_sdf_list[0]
+        self.learning_rate_feat = self.learning_rate_feat_list[0]
+        self.learning_rate_alpha = self.learning_rate_alpha_list[0]
+        self.learning_rate_cvt =  self.learning_rate_cvt_list[0]
 
         self.iter_step = 0
         self.end_iter_loc = 2000
-        self.s_w = 0.1
-        self.e_w = 0.0#1.0e-5#1.0e-6
-        self.tv_w = 1.0e-10
-        self.tv_f = 1.0e-12
+        self.s_w = self.s_w_list[0]
+        self.e_w =  self.e_w_list[0]
+        self.tv_w = self.tv_w_list[0]
+        self.tv_f = self.tv_f_list[0]
         self.f_w = 0.0#1.0
 
         self.report_freq = self.conf.get_int('train.report_freq')
@@ -106,12 +119,12 @@ class Runner:
 
         if self.double_net:
             self.vortSDF_renderer_coarse_net = VortSDFRenderer(**self.conf['model.cvt_renderer'])
-            self.vortSDF_renderer_coarse_net.mask_reg = 1.0 #1.0e-2
+            self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[0]
         else:
             self.vortSDF_renderer_coarse = VortSDFDirectRenderer(**self.conf['model.cvt_renderer'])
 
         self.vortSDF_renderer_fine = VortSDFRenderer(**self.conf['model.cvt_renderer'])
-        self.vortSDF_renderer_fine.mask_reg = 1.0 #1.0e-2
+        self.vortSDF_renderer_fine.mask_reg = self.mask_w_list[0]
         
         if self.double_net:
             self.color_coarse = ColorNetwork(**self.conf['model.color_geo_network']).to(self.device)
@@ -362,10 +375,10 @@ class Runner:
             self.s_start = 10.0
             self.inv_s = 0.1
             self.sigma_start = min((self.visual_hull[3]-self.visual_hull[0]), (self.visual_hull[4]-self.visual_hull[1]), (self.visual_hull[5]-self.visual_hull[2]))/res #0.1 #
-            self.sigma_max = self.sigma_start / 2.0
+            self.sigma_max = self.sigma_start * 0.8
             self.w_g = 1.0
 
-        lamda_c = 1.0
+        lamda_c = 0.5
             
         self.sigma_feat = 0.06
         warm_up = 0 #200
@@ -1070,131 +1083,109 @@ class Runner:
                 centers[:,2] = (self.visual_hull[5]+self.visual_hull[2])/2.0
 
                 if (iter_step+1) == up_iters[0]:
-                    """self.s_w = 1.0e-4
-                    self.e_w = 5.0e-6
-                    self.tv_w = 1.0e-5"""
-                    self.R = 100
-                    self.s_w = 1e-3
-                    self.e_w = 0.0#1.0e-5#1.0e-4 #5.0e-3
-                    self.tv_w = 1.0e-4 #1.0e-1
-                    self.tv_f = 1.0e-11 #1.0e-6
                     self.s_start = 50 #30/(10.0*self.sigma) #50.0
                     self.s_max = 200 #60/(5.0*self.sigma) #200
-                    self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 1.0e-2
-                    self.learning_rate_feat = 1.0e-2
+
+                    self.learning_rate = self.learning_rate_list[1]
+                    self.learning_rate_sdf = self.learning_rate_sdf_list[1]
+                    self.learning_rate_feat = self.learning_rate_feat_list[1]
+                    self.learning_rate_alpha = self.learning_rate_alpha_list[1]
+                    self.learning_rate_cvt =  self.learning_rate_cvt_list[1]
+                    self.s_w = self.s_w_list[1]
+                    self.e_w =  self.e_w_list[1]
+                    self.tv_w = self.tv_w[1]
+                    self.tv_f = self.tv_f_list[1]
+
                     self.end_iter_loc = up_iters[1] - up_iters[0]
-                    self.learning_rate_alpha = 1.0e-2
-                    self.vortSDF_renderer_fine.mask_reg = 1.0#1.0e-2
+                    self.vortSDF_renderer_fine.mask_reg = self.mask_w_list[1]
                     if self.double_net:
-                        self.vortSDF_renderer_coarse_net.mask_reg = 1.0 #1.0e-2
+                        self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[1]
                     #verbose = True
                     
 
                 if (iter_step+1) == up_iters[1]:
-                    self.R = 50
                     self.s_start = 100 #30/(10.0*self.sigma) #50.0
                     self.s_max = 400 #60/(5.0*self.sigma) #200
-                    """self.s_w = 1.0e-3
-                    self.e_w = 5.0e-4
-                    self.tv_w = 1.0e-5"""
-                    self.s_w = 1e-3
-                    self.e_w = 0.0#1.0e-5#5.0e-5 #1.0e-8 #5.0e-3
-                    self.tv_w = 1.0e-5 #1.0e-8 #1.0e-1
-                    self.tv_f = 1.0e-10
-                    self.f_w = 1.0 #1.0
-                    self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 1.0e-2
-                    self.learning_rate_feat = 1.0e-2
+
+                    self.learning_rate = self.learning_rate_list[2]
+                    self.learning_rate_sdf = self.learning_rate_sdf_list[2]
+                    self.learning_rate_feat = self.learning_rate_feat_list[2]
+                    self.learning_rate_alpha = self.learning_rate_alpha_list[2]
+                    self.learning_rate_cvt =  self.learning_rate_cvt_list[2]
+                    self.s_w = self.s_w_list[2]
+                    self.e_w =  self.e_w_list[2]
+                    self.tv_w = self.tv_w[2]
+                    self.tv_f = self.tv_f_list[2]
+
                     self.end_iter_loc = up_iters[2] - up_iters[1]
-                    self.learning_rate_alpha = 1.0e-2
-                    self.vortSDF_renderer_fine.mask_reg = 1.0
+                    self.vortSDF_renderer_fine.mask_reg = self.mask_w_list[2]
                     if self.double_net:
-                        self.vortSDF_renderer_coarse_net.mask_reg = 1.0
-                    #acc_it = 10
+                        self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[2]
                     
                     
                 if (iter_step+1) == up_iters[2]:
                     warm_up = 500
-                    self.R = 40
                     self.s_start = 200 #30/(10.0*self.sigma) #50.0
-                    self.s_max = 800 #60/(5.0*self.sigma) #200
-                    #self.sigma = 0.02
-                    """self.s_w = 5.0e-3
-                    self.e_w = 1.0e-3
-                    self.tv_w = 1.0e-3"""
-                    self.s_w = 0.005 #5.0e-4
-                    self.e_w =  0.0#1.0e-5#1.0e-5 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 1.0e-4#1.0e-7#1.0e-7 #1.0e-8 #1.0e-1
-                    #self.w_g = 0.0
-                    #acc_it = 10
+                    self.s_max = 500 #60/(5.0*self.sigma) #200
 
-                    self.tv_f = 1.0e-10# 1.0e-7 #1.0e-7
-                    self.f_w = 1.0
-                    self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 5.0e-3 #1e-4
-                    self.learning_rate_feat = 5.0e-3 #1.0e-2
+                    self.learning_rate = self.learning_rate_list[3]
+                    self.learning_rate_sdf = self.learning_rate_sdf_list[3]
+                    self.learning_rate_feat = self.learning_rate_feat_list[3]
+                    self.learning_rate_alpha = self.learning_rate_alpha_list[3]
+                    self.learning_rate_cvt =  self.learning_rate_cvt_list[3]
+                    self.s_w = self.s_w_list[3]
+                    self.e_w =  self.e_w_list[3]
+                    self.tv_w = self.tv_w[3]
+                    self.tv_f = self.tv_f_list[3]
+
                     self.end_iter_loc = up_iters[3] - up_iters[2]
-                    self.vortSDF_renderer_fine.mask_reg = 1.0
+                    self.vortSDF_renderer_fine.mask_reg = self.mask_w_list[3]
                     if self.double_net:
-                        self.vortSDF_renderer_coarse_net.mask_reg = 1.0
-                    self.learning_rate_alpha = 1.0e-2
+                        self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[3]
                     lamda_c = 0.5
                     
 
                 if (iter_step+1) == up_iters[3]:
                     warm_up = 500
-                    self.R = 40
-                    self.s_start = 400# 30/(10.0*self.sigma) #50.0
-                    self.s_max = 1200# 60/(5.0*self.sigma) #200
-                    #self.sigma = 0.01
-                    """self.s_w = 2.0e-4 #2.0e-6
-                    self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
-                    self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
-                    self.s_w = 1.0e-2 #2.0e-6
-                    self.e_w =  0.0#1.0e-5#1.0e-8 #1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
-                    self.tv_w = 1.0e-3#1.0e-7 #1.0e-8 #1.0e-1
-                    self.tv_f = 0.0#1.0e-10#1.0e-7 #1.0e-4
-                    self.f_w = 10.0
-                    #self.w_g = 0.1
+                    self.s_start = 300# 30/(10.0*self.sigma) #50.0
+                    self.s_max = 800# 60/(5.0*self.sigma) #200
+
+                    self.learning_rate = self.learning_rate_list[4]
+                    self.learning_rate_sdf = self.learning_rate_sdf_list[4]
+                    self.learning_rate_feat = self.learning_rate_feat_list[4]
+                    self.learning_rate_alpha = self.learning_rate_alpha_list[4]
+                    self.learning_rate_cvt =  self.learning_rate_cvt_list[4]
+                    self.s_w = self.s_w_list[4]
+                    self.e_w =  self.e_w_list[4]
+                    self.tv_w = self.tv_w[4]
+                    self.tv_f = self.tv_f_list[4]
+
                     self.end_iter_loc = up_iters[4] - up_iters[3]
-                    self.learning_rate = 1e-3
-                    self.learning_rate_sdf = 1.0e-3
-                    self.learning_rate_feat = 1.0e-3
-                    self.vortSDF_renderer_fine.mask_reg = 1.0e-1
+                    self.vortSDF_renderer_fine.mask_reg = self.mask_w_list[4]
                     if self.double_net:
-                        self.vortSDF_renderer_coarse_net.mask_reg = 1.0e-1
-                    self.learning_rate_alpha = 1.0e-3
-                    lamda_c = 0.2
+                        self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[4]
+                    lamda_c = 0.5
                     #full_reg = 3
                     
                 if (iter_step+1) == up_iters[4]:
-                    self.R = 10
                     self.s_start = 400#30/(10.0*self.sigma) #50.0
                     self.s_max = 2000#60/(5.0*self.sigma) #200
-                    #self.sigma = 0.006
-                    #self.sigma_feat = 0.02
-                    """self.s_w = 1.0e-2
-                    self.e_w = 1.0e-4
-                    self.tv_w = 1.0e-2"""
-                    #self.w_g = 0.01
-                    self.s_w = 1.0e-5 #5.0e-4
-                    self.e_w = 0.0#1.0e-6 #1.0e-7
-                    self.tv_w = 5.0e-6#1.0e-8 #1.0e-4 #1.0e-3
-                    self.tv_f = 1.0e-9#1.0e-8 #1.0e-3
-                    self.f_w = 10.0#10.0#1.0e3
+
+                    self.learning_rate = self.learning_rate_list[5]
+                    self.learning_rate_sdf = self.learning_rate_sdf_list[5]
+                    self.learning_rate_feat = self.learning_rate_feat_list[5]
+                    self.learning_rate_alpha = self.learning_rate_alpha_list[5]
+                    self.learning_rate_cvt =  self.learning_rate_cvt_list[5]
+                    self.s_w = self.s_w_list[5]
+                    self.e_w =  self.e_w_list[5]
+                    self.tv_w = self.tv_w_list[5]
+                    self.tv_f = self.tv_f_list[5]
+
                     self.end_iter_loc = self.end_iter - up_iters[4]
-                    self.learning_rate = 5e-4
-                    self.learning_rate_sdf = 1.0e-4
-                    self.learning_rate_feat = 1.0e-4
-                    self.vortSDF_renderer_fine.mask_reg = 1.0e-3
+                    self.vortSDF_renderer_fine.mask_reg = self.mask_w_list[5]
                     if self.double_net:
-                        self.vortSDF_renderer_coarse_net.mask_reg = 1.0e-3
-                    self.learning_rate_alpha = 1.0e-8
+                        self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[5]
                     lamda_c = 0.2
-                    #self.val_freq = 2000
-                    #verbose = True
-                    #full_reg = 3
 
                 print("SIGMA => ", self.sigma)
                 #with torch.no_grad():
@@ -1723,135 +1714,114 @@ class Runner:
             self.sigma = self.sigma/2.0
 
         if (self.iter_step+1) == up_iters[0]:
-            """self.s_w = 1.0e-4
-            self.e_w = 5.0e-6
-            self.tv_w = 1.0e-5"""
-            self.R = 100
-            self.s_w = 1e-3
-            self.e_w = 0.0#1.0e-5#1.0e-4 #5.0e-3
-            self.tv_w = 1.0e-4 #1.0e-1
-            self.tv_f = 1.0e-11 #1.0e-6
             self.s_start = 50 #30/(10.0*self.sigma) #50.0
             self.s_max = 200 #60/(5.0*self.sigma) #200
-            self.learning_rate = 1e-3
-            self.learning_rate_sdf = 1.0e-2
-            self.learning_rate_feat = 1.0e-2
+
+            self.learning_rate = self.learning_rate_list[1]
+            self.learning_rate_sdf = self.learning_rate_sdf_list[1]
+            self.learning_rate_feat = self.learning_rate_feat_list[1]
+            self.learning_rate_alpha = self.learning_rate_alpha_list[1]
+            self.learning_rate_cvt =  self.learning_rate_cvt_list[1]
+            self.s_w = self.s_w_list[1]
+            self.e_w =  self.e_w_list[1]
+            self.tv_w = self.tv_w[1]
+            self.tv_f = self.tv_f_list[1]
+
             self.end_iter_loc = up_iters[1] - up_iters[0]
-            self.learning_rate_alpha = 1.0e-2
-            self.vortSDF_renderer_fine.mask_reg = 1.0#1.0e-2
+            self.vortSDF_renderer_fine.mask_reg = self.mask_w_list[1]
+            if self.double_net:
+                self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[1]
             #verbose = True
             
 
         if (self.iter_step+1) == up_iters[1]:
-            self.R = 50
             self.s_start = 100 #30/(10.0*self.sigma) #50.0
             self.s_max = 400 #60/(5.0*self.sigma) #200
-            """self.s_w = 1.0e-3
-            self.e_w = 5.0e-4
-            self.tv_w = 1.0e-5"""
-            self.s_w = 1e-3
-            self.e_w = 0.0#1.0e-5#5.0e-5 #1.0e-8 #5.0e-3
-            self.tv_w = 1.0e-5 #1.0e-8 #1.0e-1
-            self.tv_f = 1.0e-10
-            self.f_w = 1.0 #1.0
-            self.learning_rate = 1e-3
-            self.learning_rate_sdf = 1.0e-2
-            self.learning_rate_feat = 1.0e-2
+
+            self.learning_rate = self.learning_rate_list[2]
+            self.learning_rate_sdf = self.learning_rate_sdf_list[2]
+            self.learning_rate_feat = self.learning_rate_feat_list[2]
+            self.learning_rate_alpha = self.learning_rate_alpha_list[2]
+            self.learning_rate_cvt =  self.learning_rate_cvt_list[2]
+            self.s_w = self.s_w_list[2]
+            self.e_w =  self.e_w_list[2]
+            self.tv_w = self.tv_w[2]
+            self.tv_f = self.tv_f_list[2]
+
             self.end_iter_loc = up_iters[2] - up_iters[1]
-            self.learning_rate_alpha = 1.0e-2
-            self.vortSDF_renderer_fine.mask_reg = 1.0e-1
-            #acc_it = 10
+            self.vortSDF_renderer_fine.mask_reg = self.mask_w_list[2]
+            if self.double_net:
+                self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[2]
             
             
         if (self.iter_step+1) == up_iters[2]:
             warm_up = 500
-            self.R = 40
-            self.s_start = 100 #30/(10.0*self.sigma) #50.0
-            self.s_max = 400 #60/(5.0*self.sigma) #200
-            #self.sigma = 0.02
-            """self.s_w = 5.0e-3
-            self.e_w = 1.0e-3
-            self.tv_w = 1.0e-3"""
-            self.s_w = 0.005 #5.0e-4
-            self.e_w =  0.0#1.0e-5#1.0e-5 #1.0e-9 #1.0e-7 #5.0e-3
-            self.tv_w = 1.0e-4#1.0e-7#1.0e-7 #1.0e-8 #1.0e-1
-            #self.w_g = 0.0
-            #acc_it = 10
+            self.s_start = 200 #30/(10.0*self.sigma) #50.0
+            self.s_max = 500 #60/(5.0*self.sigma) #200
 
-            self.tv_f = 1.0e-10# 1.0e-7 #1.0e-7
-            self.f_w = 1.0
-            self.learning_rate = 1e-3
-            self.learning_rate_sdf = 5.0e-3 #1e-4
-            self.learning_rate_feat = 5.0e-3 #1.0e-2
+            self.learning_rate = self.learning_rate_list[3]
+            self.learning_rate_sdf = self.learning_rate_sdf_list[3]
+            self.learning_rate_feat = self.learning_rate_feat_list[3]
+            self.learning_rate_alpha = self.learning_rate_alpha_list[3]
+            self.learning_rate_cvt =  self.learning_rate_cvt_list[3]
+            self.s_w = self.s_w_list[3]
+            self.e_w =  self.e_w_list[3]
+            self.tv_w = self.tv_w[3]
+            self.tv_f = self.tv_f_list[3]
+
             self.end_iter_loc = up_iters[3] - up_iters[2]
-            self.vortSDF_renderer_fine.mask_reg = 1.0
+            self.vortSDF_renderer_fine.mask_reg = self.mask_w_list[3]
             if self.double_net:
-                self.vortSDF_renderer_coarse_net.mask_reg = 1.0
-            self.learning_rate_alpha = 1.0e-2
-
-            self.sigma_start = 0.012
-            self.sigma_max = 0.006
+                self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[3]
+            lamda_c = 0.5
             
 
         if (self.iter_step+1) == up_iters[3]:
             warm_up = 500
-            self.R = 40
-            self.s_start = 400# 30/(10.0*self.sigma) #50.0
-            self.s_max = 4000# 60/(5.0*self.sigma) #200
-            #self.sigma = 0.01
-            """self.s_w = 2.0e-4 #2.0e-6
-            self.e_w = 1.0e-5 #1.0e-7 #5.0e-3
-            self.tv_w = 1.0e-4 #1.0e-8 #1.0e-1"""
-            self.s_w = 1.0e-4 #2.0e-6
-            self.e_w =  0.0#1.0e-5#1.0e-8 #1.0e-6 #1.0e-9 #1.0e-7 #5.0e-3
-            self.tv_w = 1.0e-5#1.0e-7 #1.0e-8 #1.0e-1
-            self.tv_f = 0.0#1.0e-10#1.0e-7 #1.0e-4
-            self.f_w = 10.0
-            #self.w_g = 0.1
+            self.s_start = 300# 30/(10.0*self.sigma) #50.0
+            self.s_max = 800# 60/(5.0*self.sigma) #200
+
+            self.learning_rate = self.learning_rate_list[4]
+            self.learning_rate_sdf = self.learning_rate_sdf_list[4]
+            self.learning_rate_feat = self.learning_rate_feat_list[4]
+            self.learning_rate_alpha = self.learning_rate_alpha_list[4]
+            self.learning_rate_cvt =  self.learning_rate_cvt_list[4]
+            self.s_w = self.s_w_list[4]
+            self.e_w =  self.e_w_list[4]
+            self.tv_w = self.tv_w[4]
+            self.tv_f = self.tv_f_list[4]
+
             self.end_iter_loc = up_iters[4] - up_iters[3]
-            self.learning_rate = 1e-3
-            self.learning_rate_sdf = 1.0e-2
-            self.learning_rate_feat = 1.0e-2
-            self.vortSDF_renderer_fine.mask_reg = 1.0e-2
-            self.learning_rate_alpha = 1.0e-3
+            self.vortSDF_renderer_fine.mask_reg = self.mask_w_list[4]
+            if self.double_net:
+                self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[4]
             lamda_c = 0.5
             #full_reg = 3
             
         if (self.iter_step+1) == up_iters[4]:
-            self.R = 10
             self.s_start = 400#30/(10.0*self.sigma) #50.0
             self.s_max = 2000#60/(5.0*self.sigma) #200
-            #self.sigma = 0.006
-            #self.sigma_feat = 0.02
-            """self.s_w = 1.0e-2
-            self.e_w = 1.0e-4
-            self.tv_w = 1.0e-2"""
-            #self.w_g = 0.01
-            self.s_w = 1.0e-5 #5.0e-4
-            self.e_w = 0.0#1.0e-6 #1.0e-7
-            self.tv_w = 5.0e-6#1.0e-8 #1.0e-4 #1.0e-3
-            self.tv_f = 1.0e-9#1.0e-8 #1.0e-3
-            self.f_w = 10.0#10.0#1.0e3
-            self.end_iter_loc = self.end_iter - up_iters[4]
-            self.learning_rate = 5e-4
-            self.learning_rate_sdf = 1.0e-4
-            self.learning_rate_feat = 1.0e-4
-            self.vortSDF_renderer_fine.mask_reg = 1.0e-3
-            self.learning_rate_alpha = 1.0e-8
-            lamda_c = 0.2
-            #self.val_freq = 2000
-            #verbose = True
-            #full_reg = 3
 
-            self.tv_f = 0.0
+            self.learning_rate = self.learning_rate_list[5]
+            self.learning_rate_sdf = self.learning_rate_sdf_list[5]
+            self.learning_rate_feat = self.learning_rate_feat_list[5]
+            self.learning_rate_alpha = self.learning_rate_alpha_list[5]
+            self.learning_rate_cvt =  self.learning_rate_cvt_list[5]
+            self.s_w = self.s_w_list[5]
+            self.e_w =  self.e_w_list[5]
+            self.tv_w = self.tv_w_list[5]
+            self.tv_f = self.tv_f_list[5]
             self.f_w = 1.0
-            self.learning_rate = 5e-4
-            self.learning_rate_sdf = 1e-4
-            self.learning_rate_feat = 1e-4 #1.0e-2
-            self.end_iter_loc = 20000
-            self.vortSDF_renderer_fine.mask_reg = 1.0e-2
-            self.learning_rate_alpha = 1.0e-2
 
+            self.end_iter_loc = self.end_iter - up_iters[4]
+            self.vortSDF_renderer_fine.mask_reg = self.mask_w_list[5]
+            if self.double_net:
+                self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[5]
+            lamda_c = 0.2
+            self.sigma_start = 0.0056
+            self.sigma_max = 0.003
+
+       
         
         self.w_g = 1.0
         self.mask_background = abs(self.sdf) > 10.0 #4.0*self.sigma
