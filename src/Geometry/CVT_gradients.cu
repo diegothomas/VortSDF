@@ -1145,11 +1145,11 @@ __global__ void eikonal_grad_kernel(
     ids[0] = tets[4*idx];  ids[1] = tets[4*idx + 1];  ids[2] = tets[4*idx + 2];
     ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[4*idx + 3];
 
-    if (activated[ids[0]] == 0 && 
+    /*if (activated[ids[0]] == 0 && 
         activated[ids[1]] == 0 && 
         activated[ids[2]] == 0 && 
         activated[ids[3]] == 0)
-        return;
+        return;*/
 
     float center_sdf = (sdf[ids[0]] + sdf[ids[1]] + sdf[ids[2]] + sdf[ids[3]])/4.0f;
     float center_sdf_smooth = (sdf_smooth[ids[0]] + sdf_smooth[ids[1]] + sdf_smooth[ids[2]] + sdf_smooth[ids[3]])/4.0f;
@@ -1203,7 +1203,7 @@ __global__ void eikonal_grad_kernel(
         
         atomicAdd(&grad_eik[ids[i]], (diff_loss[0] * Weights_curr[3*i] + 
                                         diff_loss[1] * Weights_curr[3*i + 1] + 
-                                        diff_loss[2] * Weights_curr[3*i + 2]));//*volume_tet / weights_tot[ids[i]]);
+                                        diff_loss[2] * Weights_curr[3*i + 2])*volume_tet / weights_tot[ids[i]]);
                                         
         atomicAdd(&grad_smooth[ids[i]], ((elem_0 - elem_smooth_0) * Weights_curr[3*i] + 
                                         (elem_1 - elem_smooth_1) * Weights_curr[3*i + 1] + 

@@ -378,7 +378,7 @@ class Runner:
             self.sigma_max = self.sigma_start * 0.8
             self.w_g = 1.0
 
-        lamda_c = 0.5
+        lamda_c = 0.0
             
         self.sigma_feat = 0.06
         warm_up = 0 #200
@@ -386,7 +386,7 @@ class Runner:
         image_perm = self.get_image_perm()
         num_rays = self.batch_size
 
-        full_reg = self.end_iter #3 #self.end_iter
+        full_reg = 100 #self.end_iter #3 #self.end_iter
         self.activated[:] = 1
         with torch.no_grad():
             self.sdf_smooth[:] = self.sdf[:]
@@ -749,7 +749,7 @@ class Runner:
                 #grad_sdf =  self.f_w*(self.grad_sdf_net + self.grad_sdf_norm) +\
                 #    ((1.0 - lamda_c)*self.vortSDF_renderer_fine.grads_sdf + lamda_c*self.vortSDF_renderer_coarse_net.grads_sdf)
                 #grad_sdf =  (self.vortSDF_renderer_fine.grads_sdf)
-                self.grad_sdf = self.vortSDF_renderer_fine.grads_sdf + lamda_c*self.vortSDF_renderer_coarse_net.grads_sdf + self.f_w*(self.grad_sdf_net + self.grad_sdf_norm) # +\
+                self.grad_sdf = self.vortSDF_renderer_fine.grads_sdf + lamda_c*self.vortSDF_renderer_coarse_net.grads_sdf + self.f_w*self.grad_sdf_norm #(self.grad_sdf_net + self.grad_sdf_norm) # +\
                              #(math.sin(0.5*math.pi*self.loc_iter/self.end_iter_loc)*self.vortSDF_renderer_fine.grads_sdf +\
                              #   (1.0 - math.sin(0.5*math.pi*self.loc_iter/self.end_iter_loc))*self.vortSDF_renderer_coarse_net.grads_sdf)
             else:
@@ -919,7 +919,8 @@ class Runner:
 
                 if not iter_step % full_reg == 0:
                     self.grad_norm_smooth[self.sdf.grad[:] == 0.0] = 0.0
-                    self.grad_eik[self.sdf.grad[:] == 0.0] = 0.0
+                    #self.grad_eik[self.sdf.grad[:] == 0.0] = 0.0
+                    self.grad_sdf_L2[self.sdf.grad[:] == 0.0] = 0.0
                     self.grad_sdf_smooth[self.sdf.grad[:] == 0.0] = 0.0
                     """self.grad_norm_smooth[:] = 0.0
                     self.grad_eik[:] = 0.0
@@ -945,7 +946,7 @@ class Runner:
                                                                                 self.s_w*self.grad_norm_smooth+\
                                                                                 self.tv_w*self.grad_sdf_smooth) #abs(self.sdf.grad)*
                 else: 
-                    self.sdf.grad = self.sdf.grad + self.s_w*(self.grad_norm_smooth + self.grad_sdf_L2) + self.tv_w*self.grad_sdf_smooth #+ self.w_g * (self.e_w*self.grad_eik+\
+                    self.sdf.grad = self.sdf.grad + self.s_w*(self.grad_norm_smooth + self.grad_sdf_L2) + self.tv_w*self.grad_sdf_smooth + self.e_w*self.grad_eik
                     #                                                self.s_w*(self.grad_norm_smooth + self.grad_sdf_L2)+\
                     #                                                self.tv_w*self.grad_sdf_smooth) #abs(self.sdf.grad)*
                     
@@ -1204,7 +1205,7 @@ class Runner:
                 #torch.cuda.empty_cache()
 
             if (iter_step+1) % self.report_freq == 0:
-                print('iter:{:8>d} loss = {}, scale={}, grad={}, grad_feat = {}, grad_nrm = {}, grad_tv_feat = {} lr={}'.format(iter_step, loss, self.inv_s, abs(self.grad_sdf[abs(self.grad_sdf) > 0.0]).mean(), abs(self.grad_features[abs(self.grad_features) > 0.0]).mean(), abs(self.grad_norm_smooth[abs(self.grad_norm_smooth) > 0.0]).mean(), abs(self.grad_feat_smooth[abs(self.grad_feat_smooth) > 0.0]).mean(), self.optimizer.param_groups[0]['lr']))
+                print('iter:{:8>d} loss = {}, loss_coarse = {}, scale={}, grad={}, grad_feat = {}, grad_nrm = {}, grad_tv_feat = {} lr={}'.format(iter_step, color_fine_loss, color_coarse_loss, self.inv_s, abs(self.grad_sdf[abs(self.grad_sdf) > 0.0]).mean(), abs(self.grad_features[abs(self.grad_features) > 0.0]).mean(), abs(self.grad_norm_smooth[abs(self.grad_norm_smooth) > 0.0]).mean(), abs(self.grad_feat_smooth[abs(self.grad_feat_smooth) > 0.0]).mean(), self.optimizer.param_groups[0]['lr']))
                 print('learning_rate_alpha:{} grad_tv={}, grad_sdf_L2 = {}'.format(self.learning_rate_alpha, abs(self.grad_sdf_smooth[abs(self.grad_sdf_smooth) > 0.0]).mean(), abs(self.grad_sdf_L2[abs(self.grad_sdf_L2) > 0.0]).mean()))
                 print('iter:{:8>d} s_w = {}, e_w = {}, tv_w = {}, nb_samples={}, sigma={}, w_g={}, full_reg={}, lr={}'.format(iter_step, self.s_w, self.e_w, self.tv_w, nb_samples, self.sigma, self.w_g, full_reg, self.optimizer_sdf.param_groups[0]['lr']))
                 #print('iter:{:8>d} loss CVT = {} lr={}'.format(iter_step, loss_cvt, self.optimizer_cvt.param_groups[0]['lr']))
@@ -1398,7 +1399,7 @@ class Runner:
         self.grad_eik[:] = 0.0
         self.grad_norm_smooth[:] = 0.0
         self.eik_loss[:] = 0.0
-        self.activated[:] = 1
+        self.activated[:] = 2
         
         with torch.no_grad():
             self.sdf_smooth[:] = 0.0
@@ -1811,7 +1812,7 @@ class Runner:
             self.e_w =  self.e_w_list[5]
             self.tv_w = self.tv_w_list[5]
             self.tv_f = self.tv_f_list[5]
-            self.f_w = 1.0
+            self.f_w = 1.0e2
 
             self.end_iter_loc = self.end_iter - up_iters[4]
             self.vortSDF_renderer_fine.mask_reg = self.mask_w_list[5]
