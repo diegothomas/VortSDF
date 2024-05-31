@@ -94,6 +94,8 @@ class Runner:
 
         self.res = self.conf.get_int('train.res')        
         self.dim_feats = self.conf.get_int('train.dim_feats')
+        self.knn = self.conf.get_int('train.knn')
+        self.hlvl = self.conf.get_int('train.hlvl')
 
         self.learning_rate = self.learning_rate_list[0]
         self.learning_rate_sdf = self.learning_rate_sdf_list[0]
@@ -235,7 +237,7 @@ class Runner:
             sites = np.concatenate((sites, cam_sites))
             #sites = np.concatenate((ext_sites1, ext_sites2, sites, cam_sites))
 
-            self.tet32 = tet32.Tet32(sites, id = 0)
+            self.tet32 = tet32.Tet32(sites, 0, self.knn, self.hlvl)
             #self.tet32.start() 
             #print("parallel process started")
             #self.tet32.join()
@@ -422,13 +424,19 @@ class Runner:
             num_rays = self.batch_size
 
             #data = self.dataset.gen_random_rays_zbuff_at(img_idx, num_rays, 0) 
-            data = self.dataset.gen_random_rays_smooth_at(img_idx, num_rays, lvl) 
-            rays_o, rays_d, true_rgb, mask = data[:, :3], data[:, 3: 6], data[:, 6: 9], data[:, 9: 10]
+            #data = self.dataset.gen_random_rays_smooth_at(img_idx, num_rays, lvl) 
+            if iter_step+1 < up_iters[4]:
+                data = self.dataset.get_random_rays(num_rays)
+            else:
+                data = self.dataset.get_random_rays_masked(num_rays)
+
+            rays_o, rays_d, true_rgb, mask, img_ids = data[:, :3], data[:, 3: 6], data[:, 6: 9], data[:, 9: 10], data[:, 10: 11]
 
             rays_o = rays_o.reshape(-1, 3)
             rays_d = rays_d.reshape(-1, 3)
             true_rgb = true_rgb.reshape(-1, 3)
             mask = mask.reshape(-1, 1)
+            img_ids = img_ids.reshape(-1, 1)
             
             """if iter_step > 30000:
                 rays_o = rays_o[mask[:,0] > 0.5]
@@ -440,20 +448,21 @@ class Runner:
             rays_d = rays_d.contiguous()
             true_rgb = true_rgb.contiguous()
             mask = mask.contiguous()        
+            img_ids = img_ids.contiguous().int()    
 
             if True: #not (iter_step > 5000 and self.loc_iter > 0 and self.loc_iter < warm_up): 
                 if iter_step % acc_it == 0:
                     self.activated[:] = 2
                     with torch.no_grad():
                         self.sdf_smooth[:] = self.sdf[:]
-                    backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.sigma_feat, 1, self.sites,  self.activated,
+                    backprop_cuda.knn_smooth(self.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.sites,  self.activated,
                                             self.grad_sdf_space, self.sdf.detach(), self.fine_features.detach(), self.tet32.knn_sites, self.sdf_smooth)
                 
             ## sample points along the rays
             start = timer()
             self.offsets[:] = 0
             self.activated[:] = 0
-            nb_samples = self.tet32.sample_rays_cuda(self.inv_s, img_idx, rays_d, self.sdf_smooth, cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_ids, self.offsets, self.activated, self.n_samples)    
+            nb_samples = self.tet32.sample_rays_cuda(self.inv_s, img_ids, rays_d, self.sdf_smooth, cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_ids, self.offsets, self.activated, self.n_samples)    
             if verbose:
                 print('CVT_Sample time:', timer() - start)   
 
@@ -463,7 +472,7 @@ class Runner:
             if True: #not (iter_step > 5000 and self.loc_iter > 0 and self.loc_iter < warm_up): 
                 start = timer()
                 self.activated_buff[:] = self.activated[:]
-                backprop_cuda.activate_sites(rays_o.shape[0], self.sites.shape[0], 96, self.out_ids, self.offsets, self.tet32.knn_sites, self.activated_buff, self.activated)
+                backprop_cuda.activate_sites(rays_o.shape[0], self.sites.shape[0], self.knn*self.hlvl, self.out_ids, self.offsets, self.tet32.knn_sites, self.activated_buff, self.activated)
                 self.activated = self.activated + self.activated_buff
                 if verbose:
                     print('activate time:', timer() - start)   
@@ -765,7 +774,7 @@ class Runner:
             #self.activated[abs(self.grad_sdf) > 0.0] = 1
             #self.activated[grad_sdf == 0.0] = -1
             self.grad_sdf_smooth[:] = 0.0
-            backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.sigma_feat, 1, self.sites, self.activated,
+            backprop_cuda.knn_smooth(self.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.sites, self.activated,
                                         self.grad_sdf_space, self.grad_sdf, self.fine_features, self.tet32.knn_sites, self.grad_sdf_smooth)
             self.grad_sdf[:] = self.grad_sdf_smooth[:]
             self.grad_sdf[outside_flag[:] == 1.0] = 0.0   
@@ -1094,7 +1103,7 @@ class Runner:
                     self.learning_rate_cvt =  self.learning_rate_cvt_list[1]
                     self.s_w = self.s_w_list[1]
                     self.e_w =  self.e_w_list[1]
-                    self.tv_w = self.tv_w[1]
+                    self.tv_w = self.tv_w_list[1]
                     self.tv_f = self.tv_f_list[1]
 
                     self.end_iter_loc = up_iters[1] - up_iters[0]
@@ -1115,7 +1124,7 @@ class Runner:
                     self.learning_rate_cvt =  self.learning_rate_cvt_list[2]
                     self.s_w = self.s_w_list[2]
                     self.e_w =  self.e_w_list[2]
-                    self.tv_w = self.tv_w[2]
+                    self.tv_w = self.tv_w_list[2]
                     self.tv_f = self.tv_f_list[2]
 
                     self.end_iter_loc = up_iters[2] - up_iters[1]
@@ -1127,7 +1136,7 @@ class Runner:
                 if (iter_step+1) == up_iters[2]:
                     warm_up = 500
                     self.s_start = 200 #30/(10.0*self.sigma) #50.0
-                    self.s_max = 500 #60/(5.0*self.sigma) #200
+                    self.s_max = 600 #60/(5.0*self.sigma) #200
 
                     self.learning_rate = self.learning_rate_list[3]
                     self.learning_rate_sdf = self.learning_rate_sdf_list[3]
@@ -1136,7 +1145,7 @@ class Runner:
                     self.learning_rate_cvt =  self.learning_rate_cvt_list[3]
                     self.s_w = self.s_w_list[3]
                     self.e_w =  self.e_w_list[3]
-                    self.tv_w = self.tv_w[3]
+                    self.tv_w = self.tv_w_list[3]
                     self.tv_f = self.tv_f_list[3]
 
                     self.end_iter_loc = up_iters[3] - up_iters[2]
@@ -1149,7 +1158,7 @@ class Runner:
                 if (iter_step+1) == up_iters[3]:
                     warm_up = 500
                     self.s_start = 300# 30/(10.0*self.sigma) #50.0
-                    self.s_max = 800# 60/(5.0*self.sigma) #200
+                    self.s_max = 1000# 60/(5.0*self.sigma) #200
 
                     self.learning_rate = self.learning_rate_list[4]
                     self.learning_rate_sdf = self.learning_rate_sdf_list[4]
@@ -1158,7 +1167,7 @@ class Runner:
                     self.learning_rate_cvt =  self.learning_rate_cvt_list[4]
                     self.s_w = self.s_w_list[4]
                     self.e_w =  self.e_w_list[4]
-                    self.tv_w = self.tv_w[4]
+                    self.tv_w = self.tv_w_list[4]
                     self.tv_f = self.tv_f_list[4]
 
                     self.end_iter_loc = up_iters[4] - up_iters[3]
@@ -1170,7 +1179,7 @@ class Runner:
                     
                 if (iter_step+1) == up_iters[4]:
                     self.s_start = 400#30/(10.0*self.sigma) #50.0
-                    self.s_max = 2000#60/(5.0*self.sigma) #200
+                    self.s_max = 3000#60/(5.0*self.sigma) #200
 
                     self.learning_rate = self.learning_rate_list[5]
                     self.learning_rate_sdf = self.learning_rate_sdf_list[5]
@@ -1340,10 +1349,10 @@ class Runner:
         self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), os.path.join(self.base_exp_dir, 'final_MT.ply'), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][:3, :3])        
         #self.tet32.make_clipped_CVT(self.sdf.detach(), 2*self.sigma, self.grad_sdf_space, self.visual_hull,  "Exp/{}/final_CVT.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
         
-        self.activated[:] = 1
+        self.activated[:] = 2
         with torch.no_grad():
             self.sdf_smooth[:] = 0.0
-        backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.sigma_feat, 1, self.sites,  self.activated,
+        backprop_cuda.knn_smooth(self.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.sites,  self.activated,
                                         self.grad_sdf_space, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)
             
         self.grad_sdf_space[:] = 0.0
@@ -1403,7 +1412,7 @@ class Runner:
         
         with torch.no_grad():
             self.sdf_smooth[:] = 0.0
-        backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.sigma_feat, 1, self.sites,  self.activated,
+        backprop_cuda.knn_smooth(self.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.sites,  self.activated,
                                 self.grad_sdf_space, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)
 
         cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, self.activated, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
@@ -1425,7 +1434,8 @@ class Runner:
             start = timer()
             self.offsets[:] = 0
             self.activated[:] = 1
-            nb_samples = self.tet32.sample_rays_cuda(self.inv_s, img_idx, rays_d_batch, self.sdf_smooth, self.cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_ids, self.offsets, self.activated, self.n_samples)    
+            img_ids = img_idx*torch.ones((rays_o_batch.shape[0], 1)).cuda().int()
+            nb_samples = self.tet32.sample_rays_cuda(self.inv_s, img_ids, rays_d_batch, self.sdf_smooth, self.cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_ids, self.offsets, self.activated, self.n_samples)    
             #nb_samples = self.tet32.sample_rays_cuda(0.01, self.inv_s, self.sigma, img_idx, rays_d_batch, self.sdf, self.fine_features, cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_feat, self.in_ids, self.offsets, self.activated, self.n_samples)    
                 
             start = timer()

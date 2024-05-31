@@ -7,12 +7,12 @@ int tet32_march_cuda(
 	float inv_s,
     size_t num_rays,
     size_t num_samples,
-    size_t cam_id,
     torch::Tensor rays,      // [N_rays, 6]
     torch::Tensor vertices, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor sdf, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor nei_tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor cam_id_rays,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor cam_ids,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor offsets_cam,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor cam_tets,    // [N_sites, 3] for each voxel => it's vertices
@@ -57,12 +57,12 @@ int tet32_march(
 	float inv_s,
     size_t num_rays,
     size_t num_samples,
-    size_t cam_id,
     torch::Tensor rays,      // [N_rays, 6]
     torch::Tensor vertices, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor sdf, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor nei_tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor cam_id_rays,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor cam_ids,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor offsets_cam,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor cam_tets,    // [N_sites, 3] for each voxel => it's vertices
@@ -79,12 +79,12 @@ int tet32_march(
 	    inv_s,
         num_rays,
         num_samples,
-        cam_id,
         rays,
         vertices,
         sdf,
         tets,
         nei_tets, 
+        cam_id_rays,
         cam_ids,
         offsets_cam,
         cam_tets,

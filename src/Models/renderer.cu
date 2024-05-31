@@ -55,9 +55,11 @@ __device__ float3 mid_grad(float3 x, float3 y)
     float3 rb = y*y;
     return (x-y)/(min(sqrt(ra.x + ra.y + ra.z), sqrt(rb.x + rb.y + rb.z)) + 0.005f);*/
     float3 r = x-y;
-    r.x = r.x/(fabs(y.x) + 0.005f);
+    /*r.x = r.x/(fabs(y.x) + 0.005f);
     r.y = r.y/(fabs(y.y) + 0.005f);
-    r.z = r.z/(fabs(y.z) + 0.005f);
+    r.z = r.z/(fabs(y.z) + 0.005f);*/
+    if (y.x == 1.0f || y.y == 1.0f || y.z == 1.0f)
+        return 0.1*r;
     return r;
     //return (x-y);
 }

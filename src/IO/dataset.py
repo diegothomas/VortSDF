@@ -373,6 +373,10 @@ class Dataset:
         print(self.H, self.W)
         self.image_pixels = self.H * self.W
 
+
+        self.gen_all_rays()
+        self.gen_all_rays_masked()
+
         print('Load data: End')
 
     def save_dataset(self, data_name):
@@ -1001,6 +1005,130 @@ class Dataset:
         return z_buff[norm_pix > 0], torch.cat([rays_o[norm_pix > 0], rays_v[norm_pix > 0], color[norm_pix > 0], color_smooth[norm_pix > 0], mask[norm_pix > 0]], dim=-1)
         #return z_buff[rdm_smpls], torch.cat([rays_o[rdm_smpls], rays_v[rdm_smpls], color[rdm_smpls], mask[rdm_smpls]], dim=-1)
     
+    def gen_all_rays(self):
+        """
+        Generate all rays at world space from all camera.
+        """
+
+        self.all_rays_o = []
+        self.all_rays_v = []
+        self.all_masks = []
+        self.all_colors = []
+        self.all_ids = []
+
+        for img_idx in range(self.n_images):
+
+            if self.data_type == 'KINOVIS':
+                tx = torch.linspace(self.all_min_x[img_idx], self.all_max_x[img_idx]-1, self.all_max_x[img_idx] - self.all_min_x[img_idx])
+                ty = torch.linspace(self.all_min_y[img_idx], self.all_max_y[img_idx]-1, self.all_max_y[img_idx] - self.all_min_y[img_idx])
+                pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                color = self.images[img_idx][(pixels_y.long(), pixels_x.long())]    # batch_size, 3
+                mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3
+            else:
+                tx = torch.linspace(0, self.W - 1, self.W)
+                ty = torch.linspace(0, self.H - 1, self.H)
+                pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                color = self.images[img_idx][(pixels_y.long(), pixels_x.long())]    # batch_size, 3
+                mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3"""
+
+            pixels_x_f = pixels_x.float()# + torch.rand(pixels_x.shape)-0.5
+            pixels_y_f = pixels_y.float()# + torch.rand(pixels_y.shape)-0.5
+            p = torch.stack([pixels_x_f, pixels_y_f, torch.ones_like(pixels_y_f)], dim=-1).float().to(self.device)   # batch_size, 3
+            p = torch.matmul(self.intrinsics_all_inv[img_idx, None, None, :3, :3], p[:, :, :, None]).squeeze() # batch_size, 3
+            rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)    # batch_size, 3
+            rays_v = torch.matmul(self.pose_all[img_idx, None, None, :3, :3], rays_v[:, :, :, None]).squeeze()  # batch_size, 3
+            rays_o = self.pose_all[img_idx, None, None, :3, 3].expand(rays_v.shape) # batch_size, 3
+
+            self.all_rays_o.append(rays_o.cpu().reshape(-1,3))
+            self.all_rays_v.append(rays_v.cpu().reshape(-1,3))
+            self.all_masks.append(mask.cpu().reshape(-1,3)[:,:1])
+            self.all_colors.append(color.cpu().reshape(-1,3))
+            self.all_ids.append(img_idx*np.ones((color.shape[0]*color.shape[1], 1)))
+
+        self.all_rays_o = np.stack(self.all_rays_o, 0).reshape(-1,3)
+        self.all_rays_v = np.stack(self.all_rays_v, 0).reshape(-1,3)
+        self.all_masks = np.stack(self.all_masks, 0).reshape(-1,1)
+        self.all_colors = np.stack(self.all_colors, 0).reshape(-1,3)
+        self.all_ids = np.stack(self.all_ids, 0).reshape(-1,1)
+
+        print(self.all_rays_o.shape)
+        print(self.all_rays_v.shape)
+        print(self.all_masks.shape)
+        print(self.all_colors.shape)
+        print(self.all_ids.shape)
+        
+    def gen_all_rays_masked(self):
+        """
+        Generate all rays at world space from all camera.
+        """
+
+        self.all_rays_o_masked = []
+        self.all_rays_v_masked = []
+        self.all_masks_masked = []
+        self.all_colors_masked = []
+        self.all_ids_masked = []
+
+        for img_idx in range(self.n_images):
+
+            if self.data_type == 'KINOVIS':
+                tx = torch.linspace(self.all_min_x[img_idx], self.all_max_x[img_idx]-1, self.all_max_x[img_idx] - self.all_min_x[img_idx])
+                ty = torch.linspace(self.all_min_y[img_idx], self.all_max_y[img_idx]-1, self.all_max_y[img_idx] - self.all_min_y[img_idx])
+                pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                color = self.images[img_idx][(pixels_y.long(), pixels_x.long())]    # batch_size, 3
+                mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3
+            else:
+                tx = torch.linspace(0, self.W - 1, self.W)
+                ty = torch.linspace(0, self.H - 1, self.H)
+                pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                color = self.images[img_idx][(pixels_y.long(), pixels_x.long())]    # batch_size, 3
+                mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3"""
+
+            pixels_x_f = pixels_x.float()# + torch.rand(pixels_x.shape)-0.5
+            pixels_y_f = pixels_y.float()# + torch.rand(pixels_y.shape)-0.5
+            p = torch.stack([pixels_x_f, pixels_y_f, torch.ones_like(pixels_y_f)], dim=-1).float().to(self.device)   # batch_size, 3
+            p = torch.matmul(self.intrinsics_all_inv[img_idx, None, None, :3, :3], p[:, :, :, None]).squeeze() # batch_size, 3
+            rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)    # batch_size, 3
+            rays_v = torch.matmul(self.pose_all[img_idx, None, None, :3, :3], rays_v[:, :, :, None]).squeeze()  # batch_size, 3
+            rays_o = self.pose_all[img_idx, None, None, :3, 3].expand(rays_v.shape) # batch_size, 3
+
+            self.all_rays_o_masked.append(rays_o.cpu().reshape(-1,3))
+            self.all_rays_v_masked.append(rays_v.cpu().reshape(-1,3))
+            self.all_masks_masked.append(mask.cpu().reshape(-1,3)[:,:1])
+            self.all_colors_masked.append(color.cpu().reshape(-1,3))
+            self.all_ids_masked.append(img_idx*np.ones((color.shape[0]*color.shape[1], 1)))
+
+        self.all_rays_o_masked = np.stack(self.all_rays_o_masked, 0).reshape(-1,3)
+        self.all_rays_v_masked = np.stack(self.all_rays_v_masked, 0).reshape(-1,3)
+        self.all_masks_masked = np.stack(self.all_masks_masked, 0).reshape(-1,1)
+        self.all_colors_masked = np.stack(self.all_colors_masked, 0).reshape(-1,3)
+        self.all_ids_masked = np.stack(self.all_ids_masked, 0).reshape(-1,1)
+        
+        self.all_rays_o_masked = self.all_rays_o_masked[self.all_masks_masked[:,0] == 1, :]
+        self.all_rays_v_masked = self.all_rays_v_masked[self.all_masks_masked[:,0] == 1, :]
+        self.all_colors_masked = self.all_colors_masked[self.all_masks_masked[:,0] == 1, :]
+        self.all_ids_masked = self.all_ids_masked[self.all_masks_masked[:,0] == 1, :]
+        self.all_masks_masked = self.all_masks_masked[self.all_masks_masked[:,0] == 1, :]
+
+        print(self.all_rays_o_masked.shape)
+        print(self.all_rays_v_masked.shape)
+        print(self.all_masks_masked.shape)
+        print(self.all_colors_masked.shape)
+        print(self.all_ids_masked.shape)
+
+    def get_random_rays(self, batch_size):
+        tot_rays = self.all_rays_o.shape[0]
+        rand_ids = torch.randint(low=0, high=tot_rays, size=[batch_size])
+
+        return torch.cat([torch.from_numpy(self.all_rays_o[rand_ids,:]), torch.from_numpy(self.all_rays_v[rand_ids,:]), 
+                          torch.from_numpy(self.all_colors[rand_ids,:]), torch.from_numpy(self.all_masks[rand_ids,:]), torch.from_numpy(self.all_ids[rand_ids,:])], dim=-1).cuda().float()
+
+    def get_random_rays_masked(self, batch_size):
+        tot_rays = self.all_rays_o_masked.shape[0]
+        rand_ids = torch.randint(low=0, high=tot_rays, size=[batch_size])
+
+        return torch.cat([torch.from_numpy(self.all_rays_o_masked[rand_ids,:]), torch.from_numpy(self.all_rays_v_masked[rand_ids,:]), 
+                          torch.from_numpy(self.all_colors_masked[rand_ids,:]), torch.from_numpy(self.all_masks_masked[rand_ids,:]), torch.from_numpy(self.all_ids_masked[rand_ids,:])], dim=-1).cuda().float()
+
 
     def near_far_from_sphere(self, rays_o, rays_d):
         a = torch.sum(rays_d**2, dim=-1, keepdim=True)

@@ -122,6 +122,7 @@ void bnn_smooth_sdf_cuda(
 void knn_smooth_sdf_cuda(
     size_t num_sites,
     size_t num_knn,
+    size_t num_lvl,
     float sigma,
     float sigma_feat,
     size_t dim_sdf,
@@ -428,6 +429,7 @@ void bnn_smooth(
 void knn_smooth(
     size_t num_sites,
     size_t num_knn,
+    size_t num_lvl,
     float sigma,
     float sigma_feat,
     size_t dim_sdf,
@@ -442,6 +444,7 @@ void knn_smooth(
     knn_smooth_sdf_cuda(
         num_sites,
         num_knn,
+        num_lvl,
         sigma,
         sigma_feat,
         dim_sdf,

@@ -327,12 +327,12 @@ __global__ void tet32_march_cuda_kernel(
 	const float inv_s,
     const size_t num_rays,                // number of rays
     const size_t num_samples,                // number of rays
-    const size_t cam_id,
     const float *__restrict__ rays,       // [N_rays, 6]
     float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ tets,  
     int *__restrict__ nei_tets,  
+    const int *__restrict__ cam_id_rays,
     const int *__restrict__ cam_ids,  
     const int *__restrict__ offsets_cam,  
     const int *__restrict__ cam_tets,  
@@ -350,6 +350,8 @@ __global__ void tet32_march_cuda_kernel(
     {
         return;
     }
+
+	int cam_id = cam_id_rays[idx];
 
     int r_id = cam_ids[cam_id];
 
@@ -1425,12 +1427,12 @@ int tet32_march_cuda(
 	float inv_s,
     size_t num_rays,
     size_t num_samples,
-    size_t cam_id,
     torch::Tensor rays,      // [N_rays, 6]
     torch::Tensor vertices, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor sdf, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor nei_tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor cam_id_rays,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor cam_ids,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor offsets_cam,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor cam_tets,    // [N_sites, 3] for each voxel => it's vertices
@@ -1453,12 +1455,12 @@ int tet32_march_cuda(
 	 			inv_s,
                 num_rays,
                 num_samples,
-                cam_id,
                 rays.data_ptr<float>(),
                 vertices.data_ptr<float>(),
                 sdf.data_ptr<float>(),
                 tets.data_ptr<int>(),
                 nei_tets.data_ptr<int>(),
+                cam_id_rays.data_ptr<int>(),
                 cam_ids.data_ptr<int>(),
                 offsets_cam.data_ptr<int>(),
                 cam_tets.data_ptr<int>(),

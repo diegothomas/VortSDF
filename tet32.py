@@ -59,10 +59,11 @@ def get_faces_from_tetrahedron(tetrahedron):
 ## Implements the 32 bits tetrahedral mesh data structure
 class Tet32(Process):
     ## sites must be a (n,3) numpy array
-    def __init__(self, sites, id = 0, KNN = 24):
+    def __init__(self, sites, id = 0, knn = 24, hlvl=3):
         super(Tet32, self).__init__() 
         self.id = id
-        self.KNN = KNN
+        self.KNN = knn
+        self.hlvl = hlvl
         self.sites = sites
         self.device = torch.device('cuda')
         self.manager = Manager()
@@ -93,7 +94,7 @@ class Tet32(Process):
         self.neighbors = -np.ones([self.nb_tets, 4], dtype = np.int32)
 
         print("nb tets: ", self.nb_tets)
-        
+
 
         start = timer()
         self.summits = torch.from_numpy(self.summits).cuda().contiguous()
@@ -150,9 +151,9 @@ class Tet32(Process):
 
         start = timer()
         self.KDtree = scipy.spatial.KDTree(self.sites)
-        self.knn_sites = -1 * np.ones((self.sites.shape[0], 96))
-        _, idx = self.KDtree.query(self.sites, k=32)
-        self.knn_sites[:,:32] = np.asarray(idx[:,:])
+        self.knn_sites = -1 * np.ones((self.sites.shape[0], self.KNN*self.hlvl))
+        _, idx = self.KDtree.query(self.sites, k=self.KNN)
+        self.knn_sites[:,:self.KNN] = np.asarray(idx[:,:])
         print('KDTreeFlann time:', timer() - start)
         """print('radius time:', radius)
         start = timer()
@@ -260,20 +261,20 @@ class Tet32(Process):
     def make_multilvl_knn(self):
         start = timer()
 
-        self.knn_sites = -1 * np.ones((self.sites.shape[0], 96))
+        self.knn_sites = -1 * np.ones((self.sites.shape[0], self.KNN*self.hlvl))
         
         self.KDtree = scipy.spatial.KDTree(self.sites.cpu().numpy())
-        _, idx = self.KDtree.query(self.sites.cpu().numpy(), k=32)
-        self.knn_sites[:,:32] = np.asarray(idx[:,:])  
+        _, idx = self.KDtree.query(self.sites.cpu().numpy(), k=self.KNN)
+        self.knn_sites[:,:self.KNN] = np.asarray(idx[:,:])  
 
         print("self.lvl => ", self.lvl)
         
         curr_it = 1
-        start_lvl = max(0, self.lvl-2)
+        start_lvl = max(0, self.lvl-(self.hlvl-1))
         for lvl_curr in range(start_lvl,self.lvl):
             KDtree = scipy.spatial.KDTree(self.sites[self.lvl_sites[self.lvl-curr_it][:]].cpu().numpy())
-            _, idx = KDtree.query(self.sites.cpu().numpy(), k=32)
-            self.knn_sites[:,32*curr_it:32*(curr_it+1)] = np.asarray(self.lvl_sites[self.lvl-curr_it][idx[:,:]])  
+            _, idx = KDtree.query(self.sites.cpu().numpy(), k=self.KNN)
+            self.knn_sites[:,self.KNN*curr_it:self.KNN*(curr_it+1)] = np.asarray(self.lvl_sites[self.lvl-curr_it][idx[:,:]])  
             curr_it = curr_it + 1
 
         self.knn_sites = torch.from_numpy(self.knn_sites).int().cuda().contiguous()
@@ -405,9 +406,9 @@ class Tet32(Process):
             
         init_sites = init_sites.cpu().numpy()
         prev_kdtree = scipy.spatial.KDTree(init_sites)
-        knn_sites = -1 * np.ones((self.sites.shape[0], 32))
-        _, idx = prev_kdtree.query(self.sites.cpu().numpy(), k=32)
-        knn_sites[:,:32] = np.asarray(idx[:,:])
+        knn_sites = -1 * np.ones((self.sites.shape[0], self.KNN))
+        _, idx = prev_kdtree.query(self.sites.cpu().numpy(), k=self.KNN)
+        knn_sites[:,:self.KNN] = np.asarray(idx[:,:])
             
         self.sites.requires_grad_(True)
         learning_rate_cvt = lr
@@ -472,13 +473,13 @@ class Tet32(Process):
 
             with torch.no_grad():
                 out_sdf[:] = 0
-                backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius/2.0, 1, torch.from_numpy(init_sites).float().cuda().contiguous(), 
+                backprop_cuda.knn_interpolate(self.sites.shape[0], self.KNN, radius/2.0, 1, torch.from_numpy(init_sites).float().cuda().contiguous(), 
                                         self.sites, in_sdf, 
                                         torch.from_numpy(knn_sites).int().cuda().contiguous(), out_sdf)
                 sdf[:] = out_sdf[:]
                 
                 out_feat[:] = 0
-                backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius/2.0, fine_features.shape[1], torch.from_numpy(init_sites).float().cuda().contiguous(), 
+                backprop_cuda.knn_interpolate(self.sites.shape[0], self.KNN, radius/2.0, fine_features.shape[1], torch.from_numpy(init_sites).float().cuda().contiguous(), 
                                                 self.sites, in_feat, 
                                                 torch.from_numpy(knn_sites).int().cuda().contiguous(), out_feat)
                 fine_features[:] = out_feat[:]
@@ -498,8 +499,8 @@ class Tet32(Process):
             if iter_step % 100 == 0:
                 with torch.no_grad():
                     self.make_knn()
-                    _, idx = prev_kdtree.query(self.sites.detach().cpu().numpy(), k=32)
-                knn_sites[:,:32] = np.asarray(idx[:,:])
+                    _, idx = prev_kdtree.query(self.sites.detach().cpu().numpy(), k=self.KNN)
+                knn_sites[:,:self.KNN] = np.asarray(idx[:,:])
 
             with torch.no_grad():
                 delta_sites[:] = self.sites[:]
@@ -615,11 +616,11 @@ class Tet32(Process):
         #out_sdf = np.zeros(self.sites.shape[0])
         
         
-        knn_sites = -1 * np.ones((self.sites.shape[0], 32))
-        _, idx = prev_kdtree.query(self.sites, k=32)
-        knn_sites[:,:32] = np.asarray(idx[:,:])
+        knn_sites = -1 * np.ones((self.sites.shape[0], self.KNN))
+        _, idx = prev_kdtree.query(self.sites, k=self.KNN)
+        knn_sites[:,:self.KNN] = np.asarray(idx[:,:])
         out_sdf = torch.zeros(self.sites.shape[0]).float().cuda().contiguous()
-        backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius/4.0, 1, torch.from_numpy(new_sites).float().cuda().contiguous(), 
+        backprop_cuda.knn_interpolate(self.sites.shape[0], self.KNN, radius/4.0, 1, torch.from_numpy(new_sites).float().cuda().contiguous(), 
                                         torch.from_numpy(self.sites).float().cuda().contiguous(), torch.from_numpy(in_sdf).float().cuda().contiguous(), 
                                         torch.from_numpy(knn_sites).int().cuda().contiguous(), out_sdf)
         out_sdf = out_sdf.cpu().numpy()
@@ -630,7 +631,7 @@ class Tet32(Process):
         #if flag:
         #    out_sdf[mask_background[:] == True] = radius
 
-        if flag:
+        if False:
             out_sdf = -f(self.sites)
             #out_sdf[abs(out_sdf) > 0] = -f(self.sites)[abs(out_sdf) > 0]
             #out_sdf[out_sdf < 0] = -radius/2.0
@@ -646,7 +647,7 @@ class Tet32(Process):
 
         
         out_feat = torch.zeros(self.sites.shape[0],feat.shape[1]).float().cuda().contiguous()
-        backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius/4.0, feat.shape[1], torch.from_numpy(new_sites).float().cuda().contiguous(), 
+        backprop_cuda.knn_interpolate(self.sites.shape[0], self.KNN, radius/4.0, feat.shape[1], torch.from_numpy(new_sites).float().cuda().contiguous(), 
                                         torch.from_numpy(self.sites).float().cuda().contiguous(), torch.from_numpy(in_feat).float().cuda().contiguous(), 
                                         torch.from_numpy(knn_sites).int().cuda().contiguous(), out_feat)
         out_feat = out_feat.cpu().numpy()
@@ -863,11 +864,11 @@ class Tet32(Process):
 
 
     ## Sample points along a ray at the faces of Tet32 structure
-    def sample_rays_cuda(self, inv_s, cam_id, ray_d, sdf, cam_ids, weights, in_z, in_sdf, in_ids, offset, activated, nb_samples = 256):
+    def sample_rays_cuda(self, inv_s, cam_id_rays, ray_d, sdf, cam_ids, weights, in_z, in_sdf, in_ids, offset, activated, nb_samples = 256):
         #ply.save_ply("Exp/bmvs_man/cam.ply", (self.sites[cam_ids[cam_id]]).reshape(1,3).cpu().numpy().transpose())
         nb_rays = ray_d.shape[0]
-        nb_samples = tet32_march_cuda.tet32_march(inv_s, nb_rays, nb_samples, cam_id, ray_d, self.sites, sdf, self.summits, self.neighbors,
-                                                  cam_ids, self.offsets_cam, self.cam_tets, weights, in_z, in_sdf, 
+        nb_samples = tet32_march_cuda.tet32_march(inv_s, nb_rays, nb_samples, ray_d, self.sites, sdf, self.summits, self.neighbors,
+                                                  cam_id_rays, cam_ids, self.offsets_cam, self.cam_tets, weights, in_z, in_sdf, 
                                                   in_ids, activated, offset)
         #for i in range(nb_rays):
         #    print(in_ids[3*nb_samples*i], ", ", in_ids[3*nb_samples*i + 1] , ", ", in_ids[3*nb_samples*i + 2])
