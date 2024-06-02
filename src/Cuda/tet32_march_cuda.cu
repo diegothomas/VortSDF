@@ -323,6 +323,676 @@ __device__ void PN_triangle_interpolation_sdf(float *sdf, float weights[3], floa
 }
 
 
+/**********************************************************/
+__global__ void tet32_march_count_kernel(
+	const float inv_s,
+    const size_t num_rays,                // number of rays
+    const float *__restrict__ rays,       // [N_rays, 6]
+    float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ tets,  
+    int *__restrict__ nei_tets,  
+    const int *__restrict__ cam_id_rays,
+    const int *__restrict__ cam_ids,  
+    const int *__restrict__ offsets_cam,  
+    const int *__restrict__ cam_tets,  
+    int *__restrict__ counter,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ activate,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ offset     // [N_voxels, 4] for each voxel => it's vertices
+)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_rays)
+    {
+        return;
+    }
+
+	int cam_id = cam_id_rays[idx];
+    int r_id = cam_ids[cam_id];
+
+	float ray_d[3] = { rays[idx * 3], rays[idx * 3 + 1], rays[idx * 3 + 2] };
+	float ray_o[3] = { vertices[r_id * 3], vertices[r_id * 3 + 1], vertices[r_id * 3 + 2] };
+    float curr_site[3] {vertices[r_id * 3], vertices[r_id * 3 + 1], vertices[r_id * 3 + 2]};
+
+    // build base w.r.t ray
+	float u[3]{};
+	float v[3]{};
+
+	{
+		int min = 0;
+		if (abs(ray_d[1]) < abs(ray_d[0])) {
+			if (abs(ray_d[1]) < abs(ray_d[2]))
+				min = 1;
+			else
+				min = 2;
+		}
+		else if ((abs(ray_d[2]) < abs(ray_d[0]))) {
+			min = 2;
+		}
+
+		int max = 0;
+		if (abs(ray_d[1]) > abs(ray_d[0])) {
+			if (abs(ray_d[1]) > abs(ray_d[2]))
+				max = 1;
+			else
+				max = 2;
+		}
+		else if ((abs(ray_d[2]) > abs(ray_d[0]))) {
+			max = 2;
+		}
+
+		u[min] = 0.0f;
+		u[(min + 1) % 3] = ray_d[(min + 2) % 3] / ray_d[max];
+		u[(min + 2) % 3] = -ray_d[(min + 1) % 3] / ray_d[max];
+		float t[3] = { ray_d[1] * u[2] - ray_d[2] * u[1], ray_d[2] * u[0] - ray_d[0] * u[2], ray_d[0] * u[1] - ray_d[1] * u[0] };
+
+		min = 0;
+		if (abs(t[1]) < abs(t[0])) {
+			if (abs(t[1]) < abs(t[2]))
+				min = 1;
+			else
+				min = 2;
+		}
+		else if ((abs(t[2]) < abs(t[0]))) {
+			min = 2;
+		}
+
+		max = 0;
+		if (abs(t[1]) > abs(t[0])) {
+			if (abs(t[1]) > abs(t[2]))
+				max = 1;
+			else
+				max = 2;
+		}
+		else if ((abs(t[2]) > abs(t[0]))) {
+			max = 2;
+		}
+
+		v[0] = t[0] / t[3 - min - max];
+		v[1] = t[1] / t[3 - min - max];
+		v[2] = t[2] / t[3 - min - max];
+	}
+
+    // Initialisation with entry tet
+	int tet_id = -1; 
+	int prev_tet_id = -1;
+
+	// id_0, id_1, id_2 are indices of vertices of exit face
+	int ids[4] = { 0, 0, 0, 0 };
+	float weights[3] = { 0.0f, 0.0f, 0.0f};
+	float prev_weights[3] = { 0.0f, 0.0f, 0.0f};
+	int id_exit_face = 3;
+	float p[8]{};
+
+	// project all vertices into the base coordinate system
+	float v_new[3]{};
+	float curr_dist;
+
+	float nmle[3]{};
+	float v_0[3]{};
+	float v_1[3]{};
+	float v_2[3]{};
+
+    int start_cam_tet = cam_id == 0 ? 0 : offsets_cam[cam_id-1];
+    int cam_adj_count = cam_id == 0 ? offsets_cam[cam_id] : offsets_cam[cam_id] - offsets_cam[cam_id-1];  
+
+    for (int i = 1; i < cam_adj_count; i++) {
+		tet_id = cam_tets[start_cam_tet + i];
+		prev_tet_id = tet_id;
+		ids[0] = tets[4 * tet_id];
+		ids[1] = tets[4 * tet_id + 1];
+		ids[2] = tets[4 * tet_id + 2];
+		ids[3] = tets[4 * tet_id] ^ tets[4 * tet_id + 1] ^ tets[4 * tet_id + 2] ^ tets[4 * tet_id + 3];
+
+		if (r_id == ids[0]) {
+			ids[0] = ids[3];
+			ids[3] = r_id;
+			tet_id = nei_tets[4 * tet_id];
+		}
+		else if (r_id == ids[1]) {
+			ids[1] = ids[3];
+			ids[3] = r_id;
+			tet_id = nei_tets[4 * tet_id + 1];
+		}
+		else if (r_id == ids[2]) {
+			ids[2] = ids[3];
+			ids[3] = r_id;
+			tet_id = nei_tets[4 * tet_id + 2];
+		}
+		else {
+			tet_id = nei_tets[4 * tet_id + 3];
+		}
+
+		for (int j = 0; j < 3; j++) {
+			v_new[0] = vertices[3 * ids[j]] - ray_o[0];
+			v_new[1] = vertices[3 * ids[j] + 1] - ray_o[1];
+			v_new[2] = vertices[3 * ids[j] + 2] - ray_o[2];
+			p[2 * j] = dot3D_gpu(u, v_new);
+			p[2 * j + 1] = dot3D_gpu(v, v_new);
+		}
+
+		v_0[0] = vertices[3 * ids[0]]; v_0[1] = vertices[3 * ids[0] + 1]; v_0[2] = vertices[3 * ids[0] + 2];
+		v_1[0] = vertices[3 * ids[1]]; v_1[1] = vertices[3 * ids[1] + 1]; v_1[2] = vertices[3 * ids[1] + 2];
+		v_2[0] = vertices[3 * ids[2]]; v_2[1] = vertices[3 * ids[2] + 1]; v_2[2] = vertices[3 * ids[2] + 2];
+
+		nmle[0] = (v_1[1] - v_0[1]) * (v_2[2] - v_0[2]) - (v_1[2] - v_0[2]) * (v_2[1] - v_0[1]);
+		nmle[1] = (v_1[2] - v_0[2]) * (v_2[0] - v_0[0]) - (v_1[0] - v_0[0]) * (v_2[2] - v_0[2]);
+		nmle[2] = (v_1[0] - v_0[0]) * (v_2[1] - v_0[1]) - (v_1[1] - v_0[1]) * (v_2[0] - v_0[0]);
+		float norm_n = sqrtf(nmle[0] * nmle[0] + nmle[1] * nmle[1] + nmle[2] * nmle[2]);
+		nmle[0] = norm_n == 0.0f ? 0.0f : nmle[0] / norm_n;
+		nmle[1] = norm_n == 0.0f ? 0.0f : nmle[1] / norm_n;
+		nmle[2] = norm_n == 0.0f ? 0.0f : nmle[2] / norm_n;
+
+		curr_dist = dist_tri(ray_o, ray_d, v_0, v_1, v_2, nmle);
+
+		if (curr_dist > 0.0f && OriginInTriangle_gpu(&p[0], &p[2], &p[4])) {
+
+			v_new[0] = ray_o[0] + ray_d[0] * curr_dist / 2.0f;
+			v_new[1] = ray_o[1] + ray_d[1] * curr_dist / 2.0f;
+			v_new[2] = ray_o[2] + ray_d[2] * curr_dist / 2.0f;
+			if (get_sdf32(v_new, weights, vertices, sdf, tets, prev_tet_id) != 30.0f) 
+				break;
+		}
+		else {
+			tet_id = -1;
+		}
+	}
+
+	// Traverse tet
+	prev_tet_id = -1;
+	float prev_dist = 0.0f;
+	int s_id = 0;
+	int extra = 0;
+	int iter_max = 0;
+	float curr_z = 0.0f;
+	float curr_p[3] = { ray_o[0] + ray_d[0] * curr_z,
+						ray_o[1] + ray_d[1] * curr_z,
+						ray_o[2] + ray_d[2] * curr_z };
+	int ids_s[6] = { 0, 0, 0, 0, 0, 0 };		
+	float next_sdf;
+	float prev_sdf = -1000.0f;
+	float Tpartial = 1.0;
+	while (tet_id >= 0 && iter_max < 10000) {
+		ids_s[0] = ids[0]; ids_s[1] = ids[1]; ids_s[2] = ids[2]; 
+		ids[id_exit_face] = ids[3];
+		ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[4 * tet_id + 3]; 
+		v_0[0] = vertices[3 * ids[0]]; v_0[1] = vertices[3 * ids[0] + 1]; v_0[2] = vertices[3 * ids[0] + 2];
+		v_1[0] = vertices[3 * ids[1]]; v_1[1] = vertices[3 * ids[1] + 1]; v_1[2] = vertices[3 * ids[1] + 2];
+		v_2[0] = vertices[3 * ids[2]]; v_2[1] = vertices[3 * ids[2] + 1]; v_2[2] = vertices[3 * ids[2] + 2];
+
+		nmle[0] = (v_1[1] - v_0[1]) * (v_2[2] - v_0[2]) - (v_1[2] - v_0[2]) * (v_2[1] - v_0[1]);
+		nmle[1] = (v_1[2] - v_0[2]) * (v_2[0] - v_0[0]) - (v_1[0] - v_0[0]) * (v_2[2] - v_0[2]);
+		nmle[2] = (v_1[0] - v_0[0]) * (v_2[1] - v_0[1]) - (v_1[1] - v_0[1]) * (v_2[0] - v_0[0]);
+		float norm_n = sqrtf(nmle[0] * nmle[0] + nmle[1] * nmle[1] + nmle[2] * nmle[2]);
+		nmle[0] = norm_n == 0.0f ? 0.0f : nmle[0] / norm_n;
+		nmle[1] = norm_n == 0.0f ? 0.0f : nmle[1] / norm_n;
+		nmle[2] = norm_n == 0.0f ? 0.0f : nmle[2] / norm_n;
+
+		curr_dist = dist_tri(ray_o, ray_d, v_0, v_1, v_2, nmle);
+		curr_p[0] = ray_o[0] + ray_d[0] * curr_dist;
+		curr_p[1] = ray_o[1] + ray_d[1] * curr_dist;
+		curr_p[2] = ray_o[2] + ray_d[2] * curr_dist;
+
+		next_sdf = get_sdf_triangle32(weights, curr_p, vertices, sdf, tets, ids[0], ids[1], ids[2]);
+		ids_s[3] = ids[0]; ids_s[4] = ids[1]; ids_s[5] = ids[2]; 
+		
+		float alpha_tet = sdf2Alpha(next_sdf, prev_sdf, inv_s);
+		float contrib_tet = Tpartial * (1.0f - alpha_tet);
+		int fact_s = int(contrib_tet * 4.0f);
+		
+		if (prev_tet_id != -1) { 
+			if (((/*prev_dist > 0.05f &&*/ prev_sdf > next_sdf && 
+					(next_sdf == -1000.0f || alpha_tet < 1.0f)))) {
+					//fmin(fabs(next_sdf), fabs(prev_sdf))*inv_s < 2.0*CLIP_ALPHA)))) {		
+						
+				// activate sites here
+				for (int l = 0; l < 6; l++) {
+					//activate[ids_s[l]] = 1;
+					atomicExch(&activate[ids_s[l]], 1);
+				}
+
+
+				if (prev_sdf*next_sdf <= 0.0) {
+					extra+=4;
+				}
+
+				s_id++;
+			}		
+		}
+		
+		Tpartial = Tpartial * alpha_tet;
+
+		if (Tpartial < STOP_TRANS) {// stop if the transmittance is low
+            break;
+        }
+
+		prev_dist = curr_dist;
+		prev_sdf = next_sdf;
+		prev_tet_id = tet_id;
+
+		v_new[0] = vertices[3 * ids[3]] - ray_o[0];
+		v_new[1] = vertices[3 * ids[3] + 1] - ray_o[1];
+		v_new[2] = vertices[3 * ids[3] + 2] - ray_o[2];
+
+		p[2 * id_exit_face] = p[2 * 3];
+		p[2 * id_exit_face + 1] = p[2 * 3 + 1];
+
+		p[2 * 3] = dot3D_gpu(u, v_new);
+		p[2 * 3 + 1] = dot3D_gpu(v, v_new);
+
+		id_exit_face = GetExitFaceBis(&p[0], &p[2], &p[4], &p[6]);
+
+		tet_id = GetNextTet(tets, nei_tets, tet_id, ids[id_exit_face]);
+
+		iter_max++;
+	}
+
+	offset[2 * idx] = atomicAdd(counter, s_id+extra);
+	offset[2 * idx + 1] = s_id+extra;
+
+    return;
+}
+
+
+__global__ void tet32_march_offset_kernel(
+	const float inv_s,
+    const size_t num_rays,                // number of rays
+    const float *__restrict__ rays,       // [N_rays, 6]
+    float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ tets,  
+    int *__restrict__ nei_tets,  
+    const int *__restrict__ cam_id_rays,
+    const int *__restrict__ cam_ids,  
+    const int *__restrict__ offsets_cam,  
+    const int *__restrict__ cam_tets,  
+    float *__restrict__ in_grads,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ in_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ weights_samp,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ z_vals,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ z_sdfs,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ z_ids,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ out_grads,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ out_feat,     // [N_voxels, 4] for each voxel => it's vertices
+	float *__restrict__ samples_rays,
+	float *__restrict__ samples,
+    int *__restrict__ offset     // [N_voxels, 4] for each voxel => it's vertices
+)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_rays)
+    {
+        return;
+    }
+
+	int cam_id = cam_id_rays[idx];
+    int r_id = cam_ids[cam_id];
+
+	float ray_d[3] = { rays[idx * 3], rays[idx * 3 + 1], rays[idx * 3 + 2] };
+	float ray_o[3] = { vertices[r_id * 3], vertices[r_id * 3 + 1], vertices[r_id * 3 + 2] };
+    float curr_site[3] {vertices[r_id * 3], vertices[r_id * 3 + 1], vertices[r_id * 3 + 2]};
+
+	
+    int start = offset[2*idx];
+    int end = offset[2*idx+1];
+	
+    float *z_val_ray = &z_vals[start*2];
+    int *z_id_ray = &z_ids[start*6];	
+    float *z_sdf_ray = &z_sdfs[start*4];
+    float *weights_ray = &weights_samp[start*7];
+    float *grads_ray = &out_grads[start*3];
+    float *feats_ray = &out_feat[DIM_L_FEAT*start];
+    float *samples_d = &samples_rays[start*3];
+    float *samples_v = &samples[start*3];
+
+    // build base w.r.t ray
+	float u[3]{};
+	float v[3]{};
+
+	{
+		int min = 0;
+		if (abs(ray_d[1]) < abs(ray_d[0])) {
+			if (abs(ray_d[1]) < abs(ray_d[2]))
+				min = 1;
+			else
+				min = 2;
+		}
+		else if ((abs(ray_d[2]) < abs(ray_d[0]))) {
+			min = 2;
+		}
+
+		int max = 0;
+		if (abs(ray_d[1]) > abs(ray_d[0])) {
+			if (abs(ray_d[1]) > abs(ray_d[2]))
+				max = 1;
+			else
+				max = 2;
+		}
+		else if ((abs(ray_d[2]) > abs(ray_d[0]))) {
+			max = 2;
+		}
+
+		u[min] = 0.0f;
+		u[(min + 1) % 3] = ray_d[(min + 2) % 3] / ray_d[max];
+		u[(min + 2) % 3] = -ray_d[(min + 1) % 3] / ray_d[max];
+		float t[3] = { ray_d[1] * u[2] - ray_d[2] * u[1], ray_d[2] * u[0] - ray_d[0] * u[2], ray_d[0] * u[1] - ray_d[1] * u[0] };
+
+		min = 0;
+		if (abs(t[1]) < abs(t[0])) {
+			if (abs(t[1]) < abs(t[2]))
+				min = 1;
+			else
+				min = 2;
+		}
+		else if ((abs(t[2]) < abs(t[0]))) {
+			min = 2;
+		}
+
+		max = 0;
+		if (abs(t[1]) > abs(t[0])) {
+			if (abs(t[1]) > abs(t[2]))
+				max = 1;
+			else
+				max = 2;
+		}
+		else if ((abs(t[2]) > abs(t[0]))) {
+			max = 2;
+		}
+
+		v[0] = t[0] / t[3 - min - max];
+		v[1] = t[1] / t[3 - min - max];
+		v[2] = t[2] / t[3 - min - max];
+	}
+
+    // Initialisation with entry tet
+	int tet_id = -1; 
+	int prev_tet_id = -1;
+
+	// id_0, id_1, id_2 are indices of vertices of exit face
+	int ids[4] = { 0, 0, 0, 0 };
+	float weights[3] = { 0.0f, 0.0f, 0.0f};
+	float prev_weights[3] = { 0.0f, 0.0f, 0.0f};
+	int id_exit_face = 3;
+	float p[8]{};
+
+	// project all vertices into the base coordinate system
+	float v_new[3]{};
+	float curr_dist;
+
+	float nmle[3]{};
+	float v_0[3]{};
+	float v_1[3]{};
+	float v_2[3]{};
+
+    int start_cam_tet = cam_id == 0 ? 0 : offsets_cam[cam_id-1];
+    int cam_adj_count = cam_id == 0 ? offsets_cam[cam_id] : offsets_cam[cam_id] - offsets_cam[cam_id-1];  
+
+    for (int i = 1; i < cam_adj_count; i++) {
+		tet_id = cam_tets[start_cam_tet + i];
+		prev_tet_id = tet_id;
+		ids[0] = tets[4 * tet_id];
+		ids[1] = tets[4 * tet_id + 1];
+		ids[2] = tets[4 * tet_id + 2];
+		ids[3] = tets[4 * tet_id] ^ tets[4 * tet_id + 1] ^ tets[4 * tet_id + 2] ^ tets[4 * tet_id + 3];
+
+		if (r_id == ids[0]) {
+			ids[0] = ids[3];
+			ids[3] = r_id;
+			tet_id = nei_tets[4 * tet_id];
+		}
+		else if (r_id == ids[1]) {
+			ids[1] = ids[3];
+			ids[3] = r_id;
+			tet_id = nei_tets[4 * tet_id + 1];
+		}
+		else if (r_id == ids[2]) {
+			ids[2] = ids[3];
+			ids[3] = r_id;
+			tet_id = nei_tets[4 * tet_id + 2];
+		}
+		else {
+			tet_id = nei_tets[4 * tet_id + 3];
+		}
+
+		for (int j = 0; j < 3; j++) {
+			v_new[0] = vertices[3 * ids[j]] - ray_o[0];
+			v_new[1] = vertices[3 * ids[j] + 1] - ray_o[1];
+			v_new[2] = vertices[3 * ids[j] + 2] - ray_o[2];
+			p[2 * j] = dot3D_gpu(u, v_new);
+			p[2 * j + 1] = dot3D_gpu(v, v_new);
+		}
+
+		v_0[0] = vertices[3 * ids[0]]; v_0[1] = vertices[3 * ids[0] + 1]; v_0[2] = vertices[3 * ids[0] + 2];
+		v_1[0] = vertices[3 * ids[1]]; v_1[1] = vertices[3 * ids[1] + 1]; v_1[2] = vertices[3 * ids[1] + 2];
+		v_2[0] = vertices[3 * ids[2]]; v_2[1] = vertices[3 * ids[2] + 1]; v_2[2] = vertices[3 * ids[2] + 2];
+
+		nmle[0] = (v_1[1] - v_0[1]) * (v_2[2] - v_0[2]) - (v_1[2] - v_0[2]) * (v_2[1] - v_0[1]);
+		nmle[1] = (v_1[2] - v_0[2]) * (v_2[0] - v_0[0]) - (v_1[0] - v_0[0]) * (v_2[2] - v_0[2]);
+		nmle[2] = (v_1[0] - v_0[0]) * (v_2[1] - v_0[1]) - (v_1[1] - v_0[1]) * (v_2[0] - v_0[0]);
+		float norm_n = sqrtf(nmle[0] * nmle[0] + nmle[1] * nmle[1] + nmle[2] * nmle[2]);
+		nmle[0] = norm_n == 0.0f ? 0.0f : nmle[0] / norm_n;
+		nmle[1] = norm_n == 0.0f ? 0.0f : nmle[1] / norm_n;
+		nmle[2] = norm_n == 0.0f ? 0.0f : nmle[2] / norm_n;
+
+		curr_dist = dist_tri(ray_o, ray_d, v_0, v_1, v_2, nmle);
+
+		if (curr_dist > 0.0f && OriginInTriangle_gpu(&p[0], &p[2], &p[4])) {
+
+			v_new[0] = ray_o[0] + ray_d[0] * curr_dist / 2.0f;
+			v_new[1] = ray_o[1] + ray_d[1] * curr_dist / 2.0f;
+			v_new[2] = ray_o[2] + ray_d[2] * curr_dist / 2.0f;
+			if (get_sdf32(v_new, weights, vertices, sdf, tets, prev_tet_id) != 30.0f) 
+				break;
+		}
+		else {
+			tet_id = -1;
+		}
+	}
+
+	// Traverse tet
+	prev_tet_id = -1;
+	float prev_dist = 0.0f;
+	int s_id = 0;
+	int extra = 0;
+	int iter_max = 0;
+	float curr_z = 0.0f;
+	float curr_p[3] = { ray_o[0] + ray_d[0] * curr_z,
+						ray_o[1] + ray_d[1] * curr_z,
+						ray_o[2] + ray_d[2] * curr_z };
+	int ids_s[6] = { 0, 0, 0, 0, 0, 0 };		
+	float next_sdf;
+	float prev_sdf = -1000.0f;
+	float Tpartial = 1.0;
+	while (tet_id >= 0 && iter_max < 10000) {
+		ids_s[0] = ids[0]; ids_s[1] = ids[1]; ids_s[2] = ids[2]; 
+		ids[id_exit_face] = ids[3];
+		ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[4 * tet_id + 3]; 
+		v_0[0] = vertices[3 * ids[0]]; v_0[1] = vertices[3 * ids[0] + 1]; v_0[2] = vertices[3 * ids[0] + 2];
+		v_1[0] = vertices[3 * ids[1]]; v_1[1] = vertices[3 * ids[1] + 1]; v_1[2] = vertices[3 * ids[1] + 2];
+		v_2[0] = vertices[3 * ids[2]]; v_2[1] = vertices[3 * ids[2] + 1]; v_2[2] = vertices[3 * ids[2] + 2];
+
+		nmle[0] = (v_1[1] - v_0[1]) * (v_2[2] - v_0[2]) - (v_1[2] - v_0[2]) * (v_2[1] - v_0[1]);
+		nmle[1] = (v_1[2] - v_0[2]) * (v_2[0] - v_0[0]) - (v_1[0] - v_0[0]) * (v_2[2] - v_0[2]);
+		nmle[2] = (v_1[0] - v_0[0]) * (v_2[1] - v_0[1]) - (v_1[1] - v_0[1]) * (v_2[0] - v_0[0]);
+		float norm_n = sqrtf(nmle[0] * nmle[0] + nmle[1] * nmle[1] + nmle[2] * nmle[2]);
+		nmle[0] = norm_n == 0.0f ? 0.0f : nmle[0] / norm_n;
+		nmle[1] = norm_n == 0.0f ? 0.0f : nmle[1] / norm_n;
+		nmle[2] = norm_n == 0.0f ? 0.0f : nmle[2] / norm_n;
+
+		curr_dist = dist_tri(ray_o, ray_d, v_0, v_1, v_2, nmle);
+		curr_p[0] = ray_o[0] + ray_d[0] * curr_dist;
+		curr_p[1] = ray_o[1] + ray_d[1] * curr_dist;
+		curr_p[2] = ray_o[2] + ray_d[2] * curr_dist;
+
+		next_sdf = get_sdf_triangle32(weights, curr_p, vertices, sdf, tets, ids[0], ids[1], ids[2]);
+		ids_s[3] = ids[0]; ids_s[4] = ids[1]; ids_s[5] = ids[2]; 
+		
+		float alpha_tet = sdf2Alpha(next_sdf, prev_sdf, inv_s);
+		float contrib_tet = Tpartial * (1.0f - alpha_tet);
+		int fact_s = int(contrib_tet * 4.0f);
+		
+		if (prev_tet_id != -1) { 
+			if (((/*prev_dist > 0.05f &&*/ prev_sdf > next_sdf && 
+					(next_sdf == -1000.0f || alpha_tet < 1.0f)))) {
+					//fmin(fabs(next_sdf), fabs(prev_sdf))*inv_s < 2.0*CLIP_ALPHA)))) {
+
+				if (prev_sdf*next_sdf <= 0.0) {
+					for (int sub_i = 0; sub_i < 5; sub_i++) {
+						float step = 1.0f/5.0f;
+						float w_curr = float(sub_i)*step;
+						z_val_ray[2*s_id] = (1.0f-w_curr)*prev_dist + w_curr*curr_dist;
+						z_val_ray[2*s_id + 1] = (1.0f-(w_curr+step))*prev_dist + (w_curr+step)*curr_dist;
+
+						z_sdf_ray[4*s_id] = (1.0f-w_curr)*prev_sdf + w_curr*next_sdf;
+						z_sdf_ray[4*s_id+1] = (1.0f-(w_curr+step))*prev_sdf + (w_curr+step)*next_sdf;
+						z_sdf_ray[4*s_id+2] = (1.0f-w_curr);
+						z_sdf_ray[4*s_id+3] = (1.0f-(w_curr+step));
+
+						z_id_ray[6 * s_id] = ids_s[0]; 
+						z_id_ray[6 * s_id + 1] = ids_s[1];
+						z_id_ray[6 * s_id + 2] = ids_s[2]; 
+						z_id_ray[6 * s_id + 3] = ids_s[3]; 
+						z_id_ray[6 * s_id + 4] = ids_s[4];
+						z_id_ray[6 * s_id + 5] = ids_s[5]; 
+
+						float lambda = 1.0f-(w_curr+step/2.0f);
+						for (int l = 0; l < 3; l++) {
+							grads_ray[3*s_id + l] = lambda*(prev_weights[0]*in_grads[3*ids_s[0] + l] +
+															prev_weights[1]*in_grads[3*ids_s[1] + l] +
+															prev_weights[2]*in_grads[3*ids_s[2] + l])
+										+ (1.0f-lambda)*(weights[0]*in_grads[3*ids_s[3] + l] +
+															weights[1]*in_grads[3*ids_s[4] + l] +
+															weights[2]*in_grads[3*ids_s[5] + l]);
+						}
+
+						for (int l = 0; l < DIM_L_FEAT; l++) {
+							feats_ray[DIM_L_FEAT*s_id+l] = lambda*(prev_weights[0]*in_feat[DIM_L_FEAT*ids_s[0] + l] +
+																prev_weights[1]*in_feat[DIM_L_FEAT*ids_s[1] + l] +
+																prev_weights[2]*in_feat[DIM_L_FEAT*ids_s[2] + l])
+												+ (1.0f-lambda)*(weights[0]*in_feat[DIM_L_FEAT*ids_s[3] + l] +
+																	weights[1]*in_feat[DIM_L_FEAT*ids_s[4] + l] +
+																	weights[2]*in_feat[DIM_L_FEAT*ids_s[5] + l]);		
+						}
+
+						samples_d[3 * s_id] = ray_d[0];
+						samples_d[3 * s_id + 1] = ray_d[1];
+						samples_d[3 * s_id + 2] = ray_d[2];		
+
+						for (int l = 0; l < 3; l++) {
+							weights_ray[7*s_id + l] = prev_weights[l];
+						}
+						for (int l = 0; l < 3; l++) {
+							weights_ray[7*s_id + l + 3] = weights[l];
+						}
+						weights_ray[7*s_id + 6] = lambda;
+
+						samples_v[3 * s_id] = ray_o[0] + (lambda*prev_dist + (1.0f-lambda)*curr_dist)*ray_d[0];
+						samples_v[3 * s_id + 1] = ray_o[1] + (lambda*prev_dist + (1.0f-lambda)*curr_dist)*ray_d[1];
+						samples_v[3 * s_id + 2] = ray_o[2] + (lambda*prev_dist + (1.0f-lambda)*curr_dist)*ray_d[2];
+
+						s_id++;
+					}
+				} else {
+					float lambda = 0.5f;
+					z_val_ray[2 * s_id] = prev_dist;
+					z_val_ray[2 * s_id + 1] = curr_dist;
+
+					z_id_ray[6 * s_id] = ids_s[0]; 
+					z_id_ray[6 * s_id + 1] = ids_s[1];
+					z_id_ray[6 * s_id + 2] = ids_s[2]; 
+					z_id_ray[6 * s_id + 3] = ids_s[3]; 
+					z_id_ray[6 * s_id + 4] = ids_s[4];
+					z_id_ray[6 * s_id + 5] = ids_s[5]; 
+
+					z_sdf_ray[4 * s_id] = prev_sdf;
+					z_sdf_ray[4 * s_id + 1] = next_sdf;
+					z_sdf_ray[4 * s_id + 2] = 1.0f;
+					z_sdf_ray[4 * s_id + 3] = 0.0f;
+
+					for (int l = 0; l < 3; l++) {
+						grads_ray[3*s_id + l] = lambda*(prev_weights[0]*in_grads[3*ids_s[0] + l] +
+															prev_weights[1]*in_grads[3*ids_s[1] + l] +
+															prev_weights[2]*in_grads[3*ids_s[2] + l])
+										+ (1.0f-lambda)*(weights[0]*in_grads[3*ids_s[3] + l] +
+															weights[1]*in_grads[3*ids_s[4] + l] +
+															weights[2]*in_grads[3*ids_s[5] + l]);
+					}
+
+					for (int l = 0; l < DIM_L_FEAT; l++) {
+						feats_ray[DIM_L_FEAT*s_id+l] = lambda*(prev_weights[0]*in_feat[DIM_L_FEAT*ids_s[0] + l] +
+															prev_weights[1]*in_feat[DIM_L_FEAT*ids_s[1] + l] +
+															prev_weights[2]*in_feat[DIM_L_FEAT*ids_s[2] + l])
+										+ (1.0f-lambda)*(weights[0]*in_feat[DIM_L_FEAT*ids_s[3] + l] +
+															weights[1]*in_feat[DIM_L_FEAT*ids_s[4] + l] +
+															weights[2]*in_feat[DIM_L_FEAT*ids_s[5] + l]);
+					}
+
+					samples_d[3 * s_id] = ray_d[0];
+					samples_d[3 * s_id + 1] = ray_d[1];
+					samples_d[3 * s_id + 2] = ray_d[2];		
+
+					for (int l = 0; l < 3; l++) {
+						weights_ray[7*s_id + l] = prev_weights[l];
+					}
+					for (int l = 0; l < 3; l++) {
+						weights_ray[7*s_id + 3 + l] = weights[l];
+					}
+					weights_ray[7*s_id + 6] = lambda;
+					
+					samples_v[3 * s_id] = ray_o[0] + (lambda*prev_dist + (1.0f-lambda)*curr_dist)*ray_d[0];
+					samples_v[3 * s_id + 1] = ray_o[1] + (lambda*prev_dist + (1.0f-lambda)*curr_dist)*ray_d[1];
+					samples_v[3 * s_id + 2] = ray_o[2] + (lambda*prev_dist + (1.0f-lambda)*curr_dist)*ray_d[2];
+					s_id++;
+				}
+
+				if (s_id > end - 1) {
+					break;
+				}
+			}
+
+			if (s_id > end - 1) {
+				break;
+			}			
+		}
+		
+		Tpartial = Tpartial * alpha_tet;
+
+		if (Tpartial < STOP_TRANS) {// stop if the transmittance is low
+            break;
+        }
+
+		prev_dist = curr_dist;
+		prev_sdf = next_sdf;
+		for (int l = 0; l < 3; l++) {
+			prev_weights[l] = weights[l];
+		}
+
+		prev_tet_id = tet_id;
+
+		v_new[0] = vertices[3 * ids[3]] - ray_o[0];
+		v_new[1] = vertices[3 * ids[3] + 1] - ray_o[1];
+		v_new[2] = vertices[3 * ids[3] + 2] - ray_o[2];
+
+		p[2 * id_exit_face] = p[2 * 3];
+		p[2 * id_exit_face + 1] = p[2 * 3 + 1];
+
+		p[2 * 3] = dot3D_gpu(u, v_new);
+		p[2 * 3 + 1] = dot3D_gpu(v, v_new);
+
+		id_exit_face = GetExitFaceBis(&p[0], &p[2], &p[4], &p[6]);
+
+		tet_id = GetNextTet(tets, nei_tets, tet_id, ids[id_exit_face]);
+
+		iter_max++;
+	}
+
+    return;
+}
+
+
+/*********************************************************************/
+
+
 __global__ void tet32_march_cuda_kernel(
 	const float inv_s,
     const size_t num_rays,                // number of rays
@@ -1422,6 +2092,118 @@ __global__ void fill_samples_kernel_sub(
 /** CPU functions **/
 
 
+/***********************************************************************/
+
+// Ray marching in 3D
+int tet32_march_count_cuda(
+	float inv_s,
+    size_t num_rays,
+    torch::Tensor rays,      // [N_rays, 6]
+    torch::Tensor vertices, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor sdf, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor nei_tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor cam_id_rays,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor cam_ids,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor offsets_cam,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor cam_tets,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor activate,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor offset     // [N_voxels, 4] for each voxel => it's vertices
+)   {
+        int* counter;
+        cudaMalloc((void**)&counter, sizeof(int));
+        cudaMemset(counter, 0, sizeof(int));
+
+        const int threads = 512;
+        const int blocks = (num_rays + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+        AT_DISPATCH_FLOATING_TYPES( rays.type(),"tet32_march_count_kernel", ([&] {  
+            tet32_march_count_kernel CUDA_KERNEL(blocks,threads) (
+	 			inv_s,
+                num_rays,
+                rays.data_ptr<float>(),
+                vertices.data_ptr<float>(),
+                sdf.data_ptr<float>(),
+                tets.data_ptr<int>(),
+                nei_tets.data_ptr<int>(),
+                cam_id_rays.data_ptr<int>(),
+                cam_ids.data_ptr<int>(),
+                offsets_cam.data_ptr<int>(),
+                cam_tets.data_ptr<int>(),
+                counter,
+                activate.data_ptr<int>(),
+                offset.data_ptr<int>()); 
+    	}));	
+		cudaDeviceSynchronize();
+
+		int res = 0;
+		cudaMemcpy(&res, counter, sizeof(int), cudaMemcpyDeviceToHost);
+		cudaFree(counter);
+
+		return res;
+    }
+
+
+
+void tet32_march_offset_cuda(
+	float inv_s,
+    size_t num_rays,
+    torch::Tensor rays,      // [N_rays, 6]
+    torch::Tensor vertices, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor sdf, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor nei_tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor cam_id_rays,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor cam_ids,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor offsets_cam,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor cam_tets,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor in_grads,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor in_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor weights,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor z_vals,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor z_sdfs,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor z_ids,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor out_grads,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor out_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor samples_rays,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor samples,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor offset     // [N_voxels, 4] for each voxel => it's vertices
+)   {
+        const int threads = 512;
+        const int blocks = (num_rays + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+        AT_DISPATCH_FLOATING_TYPES( rays.type(),"tet32_march_offset_kernel", ([&] {  
+            tet32_march_offset_kernel CUDA_KERNEL(blocks,threads) (
+	 			inv_s,
+                num_rays,
+                rays.data_ptr<float>(),
+                vertices.data_ptr<float>(),
+                sdf.data_ptr<float>(),
+                tets.data_ptr<int>(),
+                nei_tets.data_ptr<int>(),
+                cam_id_rays.data_ptr<int>(),
+                cam_ids.data_ptr<int>(),
+                offsets_cam.data_ptr<int>(),
+                cam_tets.data_ptr<int>(),
+                in_grads.data_ptr<float>(),
+                in_feat.data_ptr<float>(),
+                weights.data_ptr<float>(),
+                z_vals.data_ptr<float>(),
+                z_sdfs.data_ptr<float>(),
+                z_ids.data_ptr<int>(),
+                out_grads.data_ptr<float>(),
+                out_feat.data_ptr<float>(),
+                samples_rays.data_ptr<float>(),
+                samples.data_ptr<float>(),
+                offset.data_ptr<int>());  
+    	}));	
+		cudaDeviceSynchronize();
+    }
+
+
+
+
+/***************************************************************************/
+
+
 // Ray marching in 3D
 int tet32_march_cuda(
 	float inv_s,
@@ -1503,6 +2285,9 @@ int tet32_march_cuda(
 
 		return res;
     }
+
+
+
 
 // Ray marching in 2Deorganize samples in contiguous array
 void fill_samples_cuda(

@@ -171,7 +171,8 @@ class Runner:
 
     def prep_CVT(self):
         print("Preparing CVT model")
-        #self.tet32 = tet32.Tet32(self.sites, id = 0)
+        sites = self.tet32.sites
+        #self.tet32 = tet32.Tet32(self.tet32.sites, id = 0)
         self.tet32.run(0.3) 
         self.tet32.load_cuda()
 
@@ -183,7 +184,7 @@ class Runner:
         new_SDF = np.copy(self.sdf.detach().cpu())
         new_Feat = np.copy(self.fine_features.detach().cpu())
         
-        _, idx = KDtree.query(self.sites, k=1)
+        _, idx = KDtree.query(sites, k=1)
         new_SDF[idx[:]] = prev_SDF[:] 
         new_Feat[idx[:]] = prev_Feat[:] 
         new_SDF = torch.from_numpy(new_SDF).float().cuda()
@@ -192,23 +193,29 @@ class Runner:
             self.sdf[:] = new_SDF[:]
             self.fine_features[:] = new_Feat[:]
 
-        self.sites = np.asarray(self.tet32.vertices)  
+        sites = np.asarray(self.tet32.vertices)  
 
         self.cam_sites = np.stack([self.dataset.pose_all[id, :3,3].cpu().numpy() for id in range(self.dataset.n_images)])
             
-        self.cam_ids = np.stack([np.where((self.sites == self.cam_sites[i,:]).all(axis = 1))[0] for i in range(self.cam_sites.shape[0])]).reshape(-1)
+        self.cam_ids = np.stack([np.where((sites == self.cam_sites[i,:]).all(axis = 1))[0] for i in range(self.cam_sites.shape[0])]).reshape(-1)
         self.tet32.make_adjacencies(self.cam_ids)
         self.tet32.make_multilvl_knn()
 
         self.cam_ids = torch.from_numpy(self.cam_ids).int().cuda()
-        self.sites = torch.from_numpy(self.sites.astype(np.float32)).cuda()
-        self.sites = self.sites.contiguous()
+        #self.tet32.sites = torch.from_numpy(self.tet32.sites.astype(np.float32)).cuda()
+        #self.tet32.sites = self.tet32.sites.contiguous()
         
+        print("start data allocation")
         self.Allocate_data()
             
+        input()
+        print("start batch allocation")
         self.Allocate_batch_data()
 
-        cvt_grad_cuda.diff_tensor(self.tet32.nb_tets, self.tet32.summits, self.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff)
+        print("end allocation")
+        input()
+
+        cvt_grad_cuda.diff_tensor(self.tet32.nb_tets, self.tet32.summits, self.tet32.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff)
         
              
 
@@ -269,20 +276,20 @@ class Runner:
         else:
             cam_sites = self.cam_sites
 
-        if not is_continue:
-            self.sites = torch.from_numpy(sites.astype(np.float32)).cuda()
-            self.sites = self.sites.contiguous()
+        """if not is_continue:
+            self.tet32.sites = torch.from_numpy(sites.astype(np.float32)).cuda()
+            self.tet32.sites = self.tet32.sites.contiguous()"""
         
-        print(self.sites.shape)
+        print(self.tet32.sites.shape)
 
         ##### 2. Initialize SDF field    
         if not hasattr(self, 'sdf'):
-            centers = torch.zeros(self.sites.shape).float().cuda()
+            centers = torch.zeros(self.tet32.sites.shape).float().cuda()
             centers[:,0] = (self.visual_hull[3]+self.visual_hull[0])/2.0
             centers[:,1] = (self.visual_hull[4]+self.visual_hull[1])/2.0
             centers[:,2] = (self.visual_hull[5]+self.visual_hull[2])/2.0
             with torch.no_grad():
-                norm_sites = torch.linalg.norm(self.sites - centers, ord=2, axis=-1, keepdims=True)
+                norm_sites = torch.linalg.norm(self.tet32.sites - centers, ord=2, axis=-1, keepdims=True)
             self.sdf = norm_sites[:,0] - 0.2
             self.sdf = self.sdf.contiguous()
             self.sdf.requires_grad_(True)      
@@ -311,11 +318,11 @@ class Runner:
             cam_ids = torch.from_numpy(cam_ids).int().cuda()
             self.cam_ids = cam_ids
             
-            self.sites = torch.from_numpy(sites.astype(np.float32)).cuda()
-            self.sites = self.sites.contiguous()
+            #self.tet32.sites = torch.from_numpy(sites.astype(np.float32)).cuda()
+            #self.tet32.sites = self.tet32.sites.contiguous()
 
             with torch.no_grad():
-                norm_sites = torch.linalg.norm(self.sites - centers, ord=2, axis=-1, keepdims=True)
+                norm_sites = torch.linalg.norm(self.tet32.sites - centers, ord=2, axis=-1, keepdims=True)
                 self.sdf[:] = norm_sites[:,0] - 0.2
                 self.sdf[ext_flag[:] == 1] = -1000.0
                 self.tet32.sdf_init = self.sdf.detach().clone()
@@ -334,8 +341,8 @@ class Runner:
         
         #self.tet32.save_multi_lvl("Exp/{}/multi_lvl".format(self.data_name))    
 
-        sites = self.sites.cpu().numpy()
-        outside_flag = np.zeros(self.sites.shape[0], np.int32)
+        sites = self.tet32.sites.cpu().numpy()
+        outside_flag = np.zeros(self.tet32.sites.shape[0], np.int32)
         outside_flag[sites[:,0] < self.visual_hull[0] + (self.visual_hull[3]-self.visual_hull[0])/(res)] = 1
         outside_flag[sites[:,1] < self.visual_hull[1] + (self.visual_hull[4]-self.visual_hull[1])/(res)] = 1
         outside_flag[sites[:,2] < self.visual_hull[2] + (self.visual_hull[5]-self.visual_hull[2])/(res)] = 1
@@ -343,7 +350,7 @@ class Runner:
         outside_flag[sites[:,1] > self.visual_hull[4] - (self.visual_hull[4]-self.visual_hull[1])/(res)] = 1
         outside_flag[sites[:,2] > self.visual_hull[5] - (self.visual_hull[5]-self.visual_hull[2])/(res)] = 1
 
-        ext_flag = np.zeros(self.sites.shape[0], np.int32)
+        ext_flag = np.zeros(self.tet32.sites.shape[0], np.int32)
         """ext_flag[sites[:,0] < visual_hull[0] - 10.5] = 1
         ext_flag[sites[:,1] < visual_hull[1] - 10.5] = 1
         ext_flag[sites[:,2] < visual_hull[2] - 10.5] = 1
@@ -351,18 +358,18 @@ class Runner:
         ext_flag[sites[:,1] > visual_hull[4] + 10.5] = 1
         ext_flag[sites[:,2] > visual_hull[5] + 10.5] = 1"""
         
-        cvt_grad_cuda.diff_tensor(self.tet32.nb_tets, self.tet32.summits, self.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff)
+        cvt_grad_cuda.diff_tensor(self.tet32.nb_tets, self.tet32.summits, self.tet32.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff)
                         
         if not hasattr(self, 'optimizer_sdf'):
             self.optimizer_sdf = torch.optim.Adam([self.sdf], lr=self.learning_rate_sdf) #, betas=(0.9, 0.98))     # Beta ??   0.98, 0.995 => 0.9
             self.optimizer_feat = torch.optim.Adam([self.fine_features], lr=self.learning_rate_feat) #, betas=(0.9, 0.98)) 
 
         if self.double_net:
-            self.vortSDF_renderer_coarse_net.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
+            self.vortSDF_renderer_coarse_net.prepare_buffs(self.batch_size, self.n_samples, self.tet32.sites.shape[0])
         else:
-            self.vortSDF_renderer_coarse.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
+            self.vortSDF_renderer_coarse.prepare_buffs(self.batch_size, self.n_samples, self.tet32.sites.shape[0])
         
-        self.vortSDF_renderer_fine.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
+        self.vortSDF_renderer_fine.prepare_buffs(self.batch_size, self.n_samples, self.tet32.sites.shape[0])
 
         grad_sdf = torch.zeros(self.sdf.shape).float().cuda()
 
@@ -392,6 +399,9 @@ class Runner:
         self.activated[:] = 1
         with torch.no_grad():
             self.sdf_smooth[:] = self.sdf[:]
+
+        print("Start optimization")
+        #input()
 
         for iter_step in tqdm(range(self.end_iter)):
             if iter_step <= self.iter_step:
@@ -455,24 +465,37 @@ class Runner:
                     self.activated[:] = 2
                     with torch.no_grad():
                         self.sdf_smooth[:] = self.sdf[:]
-                    backprop_cuda.knn_smooth(self.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.sites,  self.activated,
+                    backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites,  self.activated,
                                             self.grad_sdf_space, self.sdf.detach(), self.fine_features.detach(), self.tet32.knn_sites, self.sdf_smooth)
                 
             ## sample points along the rays
-            start = timer()
+            """start = timer()
             self.offsets[:] = 0
             self.activated[:] = 0
             nb_samples = self.tet32.sample_rays_cuda(self.inv_s, img_ids, rays_d, self.sdf_smooth, cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_ids, self.offsets, self.activated, self.n_samples)    
             if verbose:
-                print('CVT_Sample time:', timer() - start)   
+                print('CVT_Sample time:', timer() - start)   """
+            
+            start = timer()
+            self.offsets[:] = 0
+            nb_samples = tet32_march_cuda.tet32_march_count(self.inv_s, rays_o.shape[0], rays_d, self.tet32.sites, self.sdf_smooth, self.tet32.summits, self.tet32.neighbors, img_ids, 
+                                               cam_ids, self.tet32.offsets_cam, self.tet32.cam_tets, self.activated, self.offsets)
+            
+            if verbose:
+                print('tet32_march_count time:', timer() - start) 
 
             if nb_samples == 0:
                 continue
 
+            if nb_samples >= num_rays*self.n_samples:
+                print("Too many samples!!!")
+                input()
+                 
+
             if True: #not (iter_step > 5000 and self.loc_iter > 0 and self.loc_iter < warm_up): 
                 start = timer()
                 self.activated_buff[:] = self.activated[:]
-                backprop_cuda.activate_sites(rays_o.shape[0], self.sites.shape[0], self.knn*self.hlvl, self.out_ids, self.offsets, self.tet32.knn_sites, self.activated_buff, self.activated)
+                backprop_cuda.activate_sites(rays_o.shape[0], self.tet32.sites.shape[0], self.knn*self.hlvl, self.out_ids, self.offsets, self.tet32.knn_sites, self.activated_buff, self.activated)
                 self.activated = self.activated + self.activated_buff
                 if verbose:
                     print('activate time:', timer() - start)   
@@ -484,15 +507,14 @@ class Runner:
                 if iter_step % acc_it == 0:
                     start = timer()   
                     self.grad_sdf_space[:] = 0.0
-                    self.grad_feat_space[:] = 0.0
                     self.weights_grad[:] = 0.0
                     self.grad_eik[:] = 0.0
                     self.grad_norm_smooth[:] = 0.0
                     self.eik_loss[:] = 0.0
                     #self.activated[:] = 1
 
-                    cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, self.activated, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
-                                                self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.eik_loss)
+                    cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.tet32.sites.shape[0], self.tet32.summits, self.tet32.sites, self.activated, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
+                                                self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.eik_loss)
                     
                     if math.isnan(self.grad_sdf_space.mean()):
                         print("self.grad_sdf_space", self.grad_sdf_space.mean())
@@ -518,16 +540,31 @@ class Runner:
                 if verbose:
                     print('eikonal_grad time:', timer() - start)
             
-            self.offsets[self.offsets[:,1] == -1] = 0                         
             start = timer()
             self.samples[:] = 0.0
             self.out_grads[:] = 0.0
-            tet32_march_cuda.fill_samples(rays_o.shape[0], self.n_samples, rays_o, rays_d, self.sites, 
+            self.out_feat[:] = 0.0
+            self.out_sdf[:] = 0.0
+            self.out_weights[:] = 0.0
+            self.out_ids[:] = 0
+            tet32_march_cuda.tet32_march_offset(self.inv_s, rays_o.shape[0], rays_d, self.tet32.sites, self.sdf_smooth, self.tet32.summits, self.tet32.neighbors, img_ids, 
+                                                cam_ids, self.tet32.offsets_cam, self.tet32.cam_tets, self.grad_sdf_space, self.fine_features.detach(),  
+                                                self.out_weights, self.out_z, self.out_sdf, self.out_ids, self.out_grads, self.out_feat, self.samples_rays, self.samples, 
+                                                self.offsets)
+                      
+            if verbose:
+                print('tet32_march_offset time:', timer() - start) 
+
+            """self.offsets[self.offsets[:,1] == -1] = 0                         
+            start = timer()
+            self.samples[:] = 0.0
+            self.out_grads[:] = 0.0
+            tet32_march_cuda.fill_samples(rays_o.shape[0], self.n_samples, rays_o, rays_d, self.tet32.sites, 
                                         self.in_z, self.in_sdf, self.fine_features.detach(), self.in_weights, self.grad_sdf_space, self.in_ids, 
                                         self.out_z, self.out_sdf, self.out_feat, self.out_weights, self.out_grads, self.out_ids, 
                                         self.offsets, self.samples, self.samples_rays)
             if verbose:
-                print('fill_samples time:', timer() - start)  
+                print('fill_samples time:', timer() - start)  """
 
             """print("self.dim_feats", self.dim_feats)
             print("nb_samples", nb_samples)
@@ -635,8 +672,8 @@ class Runner:
                         #colors_samples[j,:] = colors_out[i,:]
                         colors_samples[j,:] = abs(colors_out[i,:] - true_rgb[i,:])
                         #colors_samples[j,:] = true_rgb[i,:]
-                ply.save_ply("Exp/bmvs_man/samples.ply", np.transpose(2.2*self.samples[:nb_samples,:].cpu() - 1.1), col = 255*np.transpose(colors_samples.cpu().numpy()))
-                #ply.save_ply("Exp/bmvs_man/samples.ply", np.transpose(self.samples[:nb_samples,:].cpu()), col = 255*np.transpose(sdf_rgb))
+                #ply.save_ply("Exp/bmvs_man/samples.ply", np.transpose(2.2*self.samples[:nb_samples,:].cpu() - 1.1), col = 255*np.transpose(colors_samples.cpu().numpy()))
+                ply.save_ply("Exp/bmvs_man/samples.ply", np.transpose(self.samples[:nb_samples,:].cpu()), col = 255*np.transpose(sdf_rgb))
                 #ply.save_ply("TMP/meshes/samples_"+str(self.iter_step).zfill(5)+".ply", np.transpose(pts.cpu()), col = 255*np.transpose(sdf_rgb))
                 #print("nb samples: ", nb_samples)
                 exit()
@@ -704,7 +741,7 @@ class Runner:
             start = timer()
             self.grad_features[:] = 0.0
             self.counter[:] = 0.0
-            backprop_cuda.backprop_feat(nb_samples, self.sites.shape[0], self.dim_feats, self.out_sdf, self.grad_features, self.counter, self.fine_features_grad, self.out_ids, self.out_weights)  
+            backprop_cuda.backprop_feat(nb_samples, self.tet32.sites.shape[0], self.dim_feats, self.out_sdf, self.grad_features, self.counter, self.fine_features_grad, self.out_ids, self.out_weights)  
             if verbose:
                 print('backprop_feat samples time:', timer() - start)
                 
@@ -712,7 +749,7 @@ class Runner:
                 start = timer()
                 self.grad_norm_feat[:] = 0.0
                 self.counter[:] = 0.0
-                backprop_cuda.backprop_grad(nb_samples, self.sites.shape[0], self.out_sdf, self.grad_norm_feat, self.norm_features_grad, self.out_ids, self.out_weights)
+                backprop_cuda.backprop_grad(nb_samples, self.tet32.sites.shape[0], self.out_sdf, self.grad_norm_feat, self.norm_features_grad, self.out_ids, self.out_weights)
                 self.grad_norm[:,:] = self.grad_norm_feat[:,:3]
                 #self.grad_features[:,8:] = 0.0
 
@@ -722,15 +759,15 @@ class Runner:
                 ############ Backprop gradients to neighbors ############                   
                 """start = timer()
                 self.grad_norm[:] = 0.0
-                backprop_cuda.backprop_multi(self.sites.shape[0], 96, 8, self.sites, self.activated, self.grad_norm, self.grad_norm_feat, self.grad_features, self.tet32.knn_sites)
+                backprop_cuda.backprop_multi(self.tet32.sites.shape[0], 96, 8, self.tet32.sites, self.activated, self.grad_norm, self.grad_norm_feat, self.grad_features, self.tet32.knn_sites)
                 self.grad_features[:,8:] = 0.0
                 if verbose:
                     print('backprop_multi sites time:', timer() - start)"""
                 
                 start = timer()
                 self.grad_sdf_norm[:] = 0.0
-                #backprop_cuda.backprop_norm(self.tet32.nb_tets, self.tet32.summits, self.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.grad_norm_feat, self.grad_sdf_norm, self.activated)
-                backprop_cuda.backprop_unit_norm(self.tet32.nb_tets, self.tet32.summits, self.sites, self.norm_grad, self.unormed_grad, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.grad_norm, self.grad_sdf_norm, self.activated)
+                #backprop_cuda.backprop_norm(self.tet32.nb_tets, self.tet32.summits, self.tet32.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.grad_norm_feat, self.grad_sdf_norm, self.activated)
+                backprop_cuda.backprop_unit_norm(self.tet32.nb_tets, self.tet32.summits, self.tet32.sites, self.norm_grad, self.unormed_grad, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.grad_norm, self.grad_sdf_norm, self.activated)
                 self.grad_sdf_norm[outside_flag[:] == 1] = 0.0    
                 self.grad_sdf_norm[ext_flag[:] == 1] = 0.0   
                 if verbose:
@@ -774,7 +811,7 @@ class Runner:
             #self.activated[abs(self.grad_sdf) > 0.0] = 1
             #self.activated[grad_sdf == 0.0] = -1
             self.grad_sdf_smooth[:] = 0.0
-            backprop_cuda.knn_smooth(self.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.sites, self.activated,
+            backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites, self.activated,
                                         self.grad_sdf_space, self.grad_sdf, self.fine_features, self.tet32.knn_sites, self.grad_sdf_smooth)
             self.grad_sdf[:] = self.grad_sdf_smooth[:]
             self.grad_sdf[outside_flag[:] == 1.0] = 0.0   
@@ -786,11 +823,11 @@ class Runner:
             #### SMOOTH FEATURE GRADIENT
             """self.grad_feat_smooth[:] = self.grad_features[:]
             self.counter_smooth[:] = 1.0
-            backprop_cuda.smooth(self.tet32.edges.shape[0], self.sites.shape[0], self.sigma, self.dim_feats, self.sites, self.grad_features, 
+            backprop_cuda.smooth(self.tet32.edges.shape[0], self.tet32.sites.shape[0], self.sigma, self.dim_feats, self.tet32.sites, self.grad_features, 
                                  self.tet32.edges, self.grad_feat_smooth, self.counter_smooth)"""
             
             """self.grad_feat_smooth[:] = 0.0
-            backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.sigma_feat, self.dim_feats, self.sites, self.activated,
+            backprop_cuda.knn_smooth(self.tet32.sites.shape[0], 96, self.sigma, self.sigma_feat, self.dim_feats, self.tet32.sites, self.activated,
                                      self.grad_sdf_space, self.grad_features, self.fine_features, self.tet32.knn_sites, self.grad_feat_smooth) 
             self.grad_features[:] = self.grad_feat_smooth[:]
             self.grad_features[outside_flag[:] == 1.0] = 0.0"""  
@@ -813,16 +850,16 @@ class Runner:
                 #if (iter_step+1) < 35000:
                 #self.activated[grad_sdf == 0.0] = 0 #self.sigma
 
-                backprop_cuda.smooth_sdf(self.tet32.edges.shape[0], self.sigma, self.sites, self.activated,
+                backprop_cuda.smooth_sdf(self.tet32.edges.shape[0], self.sigma, self.tet32.sites, self.activated,
                                          self.sdf, self.fine_features, self.tet32.edges, self.grad_sdf_smooth, self.grad_feat_smooth, self.weight_sdf_smooth)
                 
                 self.grad_sdf_L2[:] = 0.0
-                backprop_cuda.sdf_smooth(self.sites.shape[0], 1, self.activated, self.sdf.detach(), self.sdf_smooth, self.grad_sdf_L2)
+                backprop_cuda.sdf_smooth(self.tet32.sites.shape[0], 1, self.activated, self.sdf.detach(), self.sdf_smooth, self.grad_sdf_L2)
                 
 
                 #self.weight_sdf_smooth[self.weight_sdf_smooth[:] == 0.0] = 1.0
                 #self.grad_sdf_smooth = self.grad_sdf_smooth / self.weight_sdf_smooth[:]
-                #self.grad_sdf_smooth[:] = self.grad_sdf_smooth[:] / self.sites.shape[0]
+                #self.grad_sdf_smooth[:] = self.grad_sdf_smooth[:] / self.tet32.sites.shape[0]
                 #self.grad_feat_smooth = self.grad_feat_smooth / self.weight_sdf_smooth[:].reshape(-1,1)
                 #self.grad_feat_smooth[:,:] = self.grad_feat_smooth[:,:] / self.sigma
                 self.grad_sdf_smooth[outside_flag[:] == 1] = 0.0   
@@ -870,8 +907,8 @@ class Runner:
                 self.grad_eik[abs(self.sdf) > 3.0*self.sigma] = 0.0
                 self.grad_sdf_smooth[abs(self.sdf) > 3.0*self.sigma] = 0.0"""
             
-            #self.grad_norm_smooth = self.grad_norm_smooth / self.sites.shape[0]
-            #self.grad_eik = self.grad_eik / self.sites.shape[0]
+            #self.grad_norm_smooth = self.grad_norm_smooth / self.tet32.sites.shape[0]
+            #self.grad_eik = self.grad_eik / self.tet32.sites.shape[0]
             #self.grad_sdf_smooth = self.grad_sdf_smooth / self.sigma
                 
             if False: #iter_step % 3 != 0 or (iter_step+1) < 25000:    
@@ -963,7 +1000,7 @@ class Runner:
                 self.activated[abs(self.sdf.grad[:]) > 0] = 1
                 start = timer()
                 self.activated_buff[:] = self.activated[:]
-                backprop_cuda.activate_sites(rays_o.shape[0], self.sites.shape[0], 96, self.out_ids, self.offsets, self.tet32.knn_sites, self.activated_buff, self.activated)
+                backprop_cuda.activate_sites(rays_o.shape[0], self.tet32.sites.shape[0], 96, self.out_ids, self.offsets, self.tet32.knn_sites, self.activated_buff, self.activated)
                 #self.activated[:] = self.activated_buff[:]
                 if verbose:
                     print('activate time:', timer() - start)"""
@@ -988,7 +1025,7 @@ class Runner:
                 #if (iter_step+1) == 20000:
                 #    self.batch_size = 10240
 
-                #if self.sites.shape[0] > 500000:
+                #if self.tet32.sites.shape[0] > 500000:
                 #    self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, 0.0) #(iter_step+1) > 2000
                 #else:
                 self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf_smooth.cpu().numpy(), self.fine_features.detach().cpu().numpy(), self.visual_hull, res, cam_sites, self.learning_rate_cvt, (iter_step+1) <= up_iters[2], self.sigma)
@@ -1029,18 +1066,18 @@ class Runner:
                 #with torch.no_grad():
                 #    self.sdf[ext_flag[:] == 1] = -1000.0
                 
-                self.sites = torch.from_numpy(sites.astype(np.float32)).cuda()
-                self.sites = self.sites.contiguous()
-                self.sites.requires_grad_(True)
+                """self.tet32.sites = torch.from_numpy(sites.astype(np.float32)).cuda()
+                self.tet32.sites = self.tet32.sites.contiguous()
+                self.tet32.sites.requires_grad_(True)"""
 
                 self.Allocate_data()
                 self.activated[:] = 1
                 
-                cvt_grad_cuda.diff_tensor(self.tet32.nb_tets, self.tet32.summits, self.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff)
+                cvt_grad_cuda.diff_tensor(self.tet32.nb_tets, self.tet32.summits, self.tet32.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff)
                                 
-                delta_sites = torch.zeros(self.sites.shape).float().cuda()
+                delta_sites = torch.zeros(self.tet32.sites.shape).float().cuda()
                 with torch.no_grad():  
-                    delta_sites[:] = self.sites[:]
+                    delta_sites[:] = self.tet32.sites[:]
 
                 with torch.no_grad():
                     self.sdf_smooth[:] = self.sdf[:]
@@ -1068,13 +1105,13 @@ class Runner:
 
                 self.optimizer_sdf = torch.optim.Adam([self.sdf], lr=self.learning_rate_sdf, betas=(0.9, 0.98))        
                 self.optimizer_feat = torch.optim.Adam([self.fine_features], lr=self.learning_rate_feat, betas=(0.9, 0.98))  
-                #self.optimizer_cvt = torch.optim.Adam([self.sites], lr=self.learning_rate_cvt) 
+                #self.optimizer_cvt = torch.optim.Adam([self.tet32.sites], lr=self.learning_rate_cvt) 
                 
                 if self.double_net:
-                    self.vortSDF_renderer_coarse_net.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
+                    self.vortSDF_renderer_coarse_net.prepare_buffs(self.batch_size, self.n_samples, self.tet32.sites.shape[0])
                 else:
-                    self.vortSDF_renderer_coarse.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
-                self.vortSDF_renderer_fine.prepare_buffs(self.batch_size, self.n_samples, self.sites.shape[0])
+                    self.vortSDF_renderer_coarse.prepare_buffs(self.batch_size, self.n_samples, self.tet32.sites.shape[0])
+                self.vortSDF_renderer_fine.prepare_buffs(self.batch_size, self.n_samples, self.tet32.sites.shape[0])
 
                 step_size = step_size / 1.5
                 self.e_w = self.e_w / 10.0
@@ -1087,7 +1124,7 @@ class Runner:
                 self.sigma = self.sigma / 2.0
                 self.w_g = 1.0
                 #full_reg = self.end_iter
-                centers = torch.zeros(self.sites.shape).float().cuda()
+                centers = torch.zeros(self.tet32.sites.shape).float().cuda()
                 centers[:,0] = (self.visual_hull[3]+self.visual_hull[0])/2.0
                 centers[:,1] = (self.visual_hull[4]+self.visual_hull[1])/2.0
                 centers[:,2] = (self.visual_hull[5]+self.visual_hull[2])/2.0
@@ -1178,8 +1215,8 @@ class Runner:
                     #full_reg = 3
                     
                 if (iter_step+1) == up_iters[4]:
-                    self.s_start = 400#30/(10.0*self.sigma) #50.0
-                    self.s_max = 3000#60/(5.0*self.sigma) #200
+                    self.s_start = 600#30/(10.0*self.sigma) #50.0
+                    self.s_max = 4000#60/(5.0*self.sigma) #200
 
                     self.learning_rate = self.learning_rate_list[5]
                     self.learning_rate_sdf = self.learning_rate_sdf_list[5]
@@ -1234,7 +1271,7 @@ class Runner:
                 """self.activated[:] = 1
                 with torch.no_grad():
                     self.sdf_smooth[:] = 0.0
-                backprop_cuda.knn_smooth(self.sites.shape[0], 96, self.sigma, self.sigma_feat, 1, self.sites,  self.activated,
+                backprop_cuda.knn_smooth(self.tet32.sites.shape[0], 96, self.sigma, self.sigma_feat, 1, self.tet32.sites,  self.activated,
                                         self.grad_sdf_space, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)
                 """
                 self.tet32.surface_from_sdf(self.sdf_smooth.detach().cpu().numpy().reshape(-1), "Exp/{}/meshes/test_tri_smooth.ply".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][:3, :3])                               
@@ -1318,22 +1355,21 @@ class Runner:
             outside_flag[sites[:,1] > self.visual_hull[4] - (self.visual_hull[4]-self.visual_hull[1])/(res)] = 1
             outside_flag[sites[:,2] > self.visual_hull[5] - (self.visual_hull[5]-self.visual_hull[2])/(res)] = 1
             
-            self.sites = torch.from_numpy(sites.astype(np.float32)).cuda()
-            self.sites = self.sites.contiguous()
-            self.sites.requires_grad_(True)
+            self.tet32.sites = torch.from_numpy(sites.astype(np.float32)).cuda()
+            self.tet32.sites = self.tet32.sites.contiguous()
+            self.tet32.sites.requires_grad_(True)
 
             self.Allocate_data()
             
-            cvt_grad_cuda.diff_tensor(self.tet32.nb_tets, self.tet32.summits, self.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff)
+            cvt_grad_cuda.diff_tensor(self.tet32.nb_tets, self.tet32.summits, self.tet32.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff)
             self.grad_sdf_space[:] = 0.0
-            self.grad_feat_space[:] = 0.0
             self.weights_grad[:] = 0.0
             self.grad_eik[:] = 0.0
             self.grad_norm_smooth[:] = 0.0
             self.eik_loss[:] = 0.0
 
-            cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, self.activated, self.sdf.detach(), self.sdf.detach(), self.fine_features.detach(), 
-                                        self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.eik_loss)
+            cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.tet32.sites.shape[0], self.tet32.summits, self.tet32.sites, self.activated, self.sdf.detach(), self.sdf.detach(), self.fine_features.detach(), 
+                                        self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.eik_loss)
             
             self.norm_grad = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1, 1)
             self.norm_grad[self.norm_grad == 0.0] = 1.0
@@ -1352,12 +1388,12 @@ class Runner:
         self.activated[:] = 2
         with torch.no_grad():
             self.sdf_smooth[:] = 0.0
-        backprop_cuda.knn_smooth(self.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.sites,  self.activated,
+        backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites,  self.activated,
                                         self.grad_sdf_space, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)
             
         self.grad_sdf_space[:] = 0.0
-        cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, self.activated, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
-                                    self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.eik_loss)
+        cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.tet32.sites.shape[0], self.tet32.summits, self.tet32.sites, self.activated, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
+                                    self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.eik_loss)
         self.norm_grad = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1, 1)
         self.norm_grad[self.norm_grad == 0.0] = 1.0
         self.unormed_grad[:] = self.grad_sdf_space[:]
@@ -1403,7 +1439,6 @@ class Runner:
         img_mask[:] = 0
         
         self.grad_sdf_space[:] = 0.0
-        self.grad_feat_space[:] = 0.0
         self.weights_grad[:] = 0.0
         self.grad_eik[:] = 0.0
         self.grad_norm_smooth[:] = 0.0
@@ -1412,11 +1447,11 @@ class Runner:
         
         with torch.no_grad():
             self.sdf_smooth[:] = 0.0
-        backprop_cuda.knn_smooth(self.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.sites,  self.activated,
+        backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites,  self.activated,
                                 self.grad_sdf_space, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)
 
-        cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.sites.shape[0], self.tet32.summits, self.sites, self.activated, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
-                                            self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.grad_feat_space, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.eik_loss)
+        cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.tet32.sites.shape[0], self.tet32.summits, self.tet32.sites, self.activated, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
+                                            self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.eik_loss)
         
         norm_grads = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1, 1)
         self.grad_sdf_space = self.grad_sdf_space / norm_grads.expand(-1, 3)
@@ -1435,7 +1470,10 @@ class Runner:
             self.offsets[:] = 0
             self.activated[:] = 1
             img_ids = img_idx*torch.ones((rays_o_batch.shape[0], 1)).cuda().int()
-            nb_samples = self.tet32.sample_rays_cuda(self.inv_s, img_ids, rays_d_batch, self.sdf_smooth, self.cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_ids, self.offsets, self.activated, self.n_samples)    
+            nb_samples = tet32_march_cuda.tet32_march_count(self.inv_s, rays_o.shape[0], rays_d, self.tet32.sites, self.sdf_smooth, self.tet32.summits, self.tet32.neighbors, img_ids, 
+                                               self.cam_ids, self.tet32.offsets_cam, self.tet32.cam_tets, self.activated, self.offsets)
+
+            #nb_samples = self.tet32.sample_rays_cuda(self.inv_s, img_ids, rays_d_batch, self.sdf_smooth, self.cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_ids, self.offsets, self.activated, self.n_samples)    
             #nb_samples = self.tet32.sample_rays_cuda(0.01, self.inv_s, self.sigma, img_idx, rays_d_batch, self.sdf, self.fine_features, cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_feat, self.in_ids, self.offsets, self.activated, self.n_samples)    
                 
             start = timer()
@@ -1443,10 +1481,14 @@ class Runner:
             start = timer()
             self.samples[:] = 0.0
             self.out_grads[:] = 0.0
-            tet32_march_cuda.fill_samples(rays_o_batch.shape[0], self.n_samples, rays_o_batch, rays_d_batch, self.sites, 
+            tet32_march_cuda.tet32_march_offset(self.inv_s, rays_o.shape[0], rays_d, self.tet32.sites, self.sdf_smooth, self.tet32.summits, self.tet32.neighbors, img_ids, 
+                                                self.cam_ids, self.tet32.offsets_cam, self.tet32.cam_tets, self.grad_sdf_space, self.fine_features.detach(),  
+                                                self.out_weights, self.out_z, self.out_sdf, self.out_ids, self.out_grads, self.out_feat, self.samples_rays, self.samples, 
+                                                self.offsets)
+            """tet32_march_cuda.fill_samples(rays_o_batch.shape[0], self.n_samples, rays_o_batch, rays_d_batch, self.tet32.sites, 
                                         self.in_z, self.in_sdf, self.fine_features, self.in_weights, self.grad_sdf_space, self.in_ids, 
                                         self.out_z, self.out_sdf, self.out_feat, self.out_weights, self.out_grads, self.out_ids, 
-                                        self.offsets, self.samples, self.samples_rays)
+                                        self.offsets, self.samples, self.samples_rays)"""
                         
             #samples = (self.samples[:nb_samples,:] + self.samples_loc[:nb_samples,:])/2.0
             samples = (self.samples[:nb_samples] + 1.1)/2.2
@@ -1532,8 +1574,8 @@ class Runner:
         print("rendering done image {}".format(img_idx))
         
     def Allocate_data(self, K_NN = 24):        
-        self.activated_buff = torch.zeros(self.sites.shape[0], dtype=torch.int32).cuda().contiguous()     
-        self.activated = torch.zeros(self.sites.shape[0], dtype=torch.int32).cuda().contiguous()      
+        self.activated_buff = torch.zeros(self.tet32.sites.shape[0], dtype=torch.int32).cuda().contiguous()     
+        self.activated = torch.zeros(self.tet32.sites.shape[0], dtype=torch.int32).cuda().contiguous()      
 
         self.sdf_smooth = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()  
         self.counter = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()   
@@ -1542,7 +1584,7 @@ class Runner:
         
         self.grad_features = torch.zeros([self.sdf.shape[0], self.dim_feats]).float().cuda().contiguous()  
         self.grad_norm_feat = torch.zeros([self.sdf.shape[0], 12]).float().cuda().contiguous()  
-        self.grad_norm = torch.zeros([self.sites.shape[0], 3]).float().cuda().contiguous()
+        self.grad_norm = torch.zeros([self.tet32.sites.shape[0], 3]).float().cuda().contiguous()
         self.grad_feat_smooth = torch.zeros([self.sdf.shape[0], self.dim_feats]).float().cuda().contiguous()
 
         self.grad_sdf_smooth = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()  
@@ -1550,21 +1592,29 @@ class Runner:
         self.grad_sdf = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()  
         self.grad_sdf_net = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()          
         self.grad_sdf_norm = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()         
-        self.grad_sdf_L2 = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()               
+        self.grad_sdf_L2 = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()           
 
-        self.grad_sdf_space = torch.zeros([self.sites.shape[0], 3]).float().cuda().contiguous()
-        self.unormed_grad = torch.zeros([self.sites.shape[0], 3]).float().cuda().contiguous()
-        self.grad_feat_space = torch.zeros([self.sites.shape[0], 3, self.dim_feats]).float().cuda().contiguous()
-        self.weights_grad_space = torch.zeros([3*self.tet32.KNN*self.sites.shape[0]]).float().cuda().contiguous()
-        self.weights_grad = torch.zeros([self.sites.shape[0], 1]).float().cuda().contiguous()
-        self.eik_loss = torch.zeros([self.sites.shape[0], 1]).float().cuda().contiguous()
+        
+        #print("sdf related")
+        #input()
 
-        self.grad_eik = torch.zeros([self.sites.shape[0]]).float().cuda().contiguous() 
-        self.grad_norm_smooth = torch.zeros([self.sites.shape[0]]).float().cuda().contiguous() 
+        self.grad_sdf_space = torch.zeros([self.tet32.sites.shape[0], 3]).float().cuda().contiguous()
+        self.unormed_grad = torch.zeros([self.tet32.sites.shape[0], 3]).float().cuda().contiguous()
+        #self.grad_feat_space = torch.zeros([self.tet32.sites.shape[0], 3, self.dim_feats]).float().cuda().contiguous()
+        self.weights_grad = torch.zeros([self.tet32.sites.shape[0], 1]).float().cuda().contiguous()
+        self.eik_loss = torch.zeros([self.tet32.sites.shape[0], 1]).float().cuda().contiguous()
+
+        self.grad_eik = torch.zeros([self.tet32.sites.shape[0]]).float().cuda().contiguous() 
+        self.grad_norm_smooth = torch.zeros([self.tet32.sites.shape[0]]).float().cuda().contiguous() 
+
+        #print("sites related")
+        #input()
 
         self.vol_tet32 = torch.zeros([self.tet32.nb_tets]).float().cuda().contiguous() 
         self.weights_diff = torch.zeros([12*self.tet32.nb_tets]).float().cuda().contiguous() 
-        self.weights_tot_diff = torch.zeros([self.sites.shape[0]]).float().cuda().contiguous() 
+        self.weights_tot_diff = torch.zeros([self.tet32.sites.shape[0]]).float().cuda().contiguous() 
+        #print("tet related")
+        #input()
         
     def Allocate_batch_data(self, K_NN = 24):
         self.samples = torch.zeros([self.n_samples * self.batch_size, 3], dtype=torch.float32).cuda()
@@ -1579,7 +1629,7 @@ class Runner:
         self.samples_rays = torch.zeros([self.n_samples * self.batch_size, 3], dtype=torch.float32).cuda()
         self.samples_rays = self.samples_rays.contiguous()
         
-        self.in_weights = torch.zeros([6*self.n_samples * self.batch_size], dtype=torch.float32).cuda()
+        """self.in_weights = torch.zeros([6*self.n_samples * self.batch_size], dtype=torch.float32).cuda()
         self.in_weights = self.in_weights.contiguous()
 
         self.in_ids = -torch.ones([6*self.n_samples* self.batch_size], dtype=torch.int32).cuda()
@@ -1589,7 +1639,7 @@ class Runner:
         self.in_z = self.in_z.contiguous()
         
         self.in_sdf = torch.zeros([2*self.n_samples * self.batch_size], dtype=torch.float32).cuda()
-        self.in_sdf = self.in_sdf.contiguous()        
+        self.in_sdf = self.in_sdf.contiguous()"""        
         
         self.out_ids = -torch.ones([self.n_samples* self.batch_size, 6], dtype=torch.int32).cuda()
         self.out_ids = self.out_ids.contiguous()
@@ -1664,7 +1714,7 @@ class Runner:
         torch.save(checkpoint, os.path.join(self.base_exp_dir, 'checkpoints', 'ckpt_{:0>6d}.pth'.format(self.iter_step)))
         np.save(os.path.join(self.base_exp_dir, 'checkpoints', 'sdf_{:0>6d}.npy'.format(self.iter_step)), self.sdf.detach().cpu().numpy())
         np.save(os.path.join(self.base_exp_dir, 'checkpoints', 'features_{:0>6d}.npy'.format(self.iter_step)), self.fine_features.detach().cpu().numpy())
-        np.save(os.path.join(self.base_exp_dir, 'checkpoints', 'sites_{:0>6d}.npy'.format(self.iter_step)), self.sites.cpu().numpy())
+        np.save(os.path.join(self.base_exp_dir, 'checkpoints', 'sites_{:0>6d}.npy'.format(self.iter_step)), self.tet32.sites.cpu().numpy())
         for lvl_curr in range(self.tet32.lvl):
             np.save(os.path.join(self.base_exp_dir, 'checkpoints', 'sites_{:0>6d}_lvl{}.npy'.format(self.iter_step, lvl_curr)), self.tet32.lvl_sites[lvl_curr])
 
@@ -1677,13 +1727,13 @@ class Runner:
         self.iter_step = int(os.path.join(self.base_exp_dir, 'checkpoints', checkpoint_name).split("_")[-1].split(".")[0])
         print(self.iter_step)
 
-        self.sites = np.load(os.path.join(self.base_exp_dir, 'checkpoints', 'sites_{:0>6d}.npy'.format(self.iter_step)))
-        #self.sites = torch.from_numpy(self.sites.astype(np.float32)).cuda()
+        sites = np.load(os.path.join(self.base_exp_dir, 'checkpoints', 'sites_{:0>6d}.npy'.format(self.iter_step)))
+        #self.tet32.sites = torch.from_numpy(self.tet32.sites.astype(np.float32)).cuda()
 
         sites_list = sorted(glob(os.path.join(os.path.join(self.base_exp_dir, 'checkpoints', 'sites_{:0>6d}_lvl*'.format(self.iter_step)))))
         print(sites_list)
         
-        self.tet32 = tet32.Tet32(self.sites, id = 0)
+        self.tet32 = tet32.Tet32(sites, id = 0)
         self.tet32.lvl = len(sites_list)-1
 
         self.tet32.lvl_sites = []

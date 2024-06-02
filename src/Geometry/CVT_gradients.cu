@@ -1128,7 +1128,6 @@ __global__ void eikonal_grad_kernel(
     float *__restrict__ grad_eik,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ grad_smooth,     // [N_voxels, 4] for each voxel => it's vertices)
     float *__restrict__ grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices)
-    float *__restrict__ grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ vol,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ weights,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
@@ -1504,7 +1503,6 @@ void eikonal_grad_cuda(
     torch::Tensor  grad_eik,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  grad_smooth,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices)
-    torch::Tensor  grad_feat,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  vol,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  weights,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
@@ -1524,7 +1522,6 @@ void eikonal_grad_cuda(
                 grad_eik.data_ptr<float>(),
                 grad_smooth.data_ptr<float>(),
                 grad_sdf.data_ptr<float>(),
-                grad_feat.data_ptr<float>(),
                 vol.data_ptr<float>(),
                 weights.data_ptr<float>(),
                 weights_tot.data_ptr<float>(),

@@ -48,6 +48,50 @@ void fill_samples_cuda(
     torch::Tensor sample_rays     // [N_voxels, 4] for each voxel => it's vertices
 ); 
 
+
+// Ray marching in 3D
+int tet32_march_count_cuda(
+	float inv_s,
+    size_t num_rays,
+    torch::Tensor rays,      // [N_rays, 6]
+    torch::Tensor vertices, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor sdf, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor nei_tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor cam_id_rays,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor cam_ids,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor offsets_cam,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor cam_tets,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor activate,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor offset     // [N_voxels, 4] for each voxel => it's vertices
+);
+
+
+void tet32_march_offset_cuda(
+	float inv_s,
+    size_t num_rays,
+    torch::Tensor rays,      // [N_rays, 6]
+    torch::Tensor vertices, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor sdf, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor nei_tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor cam_id_rays,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor cam_ids,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor offsets_cam,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor cam_tets,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor in_grads,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor in_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor weights,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor z_vals,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor z_sdfs,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor z_ids,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor out_grads,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor out_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor samples_rays,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor samples,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor offset     // [N_voxels, 4] for each voxel => it's vertices
+);
+
 #define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
@@ -146,8 +190,92 @@ void fill_samples(
         sample_rays);
 }
 
+// Ray marching in 3D
+int tet32_march_count(
+	float inv_s,
+    size_t num_rays,
+    torch::Tensor rays,      // [N_rays, 6]
+    torch::Tensor vertices, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor sdf, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor nei_tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor cam_id_rays,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor cam_ids,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor offsets_cam,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor cam_tets,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor activate,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor offset     // [N_voxels, 4] for each voxel => it's vertices
+){
+    return tet32_march_count_cuda(
+            inv_s,
+            num_rays,
+            rays,    
+            vertices, 
+            sdf, 
+            tets, 
+            nei_tets,
+            cam_id_rays,   
+            cam_ids,  
+            offsets_cam,   
+            cam_tets,  
+            activate, 
+            offset);
+}
+
+
+void tet32_march_offset(
+	float inv_s,
+    size_t num_rays,
+    torch::Tensor rays,      // [N_rays, 6]
+    torch::Tensor vertices, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor sdf, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor nei_tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor cam_id_rays,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor cam_ids,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor offsets_cam,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor cam_tets,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor in_grads,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor in_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor weights,    // [N_sites, 3] for each voxel => it's vertices
+    torch::Tensor z_vals,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor z_sdfs,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor z_ids,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor out_grads,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor out_feat,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor samples_rays,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor samples,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor offset     // [N_voxels, 4] for each voxel => it's vertices
+) {
+    tet32_march_offset_cuda(
+        inv_s,
+        num_rays,
+        rays, 
+        vertices,
+        sdf, 
+        tets, 
+        nei_tets, 
+        cam_id_rays,  
+        cam_ids, 
+        offsets_cam, 
+        cam_tets,  
+        in_grads,   
+        in_feat,  
+        weights, 
+        z_vals,  
+        z_sdfs,   
+        z_ids, 
+        out_grads,   
+        out_feat,  
+        samples_rays,  
+        samples,  
+        offset);
+}
+
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("tet32_march", &tet32_march, "tet32_march (CPP)");
     m.def("fill_samples", &fill_samples, "fill_samples (CPP)");
+    m.def("tet32_march_count", &tet32_march_count, "tet32_march_count (CPP)");
+    m.def("tet32_march_offset", &tet32_march_offset, "tet32_march_offset (CPP)");
 }

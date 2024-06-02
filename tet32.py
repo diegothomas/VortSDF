@@ -206,7 +206,7 @@ class Tet32(Process):
         #self.offset_bnn = torch.from_numpy(self.d['offset_bnn']).int().cuda().contiguous()
         self.sites = torch.from_numpy(self.d['sites']).float().cuda().contiguous()  
         #self.tetras = self.d['tetras']
-        print("nb edges: ", self.edges.shape)
+        #print("nb edges: ", self.edges.shape)
 
     def make_knn(self):
         start = timer()
@@ -531,7 +531,8 @@ class Tet32(Process):
         f = SDF(np.asarray(self.tri_vertices), np.asarray(self.tri_faces))
         true_sdf = -f(self.sites.cpu().numpy())
 
-        if True: #self.nb_pre_sites < 1.0e6:            
+        if True: #self.nb_pre_sites < 1.0e6:     
+            #self.edges = torch.from_numpy(self.d['edges']).int().cuda().contiguous()       
             nb_new_sites = tet_utils.upsample_counter(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(true_sdf).float().cuda())
                     
             #nb_new_sites = tet_utils.upsample_counter_tet(self.nb_tets, radius, self.summits, self.sites, torch.from_numpy(sdf).float().cuda())
@@ -542,6 +543,7 @@ class Tet32(Process):
 
             tet_utils.upsample(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(sdf).float().cuda().contiguous(), torch.from_numpy(true_sdf).float().cuda().contiguous(), torch.from_numpy(feat).float().cuda().contiguous(),
                             new_sites, new_sdf, new_feat)
+            #del self.edges
             
             #tet_utils.upsample_tet(self.nb_tets, radius, self.summits, self.sites, torch.from_numpy(sdf).float().cuda().contiguous(), torch.from_numpy(feat).float().cuda().contiguous(),
             #                   new_sites, new_sdf, new_feat)
@@ -631,7 +633,7 @@ class Tet32(Process):
         #if flag:
         #    out_sdf[mask_background[:] == True] = radius
 
-        if False:
+        if flag:
             out_sdf = -f(self.sites)
             #out_sdf[abs(out_sdf) > 0] = -f(self.sites)[abs(out_sdf) > 0]
             #out_sdf[out_sdf < 0] = -radius/2.0
@@ -670,6 +672,7 @@ class Tet32(Process):
         true_sdf = -f(self.sites.cpu().numpy())
 
         if self.nb_pre_sites < 1.0e6:
+            self.edges = torch.from_numpy(self.d['edges']).int().cuda().contiguous()       
             nb_new_sites = tet_utils.upsample_counter(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(true_sdf).float().cuda())
                     
             new_sites = torch.zeros([nb_new_sites,3]).float().cuda().contiguous()
@@ -678,6 +681,7 @@ class Tet32(Process):
 
             tet_utils.upsample(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(sdf).float().cuda().contiguous(), torch.from_numpy(true_sdf).float().cuda().contiguous(), torch.from_numpy(feat).float().cuda().contiguous(),
                             new_sites, new_sdf, new_feat)
+            del self.edges
             
             new_sites = new_sites.cpu().numpy()
             new_sdf = new_sdf.cpu().numpy()
@@ -756,11 +760,13 @@ class Tet32(Process):
         normals = torch.zeros([3*2*nb_tets], dtype=torch.float32).cuda()
         normals = normals.contiguous()
 
+        self.edges = torch.from_numpy(self.d['edges']).int().cuda().contiguous()       
         nb_edges = self.edges.shape[0]
         vertices = torch.zeros([3*nb_edges], dtype=torch.float32).cuda()
         vertices = vertices.contiguous()
 
         mt_cuda_kernel.marching_tets(self.sites.shape[0], nb_edges, nb_tets, m_iso, faces, vertices, normals, self.sites, sdf, self.edges, self.summits)
+        del self.edges
 
         # Reshape all outputs
         faces_out = faces.reshape((2*nb_tets, 3))
