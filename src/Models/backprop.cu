@@ -958,20 +958,20 @@ __global__ void knn_smooth_kernel_o(
     }
 
     __syncthreads();
-    if (threadIdx.x < 16 && threadIdx.x + 16 < num_knn) {
-        smem[num_knn*lvl_curr + threadIdx.x] = smem[num_knn*lvl_curr + threadIdx.x] + smem[num_knn*lvl_curr + threadIdx.x + 16]; 
+    if (i_curr < 16 && i_curr + 16 < num_knn) {
+        smem[num_knn*lvl_curr + i_curr] = smem[num_knn*lvl_curr + i_curr] + smem[num_knn*lvl_curr + i_curr + 16]; 
     }
     __syncthreads();
-    if (threadIdx.x < 8) {
-        smem[num_knn*lvl_curr + threadIdx.x] = smem[num_knn*lvl_curr + threadIdx.x] + smem[num_knn*lvl_curr + threadIdx.x + 8]; 
+    if (i_curr < 8) {
+        smem[num_knn*lvl_curr + i_curr] = smem[num_knn*lvl_curr + i_curr] + smem[num_knn*lvl_curr + i_curr + 8]; 
     }
     __syncthreads();
-    if (threadIdx.x < 4) {
-        smem[num_knn*lvl_curr + threadIdx.x] = smem[num_knn*lvl_curr + threadIdx.x] + smem[num_knn*lvl_curr + threadIdx.x + 4]; 
+    if (i_curr < 4) {
+        smem[num_knn*lvl_curr + i_curr] = smem[num_knn*lvl_curr + i_curr] + smem[num_knn*lvl_curr + i_curr + 4]; 
     }
     __syncthreads();
-    if (threadIdx.x < 2) {
-        smem[num_knn*lvl_curr + threadIdx.x] = smem[num_knn*lvl_curr + threadIdx.x] + smem[num_knn*lvl_curr + threadIdx.x + 2]; 
+    if (i_curr < 2) {
+        smem[num_knn*lvl_curr + i_curr] = smem[num_knn*lvl_curr + i_curr] + smem[num_knn*lvl_curr + i_curr + 2]; 
     }
     __syncthreads();
     

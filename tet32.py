@@ -276,6 +276,7 @@ class Tet32(Process):
             _, idx = KDtree.query(self.sites.cpu().numpy(), k=self.KNN)
             self.knn_sites[:,self.KNN*curr_it:self.KNN*(curr_it+1)] = np.asarray(self.lvl_sites[self.lvl-curr_it][idx[:,:]])  
             curr_it = curr_it + 1
+            print("level curr", lvl_curr)
 
         self.knn_sites = torch.from_numpy(self.knn_sites).int().cuda().contiguous()
         #print('KDTreeFlann time:', timer() - start)    
