@@ -31,7 +31,7 @@ backprop_cuda = load('backprop_cuda', ['src/Models/backprop.cpp', 'src/Models/ba
 
 cvt_grad_cuda = load('cvt_grad_cuda', ['src/Geometry/CVT_gradients.cpp', 'src/Geometry/CVT_gradients.cu'], verbose=True)
 
-laplacian = load(name='laplacian', sources=['src/Geometry/laplacian.cpp'], extra_include_paths=['C:/Users/thomas/Documents/Projects/lib/eigen-3.4.0', 'C:/Users/thomas/Documents/Projects/lib/libigl/include'], verbose=True)
+#laplacian = load(name='laplacian', sources=['src/Geometry/laplacian.cpp'], extra_include_paths=['C:/Users/thomas/Documents/Projects/lib/eigen-3.4.0', 'C:/Users/thomas/Documents/Projects/lib/libigl/include'], verbose=True)
 
 up_iters = [2000, 6000, 13000, 20000, 30000]
 
@@ -362,12 +362,12 @@ class Runner:
         
         cvt_grad_cuda.diff_tensor(self.tet32.nb_tets, self.tet32.summits, self.tet32.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff)
 
-        L_vals, L_ids, L_outer = laplacian.MakeLaplacian(self.tet32.sites.shape[0], self.tet32.nb_tets, self.tet32.sites.cpu(), self.tet32.summits.cpu())
+        """L_vals, L_ids, L_outer = laplacian.MakeLaplacian(self.tet32.sites.shape[0], self.tet32.nb_tets, self.tet32.sites.cpu(), self.tet32.summits.cpu())
 
         print(L_vals.shape)
         print(L_ids.shape)
         print(L_outer.shape)
-        input()
+        input()"""
                         
         if not hasattr(self, 'optimizer_sdf'):
             self.optimizer_sdf = torch.optim.Adam([self.sdf], lr=self.learning_rate_sdf) #, betas=(0.9, 0.98))     # Beta ??   0.98, 0.995 => 0.9

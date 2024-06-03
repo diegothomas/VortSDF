@@ -12,6 +12,13 @@
 
 //#include "../Models/cudaType.cuh"
 
+void SparseMul_gpu(torch::Tensor div, torch::Tensor sdf, torch::Tensor active_sites, torch::Tensor L_values, torch::Tensor L_outer_start, torch::Tensor L_nonZeros, size_t L_nnZ, size_t L_outerSize, size_t L_cols);
+
+#define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
+#define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
+#define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
+
+
 std::vector<at::Tensor> MakeLaplacian(size_t num_vertices, size_t num_tets, torch::Tensor vertices_T, torch::Tensor tets_T) {
         std::cout << "Load data to compute laplacian" << std::endl;
         Eigen::MatrixXd V, U;
@@ -101,6 +108,13 @@ std::vector<at::Tensor> MakeLaplacian(size_t num_vertices, size_t num_tets, torc
         return {d_values, d_indx, d_outer_start};
     }
 
+
+void MeanCurve(torch::Tensor div, torch::Tensor sdf, torch::Tensor active_sites, torch::Tensor L_values, torch::Tensor L_outer_start, torch::Tensor L_nonZeros, size_t L_nnZ, size_t L_outerSize, size_t L_cols) {
+    SparseMul_gpu(div, sdf, active_sites, L_values, L_inner_indices, L_outer_start, L_nonZeros, L_nnZ, L_outerSize, L_cols);
+}
+
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("MakeLaplacian", &MakeLaplacian, "MakeLaplacian (CPP)");
+    m.def("MeanCurve", &MeanCurve, "MeanCurve (CPP)");
 }
