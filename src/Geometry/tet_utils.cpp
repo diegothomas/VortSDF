@@ -12,7 +12,8 @@ int upsample_counter_cuda(
     float sigma,
     torch::Tensor edges,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor sdf
+    torch::Tensor sdf,
+    torch::Tensor active_sites
 );
 
 int upsample_counter_tet_cuda(
@@ -93,7 +94,8 @@ int upsample_counter(
     float sigma,
     torch::Tensor edges,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor sdf
+    torch::Tensor sdf,
+    torch::Tensor active_sites
 ) {
     //std::cout << "Backprop feature gradients" << std::endl; 
     return upsample_counter_cuda(
@@ -101,7 +103,8 @@ int upsample_counter(
         sigma,
         edges,    // [N_sites, 3] for each voxel => it's vertices
         sites,    // [N_sites, 3] for each voxel => it's vertices
-        sdf);
+        sdf,
+        active_sites);
 }
 
 int upsample_counter_tet(

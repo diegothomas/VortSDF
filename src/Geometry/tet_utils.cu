@@ -26,6 +26,7 @@ __global__ void upsample_counter_kernel(
     const int *__restrict__ edge,
     const float *__restrict__ sites,
     const float *__restrict__ sdf,
+    int *__restrict__ active_sites,
     int *__restrict__ counter)
 {
     const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -38,9 +39,12 @@ __global__ void upsample_counter_kernel(
                                (sites[3*edge[2*idx]+1] - sites[3*edge[2*idx+1]+1]) * (sites[3*edge[2*idx]+1] - sites[3*edge[2*idx+1]+1]) + 
                                (sites[3*edge[2*idx]+2] - sites[3*edge[2*idx+1]+2]) * (sites[3*edge[2*idx]+2] - sites[3*edge[2*idx+1]+2])); 
 
-    if (fabs(sdf[edge[2*idx]]) < 4.0f*sigma || fabs(sdf[edge[2*idx+1]]) < 4.0f*sigma || 
-        sdf[edge[2*idx]]*sdf[edge[2*idx+1]] <= 0.0f || fmin(fabs(sdf[edge[2*idx]]), fabs(sdf[edge[2*idx+1]])) < 1.5*edge_length)
+    if (fabs(sdf[edge[2*idx]]) < 4.0f*sigma || fabs(sdf[edge[2*idx+1]]) < 4.0f*sigma /*|| 
+        sdf[edge[2*idx]]*sdf[edge[2*idx+1]] <= 0.0f || fmin(fabs(sdf[edge[2*idx]]), fabs(sdf[edge[2*idx+1]])) < 1.5*edge_length*/) {
         atomicAdd(counter, 1);
+        atomicExch(&active_sites[edge[2*idx]], 1);
+        atomicExch(&active_sites[edge[2*idx + 1]], 1);
+    }
 
 }
 
@@ -112,8 +116,8 @@ __global__ void upsample_kernel(
                                (sites[3*edge[2*idx]+1] - sites[3*edge[2*idx+1]+1]) * (sites[3*edge[2*idx]+1] - sites[3*edge[2*idx+1]+1]) + 
                                (sites[3*edge[2*idx]+2] - sites[3*edge[2*idx+1]+2]) * (sites[3*edge[2*idx]+2] - sites[3*edge[2*idx+1]+2])); 
 
-    if (fabs(true_sdf[edge[2*idx]]) < 4.0f*sigma || fabs(true_sdf[edge[2*idx+1]]) < 4.0f*sigma || 
-            true_sdf[edge[2*idx]]*true_sdf[edge[2*idx+1]] <= 0.0f || fmin(fabs(true_sdf[edge[2*idx]]), fabs(true_sdf[edge[2*idx+1]])) < 1.5*edge_length) {
+    if (fabs(true_sdf[edge[2*idx]]) < 4.0f*sigma || fabs(true_sdf[edge[2*idx+1]]) < 4.0f*sigma /*|| 
+            true_sdf[edge[2*idx]]*true_sdf[edge[2*idx+1]] <= 0.0f || fmin(fabs(true_sdf[edge[2*idx]]), fabs(true_sdf[edge[2*idx+1]])) < 1.5*edge_length*/) {
         int new_idx = atomicAdd(counter, 1);
         new_sites[3*new_idx] = (sites[3*edge[2*idx]] + sites[3*edge[2*idx+1]]) / 2.0f;
         new_sites[3*new_idx + 1] = (sites[3*edge[2*idx] + 1] + sites[3*edge[2*idx+1] + 1]) / 2.0f;
@@ -432,7 +436,8 @@ int upsample_counter_cuda(
     float sigma,
     torch::Tensor edges,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor sites,    // [N_sites, 3] for each voxel => it's vertices
-    torch::Tensor sdf
+    torch::Tensor sdf,
+    torch::Tensor active_sites
 )   {
         int* counter;
         cudaMalloc((void**)&counter, sizeof(int));
@@ -447,6 +452,7 @@ int upsample_counter_cuda(
                 edges.data_ptr<int>(),
                 sites.data_ptr<float>(),
                 sdf.data_ptr<float>(),
+                active_sites.data_ptr<int>(),
                 counter); 
         }));
 

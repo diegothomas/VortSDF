@@ -694,6 +694,7 @@ __global__ void normalize_laplacian_kernel(
 __global__ void cvt_grad_cuda_kernel(
     const size_t num_sites,                // number of rays
     const size_t num_knn,                // number of rays
+    const float sigma,                // number of rays
     const float *__restrict__ thetas, 
     const float *__restrict__ phis, 
     const float *__restrict__ gammas, 
@@ -773,8 +774,13 @@ __global__ void cvt_grad_cuda_kernel(
             nmle[2] = nmle[2] / nmle_length;
             
             alpha = 0.5f;
-            if (sdf[idx]*sdf[knn_id] < 0.0f)
+            if (sdf[idx]*sdf[knn_id] < 0.0f) {
                 alpha = fabs(sdf[idx])/(fabs(sdf[idx]) + fabs(sdf[knn_id]));
+            } else if ((sdf[idx]-4.0f*sigma)*(sdf[knn_id]-4.0f*sigma) < 0.0f) {
+                alpha = fabs((sdf[idx]-4.0f*sigma))/(fabs((sdf[idx]-4.0f*sigma)) + fabs(sdf[knn_id]-4.0f*sigma));
+            }else if ((sdf[idx]+4.0f*sigma)*(sdf[knn_id]+4.0f*sigma) < 0.0f) {
+                alpha = fabs((sdf[idx]+4.0f*sigma))/(fabs((sdf[idx]+4.0f*sigma)) + fabs(sdf[knn_id]+4.0f*sigma));
+            }
 
             // Compute middle point
             b_point[0] = (alpha*sites[3*knn_id] + (1.0f-alpha)*curr_site[0]);
@@ -1380,6 +1386,7 @@ void Laplace_grad_cuda(
 float cvt_grad_cuda(
     size_t num_sites,
     size_t num_knn,
+    float sigma,                // number of rays
     torch::Tensor thetas, 
     torch::Tensor phis, 
     torch::Tensor gammas, 
@@ -1401,6 +1408,7 @@ float cvt_grad_cuda(
             cvt_grad_cuda_kernel CUDA_KERNEL(blocks,threads) (
                 num_sites,
                 num_knn,
+                sigma,
                 thetas.data_ptr<float>(),
                 phis.data_ptr<float>(),
                 gammas.data_ptr<float>(),

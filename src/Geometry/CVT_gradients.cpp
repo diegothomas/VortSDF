@@ -49,6 +49,7 @@ void Laplace_grad_cuda(
 float cvt_grad_cuda(
     size_t num_sites,
     size_t num_knn,
+    const float sigma,                // number of rays
     torch::Tensor thetas, 
     torch::Tensor phis, 
     torch::Tensor gammas, 
@@ -221,6 +222,7 @@ void sdf_laplace_grad(
 float cvt_grad(
     size_t num_sites,
     size_t num_knn,
+    const float sigma,                // number of rays
     torch::Tensor thetas, 
     torch::Tensor phis, 
     torch::Tensor gammas, 
@@ -239,6 +241,7 @@ float cvt_grad(
     return cvt_grad_cuda(
         num_sites,
         num_knn,
+        sigma,
         thetas,
         phis,
         gammas, 
