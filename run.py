@@ -427,7 +427,7 @@ class Runner:
 
             #data = self.dataset.gen_random_rays_zbuff_at(img_idx, num_rays, 0) 
             #data = self.dataset.gen_random_rays_smooth_at(img_idx, num_rays, lvl) 
-            if iter_step+1 < up_iters[4]:
+            if True: #iter_step+1 < up_iters[4]:
                 data = self.dataset.get_random_rays(num_rays)
             else:
                 data = self.dataset.get_random_rays_masked(num_rays)
@@ -1011,7 +1011,7 @@ class Runner:
                 #if self.tet32.sites.shape[0] > 500000:
                 #    self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, 0.0) #(iter_step+1) > 2000
                 #else:
-                self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf_smooth.cpu().numpy(), self.fine_features.detach().cpu().numpy(), self.visual_hull, res, cam_sites, cam_ids, self.learning_rate_cvt, (iter_step+1) <= up_iters[2], self.sigma)
+                self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf_smooth.cpu().numpy(), self.fine_features.detach().cpu().numpy(), self.visual_hull, res, cam_sites, cam_ids, self.learning_rate_cvt, (iter_step+1) <= up_iters[2], self.sigma_start)
                 self.sdf = self.sdf.contiguous()
                 self.sdf.requires_grad_(True)
                 self.fine_features = self.fine_features.contiguous()
@@ -1076,8 +1076,8 @@ class Runner:
                 centers[:,2] = (self.visual_hull[5]+self.visual_hull[2])/2.0
 
                 if (iter_step+1) == up_iters[0]:
-                    self.s_start = 50 #30/(10.0*self.sigma) #50.0
-                    self.s_max = 200 #60/(5.0*self.sigma) #200
+                    self.s_start = 100 #30/(10.0*self.sigma) #50.0
+                    self.s_max = 400 #60/(5.0*self.sigma) #200
 
                     self.learning_rate = self.learning_rate_list[1]
                     self.learning_rate_sdf = self.learning_rate_sdf_list[1]
@@ -1097,8 +1097,8 @@ class Runner:
                     
 
                 if (iter_step+1) == up_iters[1]:
-                    self.s_start = 100 #30/(10.0*self.sigma) #50.0
-                    self.s_max = 400 #60/(5.0*self.sigma) #200
+                    self.s_start = 200 #30/(10.0*self.sigma) #50.0
+                    self.s_max = 800 #60/(5.0*self.sigma) #200
 
                     self.learning_rate = self.learning_rate_list[2]
                     self.learning_rate_sdf = self.learning_rate_sdf_list[2]
@@ -1118,8 +1118,8 @@ class Runner:
                     
                 if (iter_step+1) == up_iters[2]:
                     warm_up = 500
-                    self.s_start = 200 #30/(10.0*self.sigma) #50.0
-                    self.s_max = 600 #60/(5.0*self.sigma) #200
+                    self.s_start = 400 #30/(10.0*self.sigma) #50.0
+                    self.s_max = 1600 #60/(5.0*self.sigma) #200
 
                     self.learning_rate = self.learning_rate_list[3]
                     self.learning_rate_sdf = self.learning_rate_sdf_list[3]
@@ -1140,8 +1140,8 @@ class Runner:
 
                 if (iter_step+1) == up_iters[3]:
                     warm_up = 500
-                    self.s_start = 300# 30/(10.0*self.sigma) #50.0
-                    self.s_max = 1000# 60/(5.0*self.sigma) #200
+                    self.s_start = 800# 30/(10.0*self.sigma) #50.0
+                    self.s_max = 3000# 60/(5.0*self.sigma) #200
 
                     self.learning_rate = self.learning_rate_list[4]
                     self.learning_rate_sdf = self.learning_rate_sdf_list[4]
@@ -1161,8 +1161,8 @@ class Runner:
                     #full_reg = 3
                     
                 if (iter_step+1) == up_iters[4]:
-                    self.s_start = 600#30/(10.0*self.sigma) #50.0
-                    self.s_max = 4000#60/(5.0*self.sigma) #200
+                    self.s_start = 1600#30/(10.0*self.sigma) #50.0
+                    self.s_max = 6000#60/(5.0*self.sigma) #200
 
                     self.learning_rate = self.learning_rate_list[5]
                     self.learning_rate_sdf = self.learning_rate_sdf_list[5]
@@ -1803,8 +1803,8 @@ class Runner:
             #full_reg = 3
             
         if (self.iter_step+1) == up_iters[4]:
-            self.s_start = 600#30/(10.0*self.sigma) #50.0
-            self.s_max = 10000#60/(5.0*self.sigma) #200
+            self.s_start = 800#30/(10.0*self.sigma) #50.0
+            self.s_max = 6000#60/(5.0*self.sigma) #200
 
             self.learning_rate = self.learning_rate_list[5]
             self.learning_rate_sdf = self.learning_rate_sdf_list[5]

@@ -545,8 +545,8 @@ class Tet32(Process):
             #self.edges = torch.from_numpy(self.d['edges']).int().cuda().contiguous()       
             active_sites = torch.zeros(self.sites.shape[0], 1).int().cuda()
             nb_new_sites = tet_utils.upsample_counter(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(true_sdf).float().cuda(), active_sites)
-            active_sites[cam_ids] = 1
-            active_sites[outside_flag[:] == 1] = 1
+            active_sites[cam_ids.long()] = 1
+            #active_sites[outside_flag[:] == 1] = 1
             active_sites = active_sites.reshape(-1).cpu().numpy()
                     
             #nb_new_sites = tet_utils.upsample_counter_tet(self.nb_tets, radius, self.summits, self.sites, torch.from_numpy(sdf).float().cuda())
