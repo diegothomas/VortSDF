@@ -16,7 +16,7 @@
 #define FAKEINIT
 #endif
 
-#define STOP_TRANS 1.0e-10
+#define STOP_TRANS 1.0e-8
 #define DIM_L_FEAT 32
 #define DIM_F4_FEAT 8
 #define CLIP_ALPHA 60.0
@@ -552,9 +552,9 @@ __global__ void tet32_march_count_kernel(
 				}
 
 
-				//if (prev_sdf*next_sdf <= 0.0) {
-				//	extra+=4;
-				//}
+				if (prev_sdf*next_sdf <= 0.0) {
+					extra+=4;
+				}
 
 				s_id++;
 			}		
@@ -836,7 +836,7 @@ __global__ void tet32_march_offset_kernel(
 					(next_sdf == -1000.0f || alpha_tet < 1.0f)))) {
 					//fmin(fabs(next_sdf), fabs(prev_sdf))*inv_s < 2.0*CLIP_ALPHA)))) {
 
-				if (false) { //prev_sdf*next_sdf <= 0.0) {
+				if (prev_sdf*next_sdf <= 0.0) {
 					for (int sub_i = 0; sub_i < 5; sub_i++) {
 						float step = 1.0f/5.0f;
 						float w_curr = float(sub_i)*step;

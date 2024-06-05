@@ -776,10 +776,10 @@ __global__ void cvt_grad_cuda_kernel(
             alpha = 0.5f;
             if (sdf[idx]*sdf[knn_id] < 0.0f) {
                 alpha = fabs(sdf[idx])/(fabs(sdf[idx]) + fabs(sdf[knn_id]));
-            } else if ((sdf[idx]-4.0f*sigma)*(sdf[knn_id]-4.0f*sigma) < 0.0f) {
-                alpha = fabs((sdf[idx]-4.0f*sigma))/(fabs((sdf[idx]-4.0f*sigma)) + fabs(sdf[knn_id]-4.0f*sigma));
-            }else if ((sdf[idx]+4.0f*sigma)*(sdf[knn_id]+4.0f*sigma) < 0.0f) {
-                alpha = fabs((sdf[idx]+4.0f*sigma))/(fabs((sdf[idx]+4.0f*sigma)) + fabs(sdf[knn_id]+4.0f*sigma));
+            } else if ((sdf[idx]-2.0f*sigma)*(sdf[knn_id]-4.0f*sigma) < 0.0f) {
+                alpha = fabs((sdf[idx]-2.0f*sigma))/(fabs((sdf[idx]-2.0f*sigma)) + fabs(sdf[knn_id]-2.0f*sigma));
+            }else if ((sdf[idx]+2.0f*sigma)*(sdf[knn_id]+4.0f*sigma) < 0.0f) {
+                alpha = fabs((sdf[idx]+2.0f*sigma))/(fabs((sdf[idx]+2.0f*sigma)) + fabs(sdf[knn_id]+2.0f*sigma));
             }
 
             // Compute middle point
