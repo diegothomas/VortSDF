@@ -31,7 +31,7 @@ backprop_cuda = load('backprop_cuda', ['src/Models/backprop.cpp', 'src/Models/ba
 
 cvt_grad_cuda = load('cvt_grad_cuda', ['src/Geometry/CVT_gradients.cpp', 'src/Geometry/CVT_gradients.cu'], verbose=True)
 
-#laplacian = load(name='laplacian', sources=['src/Geometry/laplacian.cpp'], extra_include_paths=['C:/Users/thomas/Documents/Projects/lib/eigen-3.4.0', 'C:/Users/thomas/Documents/Projects/lib/libigl/include'], verbose=True)
+laplacian = load(name='laplacian', sources=['src/Geometry/laplacian.cpp', 'src/Geometry/laplacian.cu'], extra_include_paths=['C:/Users/thomas/Documents/Projects/lib/eigen-3.4.0', 'C:/Users/thomas/Documents/Projects/lib/libigl/include'], verbose=True)
 
 up_iters = [2000, 6000, 13000, 20000, 30000]
 
@@ -345,12 +345,15 @@ class Runner:
         
         cvt_grad_cuda.diff_tensor(self.tet32.nb_tets, self.tet32.summits, self.tet32.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff)
 
-        """L_vals, L_ids, L_outer = laplacian.MakeLaplacian(self.tet32.sites.shape[0], self.tet32.nb_tets, self.tet32.sites.cpu(), self.tet32.summits.cpu())
+        L_vals, L_nonZeros, L_outer, L_sizes = laplacian.MakeLaplacian(self.tet32.sites.shape[0], self.tet32.nb_tets, self.tet32.sites.cpu(), self.tet32.summits.cpu())
 
-        print(L_vals.shape)
-        print(L_ids.shape)
-        print(L_outer.shape)
-        input()"""
+        L_nnZ = L_sizes[0]
+        L_outerSize = L_sizes[1]
+        L_cols = L_sizes[2]
+
+        L_vals = L_vals.float().cuda()
+        L_nonZeros = L_nonZeros.cuda()
+        L_outer = L_outer.cuda()
                         
         if not hasattr(self, 'optimizer_sdf'):
             self.optimizer_sdf = torch.optim.Adam([self.sdf], lr=self.learning_rate_sdf) #, betas=(0.9, 0.98))     # Beta ??   0.98, 0.995 => 0.9
@@ -405,7 +408,7 @@ class Runner:
             #self.inv_s = min(self.s_max, self.loc_iter/self.R + self.s_start)
             #self.inv_s = self.s_start + (self.s_max-self.s_start)*(1.0 - math.cos(0.5*math.pi*self.loc_iter/self.end_iter_loc))
             self.inv_s = self.s_start + (self.s_max-self.s_start)*(self.loc_iter/self.end_iter_loc)
-            self.sigma = self.sigma_start + (self.sigma_max-self.sigma_start)*(self.loc_iter/self.end_iter_loc)
+            self.sigma = self.sigma_start # + (self.sigma_max-self.sigma_start)*(self.loc_iter/self.end_iter_loc)
 
 
             ## Generate rays
@@ -470,7 +473,7 @@ class Runner:
             
             start = timer()
             self.offsets[:] = 0
-            nb_samples = tet32_march_cuda.tet32_march_count(self.inv_s, rays_o.shape[0], rays_d, self.tet32.sites, self.sdf_smooth, self.tet32.summits, self.tet32.neighbors, img_ids, 
+            nb_samples = tet32_march_cuda.tet32_march_count(self.inv_s, rays_o.shape[0], rays_d, self.tet32.sites, self.sdf, self.tet32.summits, self.tet32.neighbors, img_ids, 
                                                cam_ids, self.tet32.offsets_cam, self.tet32.cam_tets, self.activated, self.offsets)
             
             if verbose:
@@ -537,7 +540,7 @@ class Runner:
             self.out_sdf[:] = 0.0
             self.out_weights[:] = 0.0
             self.out_ids[:] = 0
-            tet32_march_cuda.tet32_march_offset(self.inv_s, rays_o.shape[0], rays_d, self.tet32.sites, self.sdf_smooth, self.tet32.summits, self.tet32.neighbors, img_ids, 
+            tet32_march_cuda.tet32_march_offset(self.inv_s, rays_o.shape[0], rays_d, self.tet32.sites, self.sdf, self.tet32.summits, self.tet32.neighbors, img_ids, 
                                                 cam_ids, self.tet32.offsets_cam, self.tet32.cam_tets, self.grad_sdf_space, self.fine_features.detach(),  
                                                 self.out_weights, self.out_z, self.out_sdf, self.out_ids, self.out_grads, self.out_feat, self.samples_rays, self.samples, 
                                                 self.offsets)
@@ -793,7 +796,11 @@ class Runner:
 
 
 
-            #self.activated[:] = -1
+
+
+
+
+            """#self.activated[:] = -1
             start = timer()   
             #self.activated[abs(self.grad_sdf) > 0.0] = 1
             #self.activated[grad_sdf == 0.0] = -1
@@ -803,7 +810,12 @@ class Runner:
             self.grad_sdf[:] = self.grad_sdf_smooth[:]
             self.grad_sdf[outside_flag[:] == 1.0] = 0.0   
             if verbose:
-                print('knn_smooth time:', timer() - start)
+                print('knn_smooth time:', timer() - start)"""
+            
+
+
+
+
 
 
                             
@@ -828,7 +840,7 @@ class Runner:
             if verbose:
                 print('space_reg time:', timer() - start)"""
         
-            if True: #iter_step % full_reg == 0: # and (iter_step % 3 == 0 or (iter_step+1) < 10000): # and ((iter_step+1) < 35000 or iter_step % 3 == 0):
+            if False: #iter_step % full_reg == 0: # and (iter_step % 3 == 0 or (iter_step+1) < 10000): # and ((iter_step+1) < 35000 or iter_step % 3 == 0):
                 start = timer()   
                 self.grad_sdf_smooth[:] = 0.0
                 self.grad_feat_smooth[:] = 0.0
@@ -973,14 +985,24 @@ class Runner:
                 #abs(self.sdf.grad)*
 
                     #w_photo = (self.grad_sdf_space * self.samples_rays[:nb_samples,:]).sum()
+
+                self.div[:] = 0.0
+                laplacian.MeanCurve(self.div, self.sdf, self.activated, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
+                self.div_2[:] = 0.0
+                laplacian.MeanCurve(self.div_2, self.div, self.activated, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
+                self.div[outside_flag[:] == 1] = 0.0
+                self.div_2[outside_flag[:] == 1] = 0.0
+                
+                lbda = 0.5
+                mu = -0.53   
+
                 if False: #(iter_step+1) > 70000: 
                     self.sdf.grad = self.norm_grad * self.sdf.grad + self.w_g *(self.e_w*self.grad_eik+\
                                                                                 self.s_w*self.grad_norm_smooth+\
                                                                                 self.tv_w*self.grad_sdf_smooth) #abs(self.sdf.grad)*
                 else: 
-                    self.sdf.grad = self.sdf.grad + self.s_w*(self.grad_norm_smooth + self.grad_sdf_L2) + self.tv_w*self.grad_sdf_smooth + self.e_w*self.grad_eik
-                    #                                                self.s_w*(self.grad_norm_smooth + self.grad_sdf_L2)+\
-                    #                                                self.tv_w*self.grad_sdf_smooth) #abs(self.sdf.grad)*
+                    self.sdf.grad = self.sdf.grad + self.s_w*self.grad_norm_smooth + self.tv_w*((lbda + mu)*self.div - lbda*mu*self.div_2) + self.e_w*self.grad_eik
+                    #self.sdf.grad = self.sdf.grad + self.s_w*(self.grad_norm_smooth + self.grad_sdf_L2) + self.tv_w*self.grad_sdf_smooth + self.e_w*self.grad_eik
                     
                 """self.activated[:] = 0
                 self.activated[abs(self.sdf.grad[:]) > 0] = 1
@@ -1042,6 +1064,15 @@ class Runner:
                 self.activated[:] = 1
                 
                 cvt_grad_cuda.diff_tensor(self.tet32.nb_tets, self.tet32.summits, self.tet32.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff)
+
+                L_vals, L_nonZeros, L_outer, L_sizes = laplacian.MakeLaplacian(self.tet32.sites.shape[0], self.tet32.nb_tets, self.tet32.sites.cpu(), self.tet32.summits.cpu())
+
+                L_nnZ = L_sizes[0]
+                L_outerSize = L_sizes[1]
+                L_cols = L_sizes[2]
+                L_vals = L_vals.float().cuda()
+                L_nonZeros = L_nonZeros.cuda()
+                L_outer = L_outer.cuda()
                                 
                 delta_sites = torch.zeros(self.tet32.sites.shape).float().cuda()
                 with torch.no_grad():  
@@ -1197,8 +1228,9 @@ class Runner:
                 #torch.cuda.empty_cache()
 
             if (iter_step+1) % self.report_freq == 0:
+                lapl_loss = ((lbda + mu)*self.div - lbda*mu*self.div_2)
                 print('iter:{:8>d} loss = {}, loss_coarse = {}, scale={}, grad={}, grad_feat = {}, grad_nrm = {}, grad_tv_feat = {} lr={}'.format(iter_step, color_fine_loss, color_coarse_loss, self.inv_s, abs(self.grad_sdf[abs(self.grad_sdf) > 0.0]).mean(), abs(self.grad_features[abs(self.grad_features) > 0.0]).mean(), abs(self.grad_norm_smooth[abs(self.grad_norm_smooth) > 0.0]).mean(), abs(self.grad_feat_smooth[abs(self.grad_feat_smooth) > 0.0]).mean(), self.optimizer.param_groups[0]['lr']))
-                print('learning_rate_alpha:{} grad_tv={}, grad_sdf_L2 = {}'.format(self.learning_rate_alpha, abs(self.grad_sdf_smooth[abs(self.grad_sdf_smooth) > 0.0]).mean(), abs(self.grad_sdf_L2[abs(self.grad_sdf_L2) > 0.0]).mean()))
+                print('learning_rate_alpha:{} grad_lapl={}, grad_sdf_L2 = {}'.format(self.learning_rate_alpha, abs(lapl_loss[abs(lapl_loss) > 0.0]).mean(), abs(self.grad_sdf_L2[abs(self.grad_sdf_L2) > 0.0]).mean()))
                 print('iter:{:8>d} s_w = {}, e_w = {}, tv_w = {}, nb_samples={}, sigma={}, w_g={}, full_reg={}, lr={}'.format(iter_step, self.s_w, self.e_w, self.tv_w, nb_samples, self.sigma, self.w_g, full_reg, self.optimizer_sdf.param_groups[0]['lr']))
                 #print('iter:{:8>d} loss CVT = {} lr={}'.format(iter_step, loss_cvt, self.optimizer_cvt.param_groups[0]['lr']))
                 
@@ -1549,6 +1581,9 @@ class Runner:
 
         self.grad_eik = torch.zeros([self.tet32.sites.shape[0]]).float().cuda().contiguous() 
         self.grad_norm_smooth = torch.zeros([self.tet32.sites.shape[0]]).float().cuda().contiguous() 
+        
+        self.div = torch.zeros(self.sdf.shape).float().cuda().contiguous() 
+        self.div_2 = torch.zeros(self.sdf.shape).float().cuda().contiguous() 
 
         #print("sites related")
         #input()

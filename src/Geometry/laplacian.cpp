@@ -87,8 +87,8 @@ std::vector<at::Tensor> MakeLaplacian(size_t num_vertices, size_t num_tets, torc
         //gpuErrchk(cudaDeviceSynchronize());
 
         std::cout << "values computed" << std::endl;
-        auto d_indx= torch::zeros({L.nonZeros()}, torch::TensorOptions().dtype(torch::kInt32));
-        memcpy((void*)d_indx.data_ptr<int>(), (void*)L.innerIndexPtr(), L.nonZeros() * sizeof(int));
+        auto d_nonZeros= torch::zeros({L.nonZeros()}, torch::TensorOptions().dtype(torch::kInt32));
+        memcpy((void*)d_nonZeros.data_ptr<int>(), (void*)L.innerIndexPtr(), L.nonZeros() * sizeof(int));
 
         //int* indx; //  stores the row (resp. column) indices of the non-zeros.
         //gpuErrchk(cudaMalloc(&indx, L.nonZeros() * sizeof(int)));
@@ -104,13 +104,17 @@ std::vector<at::Tensor> MakeLaplacian(size_t num_vertices, size_t num_tets, torc
         //gpuErrchk(cudaMalloc(&outer_start, L.outerSize() * sizeof(int)));
         //gpuErrchk(cudaMemcpy((void*)d_outer_start.data_ptr<int>(), (void*)L.outerIndexPtr(), L.outerSize() * sizeof(int), cudaMemcpyHostToDevice));
         //gpuErrchk(cudaDeviceSynchronize());
+        
+        auto d_size= torch::zeros({3}, torch::TensorOptions().dtype(torch::kInt32));
+        int sizes_cpu[3] = {int(L.nonZeros()), int(L.outerSize()), int(L.cols())};
+        memcpy((void*)d_size.data_ptr<int>(), (void*)sizes_cpu, 3 * sizeof(int));
 
-        return {d_values, d_indx, d_outer_start};
+        return {d_values, d_nonZeros, d_outer_start, d_size};
     }
 
 
 void MeanCurve(torch::Tensor div, torch::Tensor sdf, torch::Tensor active_sites, torch::Tensor L_values, torch::Tensor L_outer_start, torch::Tensor L_nonZeros, size_t L_nnZ, size_t L_outerSize, size_t L_cols) {
-    SparseMul_gpu(div, sdf, active_sites, L_values, L_inner_indices, L_outer_start, L_nonZeros, L_nnZ, L_outerSize, L_cols);
+    SparseMul_gpu(div, sdf, active_sites, L_values, L_outer_start, L_nonZeros, L_nnZ, L_outerSize, L_cols);
 }
 
 
