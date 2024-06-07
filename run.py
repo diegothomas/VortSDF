@@ -408,7 +408,7 @@ class Runner:
             #self.inv_s = min(self.s_max, self.loc_iter/self.R + self.s_start)
             #self.inv_s = self.s_start + (self.s_max-self.s_start)*(1.0 - math.cos(0.5*math.pi*self.loc_iter/self.end_iter_loc))
             self.inv_s = self.s_start + (self.s_max-self.s_start)*(self.loc_iter/self.end_iter_loc)
-            self.sigma = self.sigma_start # + (self.sigma_max-self.sigma_start)*(self.loc_iter/self.end_iter_loc)
+            self.sigma = self.sigma_start + (self.sigma_max-self.sigma_start)*(self.loc_iter/self.end_iter_loc)
 
 
             ## Generate rays
@@ -993,7 +993,7 @@ class Runner:
                 self.div[outside_flag[:] == 1] = 0.0
                 self.div_2[outside_flag[:] == 1] = 0.0
                 
-                lbda = 0.5
+                lbda = 0.6 # 0.5
                 mu = -0.53   
 
                 if False: #(iter_step+1) > 70000: 
@@ -1033,7 +1033,7 @@ class Runner:
                 #if self.tet32.sites.shape[0] > 500000:
                 #    self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, 0.0) #(iter_step+1) > 2000
                 #else:
-                self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf_smooth.cpu().numpy(), self.fine_features.detach().cpu().numpy(), self.visual_hull, res, cam_sites, cam_ids, self.learning_rate_cvt, (iter_step+1) <= up_iters[2], self.sigma_start)
+                self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf.cpu().numpy(), self.fine_features.detach().cpu().numpy(), self.visual_hull, res, cam_sites, cam_ids, self.learning_rate_cvt, (iter_step+1) <= up_iters[2], self.sigma_start)
                 self.sdf = self.sdf.contiguous()
                 self.sdf.requires_grad_(True)
                 self.fine_features = self.fine_features.contiguous()
@@ -1222,7 +1222,7 @@ class Runner:
 
                 #verbose = True
                 #self.tet32.save("Exp/bmvs_man/test_up.ply") 
-                self.tet32.save_multi_lvl("Exp/{}/multi_lvl".format(self.data_name))    
+                #self.tet32.save_multi_lvl("Exp/{}/multi_lvl".format(self.data_name))    
                 #self.render_image(cam_ids, img_idx)
                 #self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/bmvs_man/test_tri_up_{}.ply".format(iter_step), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])                          
                 #torch.cuda.empty_cache()
@@ -1445,7 +1445,7 @@ class Runner:
             self.offsets[:] = 0
             self.activated[:] = 1
             img_ids = img_idx*torch.ones((rays_o_batch.shape[0], 1)).cuda().int()
-            nb_samples = tet32_march_cuda.tet32_march_count(self.inv_s, rays_o_batch.shape[0], rays_d_batch, self.tet32.sites, self.sdf_smooth, self.tet32.summits, self.tet32.neighbors, img_ids, 
+            nb_samples = tet32_march_cuda.tet32_march_count(self.inv_s, rays_o_batch.shape[0], rays_d_batch, self.tet32.sites, self.sdf, self.tet32.summits, self.tet32.neighbors, img_ids, 
                                                self.cam_ids, self.tet32.offsets_cam, self.tet32.cam_tets, self.activated, self.offsets)
 
             #nb_samples = self.tet32.sample_rays_cuda(self.inv_s, img_ids, rays_d_batch, self.sdf_smooth, self.cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_ids, self.offsets, self.activated, self.n_samples)    
@@ -1456,7 +1456,7 @@ class Runner:
             start = timer()
             self.samples[:] = 0.0
             self.out_grads[:] = 0.0
-            tet32_march_cuda.tet32_march_offset(self.inv_s, rays_o_batch.shape[0], rays_d_batch, self.tet32.sites, self.sdf_smooth, self.tet32.summits, self.tet32.neighbors, img_ids, 
+            tet32_march_cuda.tet32_march_offset(self.inv_s, rays_o_batch.shape[0], rays_d_batch, self.tet32.sites, self.sdf, self.tet32.summits, self.tet32.neighbors, img_ids, 
                                                 self.cam_ids, self.tet32.offsets_cam, self.tet32.cam_tets, self.grad_sdf_space, self.fine_features.detach(),  
                                                 self.out_weights, self.out_z, self.out_sdf, self.out_ids, self.out_grads, self.out_feat, self.samples_rays, self.samples, 
                                                 self.offsets)

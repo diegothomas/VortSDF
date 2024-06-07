@@ -1180,18 +1180,17 @@ __global__ void eikonal_grad_kernel(
         elem_smooth_2 += (sdf_smooth[ids[i]] - center_sdf_smooth) * Weights_curr[3*i + 2];
     }
     
-    //float norm_grad = sqrt(elem_0*elem_0 + elem_1*elem_1 + elem_2*elem_2);
-    float norm_grad = sqrt(elem_smooth_0*elem_smooth_0 + elem_smooth_1*elem_smooth_1 + elem_smooth_2*elem_smooth_2);
-    //float norm_grad = elem_0*elem_0 + elem_1*elem_1 + elem_2*elem_2;
+    float norm_grad = sqrt(elem_0*elem_0 + elem_1*elem_1 + elem_2*elem_2);
+    //float norm_grad = sqrt(elem_smooth_0*elem_smooth_0 + elem_smooth_1*elem_smooth_1 + elem_smooth_2*elem_smooth_2);
 
     float diff_loss[3]  {};
     if (norm_grad > 0.0f) {
-        diff_loss[0] = 2.0f*(norm_grad-1.0f) * elem_smooth_0 / norm_grad;
+        diff_loss[0] = 2.0f*(norm_grad-1.0f) * elem_0 / norm_grad;
+        diff_loss[1] = 2.0f*(norm_grad-1.0f) * elem_1 / norm_grad;
+        diff_loss[2] = 2.0f*(norm_grad-1.0f) * elem_2 / norm_grad;
+        /*diff_loss[0] = 2.0f*(norm_grad-1.0f) * elem_smooth_0 / norm_grad;
         diff_loss[1] = 2.0f*(norm_grad-1.0f) * elem_smooth_1 / norm_grad;
-        diff_loss[2] = 2.0f*(norm_grad-1.0f) * elem_smooth_2 / norm_grad;
-        /*diff_loss[0] = (norm_grad-1.0f) * elem_smooth_0;
-        diff_loss[1] = (norm_grad-1.0f) * elem_smooth_1;
-        diff_loss[2] = (norm_grad-1.0f) * elem_smooth_2;*/
+        diff_loss[2] = 2.0f*(norm_grad-1.0f) * elem_smooth_2 / norm_grad;*/
     }
 
     /*float diff_loss[3]  {2.0*elem_0, 2.0*elem_1, 2.0*elem_2};
