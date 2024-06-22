@@ -776,9 +776,9 @@ __global__ void cvt_grad_cuda_kernel(
             alpha = 0.5f;
             if (sdf[idx]*sdf[knn_id] < 0.0f) {
                 alpha = fabs(sdf[idx])/(fabs(sdf[idx]) + fabs(sdf[knn_id]));
-            } else if ((sdf[idx]-2.0f*sigma)*(sdf[knn_id]-4.0f*sigma) < 0.0f) {
+            } else if ((sdf[idx]-2.0f*sigma)*(sdf[knn_id]-2.0f*sigma) < 0.0f) {
                 alpha = fabs((sdf[idx]-2.0f*sigma))/(fabs((sdf[idx]-2.0f*sigma)) + fabs(sdf[knn_id]-2.0f*sigma));
-            }else if ((sdf[idx]+2.0f*sigma)*(sdf[knn_id]+4.0f*sigma) < 0.0f) {
+            }else if ((sdf[idx]+2.0f*sigma)*(sdf[knn_id]+2.0f*sigma) < 0.0f) {
                 alpha = fabs((sdf[idx]+2.0f*sigma))/(fabs((sdf[idx]+2.0f*sigma)) + fabs(sdf[knn_id]+2.0f*sigma));
             }
 
@@ -1060,7 +1060,7 @@ __global__ void diff_tensor_kernel(
         center_point[i] = (sites[3*ids[0] + i] + sites[3*ids[1] + i] + sites[3*ids[2] + i] + sites[3*ids[3] + i])/4.0f;
     }
 
-    vol[idx] = volume_tetrahedron_32(&sites[3*ids[0]], &sites[3*ids[1]], &sites[3*ids[2]], &sites[3*ids[3]]);
+    vol[idx] = 1.0f; // volume_tetrahedron_32(&sites[3*ids[0]], &sites[3*ids[1]], &sites[3*ids[2]], &sites[3*ids[3]]);
     
     float curr_n[3] {0.0, 0.0, 0.0};
     float dX[12];
@@ -1126,6 +1126,7 @@ __global__ void diff_tensor_kernel(
 __global__ void eikonal_grad_kernel(
     const size_t num_tets,                // number of rays
     const int *__restrict__ tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    const int *__restrict__ valid_tets,  // [N_voxels, 4] for each voxel => it's neighbors
     float *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ activated,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
@@ -1150,11 +1151,14 @@ __global__ void eikonal_grad_kernel(
     ids[0] = tets[4*idx];  ids[1] = tets[4*idx + 1];  ids[2] = tets[4*idx + 2];
     ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[4*idx + 3];
 
-    /*if (activated[ids[0]] == 0 && 
-        activated[ids[1]] == 0 && 
-        activated[ids[2]] == 0 && 
-        activated[ids[3]] == 0)
+    /*if (activated[ids[0]] == -1 && 
+        activated[ids[1]] == -1 && 
+        activated[ids[2]] == -1 && 
+        activated[ids[3]] == -1)
         return;*/
+
+    if (valid_tets[idx] == 0)
+        return;
 
     float center_sdf = (sdf[ids[0]] + sdf[ids[1]] + sdf[ids[2]] + sdf[ids[3]])/4.0f;
     float center_sdf_smooth = (sdf_smooth[ids[0]] + sdf_smooth[ids[1]] + sdf_smooth[ids[2]] + sdf_smooth[ids[3]])/4.0f;
@@ -1217,7 +1221,7 @@ __global__ void eikonal_grad_kernel(
         atomicAdd(&grad_sdf[3*ids[i] + 1], elem_1*volume_tet / weights_tot[ids[i]]);
         atomicAdd(&grad_sdf[3*ids[i] + 2], elem_2*volume_tet / weights_tot[ids[i]]);
 
-        atomicAdd(&Loss[ids[i]], abs(sqrt(norm_grad)-1)*volume_tet / weights_tot[ids[i]]);
+        //atomicAdd(&Loss[ids[i]], abs(sqrt(norm_grad)-1)*volume_tet / weights_tot[ids[i]]);
     }
 
 
@@ -1255,6 +1259,45 @@ __global__ void normalize_grad_kernel(
         grad_feat[6*idx + i] = grad_feat[6*idx + i]/weights_tot[idx];
 
     Loss[idx] = Loss[idx]/weights_tot[idx];
+}
+
+__global__ void backprop_norm_grad_kernel(
+    const size_t num_tets,                // number of rays
+    const int *__restrict__ tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    float *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ activated,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices)
+    float *__restrict__ grad_norm,     // [N_voxels, 4] for each voxel => it's vertices)
+    float *__restrict__ vol,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ weights,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ weights_tot     // [N_voxels, 4] for each voxel => it's vertices
+    )
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_tets)
+    {
+        return;
+    }
+
+    int ids[4] = {0, 0, 0, 0,};
+    ids[0] = tets[4*idx];  ids[1] = tets[4*idx + 1];  ids[2] = tets[4*idx + 2];
+    ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[4*idx + 3];
+
+    float volume_tet = vol[idx];
+    
+    float *Weights_curr = &weights[12*idx];
+    
+    for (int i = 0; i < 4; i++) {
+        if (weights_tot[ids[i]] == 0.0f) 
+            continue;
+
+        atomicAdd(&grad_sdf[ids[i]], (grad_norm[3*ids[i]] * Weights_curr[3*i] + 
+                                        grad_norm[3*ids[i] + 1] * Weights_curr[3*i + 1] + 
+                                        grad_norm[3*ids[i] + 2] * Weights_curr[3*i + 2])*volume_tet / (2.0f*weights_tot[ids[i]]));
+    }
+
+
+    return;
 }
 
 
@@ -1502,6 +1545,7 @@ void eikonal_grad_cuda(
     size_t num_tets,                // number of rays
     size_t num_sites,                // number of rays
     torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  valid_tets,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  activated,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
@@ -1521,6 +1565,7 @@ void eikonal_grad_cuda(
             eikonal_grad_kernel CUDA_KERNEL(blocks,threads) (
                 num_tets,
                 tets.data_ptr<int>(),
+                valid_tets.data_ptr<int>(),
                 sites.data_ptr<float>(),
                 activated.data_ptr<int>(),
                 sdf.data_ptr<float>(),
@@ -1549,6 +1594,35 @@ void eikonal_grad_cuda(
         }));*/
     
 }
+
+// 
+void backprop_norm_grad_cuda(
+    size_t num_tets,                // number of rays
+    torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  activated,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  grad_norm,     // [N_voxels, 4] for each voxel => it's vertices)
+    torch::Tensor  vol,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights_tot    // [N_voxels, 4] for each voxel => it's vertices
+)   {
+        const int threads = 1024;
+        const int blocks = (num_tets + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+        AT_DISPATCH_FLOATING_TYPES( sites.type(),"backprop_norm_grad_kernel", ([&] {  
+            backprop_norm_grad_kernel CUDA_KERNEL(blocks,threads) (
+                num_tets,
+                tets.data_ptr<int>(),
+                sites.data_ptr<float>(),
+                activated.data_ptr<int>(),
+                grad_sdf.data_ptr<float>(),
+                grad_norm.data_ptr<float>(),
+                vol.data_ptr<float>(),
+                weights.data_ptr<float>(),
+                weights_tot.data_ptr<float>()); 
+        }));    
+}
+
 
 void concat_feat_cuda(
     size_t num_sites,                // number of rays

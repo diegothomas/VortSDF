@@ -16,7 +16,7 @@
 #define FAKEINIT
 #endif
 
-#define STOP_TRANS 1.0e-8
+#define STOP_TRANS 1.0e-12
 #define DIM_L_FEAT 32
 #define DIM_F4_FEAT 8
 #define CLIP_ALPHA 60.0
@@ -332,6 +332,7 @@ __global__ void tet32_march_count_kernel(
     float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ tets,  
     int *__restrict__ nei_tets,  
+    int *__restrict__ valid_tets,  
     const int *__restrict__ cam_id_rays,
     const int *__restrict__ cam_ids,  
     const int *__restrict__ offsets_cam,  
@@ -540,7 +541,7 @@ __global__ void tet32_march_count_kernel(
 		float contrib_tet = Tpartial * (1.0f - alpha_tet);
 		int fact_s = int(contrib_tet * 4.0f);
 		
-		if (prev_tet_id != -1) { 
+		if (/*valid_tets[tet_id] &&*/ prev_tet_id != -1) { 
 			if (((/*prev_dist > 0.05f &&*/ prev_sdf > next_sdf && 
 					(next_sdf == -1000.0f || alpha_tet < 1.0f)))) {
 					//fmin(fabs(next_sdf), fabs(prev_sdf))*inv_s < 2.0*CLIP_ALPHA)))) {		
@@ -602,6 +603,7 @@ __global__ void tet32_march_offset_kernel(
     float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ tets,  
     int *__restrict__ nei_tets,  
+    int *__restrict__ valid_tets,  
     const int *__restrict__ cam_id_rays,
     const int *__restrict__ cam_ids,  
     const int *__restrict__ offsets_cam,  
@@ -831,7 +833,7 @@ __global__ void tet32_march_offset_kernel(
 		float contrib_tet = Tpartial * (1.0f - alpha_tet);
 		int fact_s = int(contrib_tet * 4.0f);
 		
-		if (prev_tet_id != -1) { 
+		if (/*valid_tets[tet_id] &&*/ prev_tet_id != -1) { 
 			if (((/*prev_dist > 0.05f &&*/ prev_sdf > next_sdf && 
 					(next_sdf == -1000.0f || alpha_tet < 1.0f)))) {
 					//fmin(fabs(next_sdf), fabs(prev_sdf))*inv_s < 2.0*CLIP_ALPHA)))) {
@@ -2103,6 +2105,7 @@ int tet32_march_count_cuda(
     torch::Tensor sdf, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor nei_tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor valid_tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor cam_id_rays,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor cam_ids,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor offsets_cam,    // [N_sites, 3] for each voxel => it's vertices
@@ -2125,6 +2128,7 @@ int tet32_march_count_cuda(
                 sdf.data_ptr<float>(),
                 tets.data_ptr<int>(),
                 nei_tets.data_ptr<int>(),
+                valid_tets.data_ptr<int>(),
                 cam_id_rays.data_ptr<int>(),
                 cam_ids.data_ptr<int>(),
                 offsets_cam.data_ptr<int>(),
@@ -2152,6 +2156,7 @@ void tet32_march_offset_cuda(
     torch::Tensor sdf, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor nei_tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor valid_tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor cam_id_rays,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor cam_ids,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor offsets_cam,    // [N_sites, 3] for each voxel => it's vertices
@@ -2179,6 +2184,7 @@ void tet32_march_offset_cuda(
                 sdf.data_ptr<float>(),
                 tets.data_ptr<int>(),
                 nei_tets.data_ptr<int>(),
+                valid_tets.data_ptr<int>(),
                 cam_id_rays.data_ptr<int>(),
                 cam_ids.data_ptr<int>(),
                 offsets_cam.data_ptr<int>(),

@@ -97,6 +97,7 @@ class Tet32(Process):
 
 
         start = timer()
+        self.tetras = np.asarray(self.tetras)
         self.summits = torch.from_numpy(self.summits).cuda().contiguous()
         self.neighbors = torch.from_numpy(self.neighbors).cuda().contiguous()
         #adj = torch.zeros((self.sites.shape[0], 128)).int().cuda().contiguous()
@@ -183,7 +184,7 @@ class Tet32(Process):
         #input()
 
         if self.lvl > 0:
-            for lvl_curr in range(self.lvl+1):
+            for lvl_curr in range(self.lvl):
                 _, idx = self.KDtree.query(new_sites[self.lvl_sites[lvl_curr][:]], k=1)
                 self.lvl_sites[lvl_curr][:] = idx[:]
 
@@ -197,7 +198,7 @@ class Tet32(Process):
         #self.d['tetras'] = self.tetras
 
 
-    def load_cuda(self):
+    def load_cuda(self, sigma = 1.0):
         self.edges = torch.from_numpy(self.d['edges']).int().cuda().contiguous()
         self.summits = torch.from_numpy(self.d['summits']).int().cuda().contiguous()  
         self.neighbors = torch.from_numpy(self.d['neighbors']).int().cuda().contiguous()        
@@ -207,6 +208,10 @@ class Tet32(Process):
         self.sites = torch.from_numpy(self.d['sites']).float().cuda().contiguous()  
         #self.tetras = self.d['tetras']
         #print("nb edges: ", self.edges.shape)
+
+        self.valid_tets = torch.ones(self.nb_tets).int().cuda().contiguous()  
+        tet_utils.valid_tet(self.nb_tets, sigma, self.summits, self.sites, self.mask_background, self.valid_tets)
+
 
     def make_knn(self):
         start = timer()
@@ -269,14 +274,14 @@ class Tet32(Process):
 
         print("self.lvl => ", self.lvl)
         
-        """curr_it = 1
+        curr_it = 1
         start_lvl = max(0, self.lvl-(self.hlvl-1))
         for lvl_curr in range(start_lvl,self.lvl):
             KDtree = scipy.spatial.KDTree(self.sites[self.lvl_sites[self.lvl-curr_it][:]].cpu().numpy())
             _, idx = KDtree.query(self.sites.cpu().numpy(), k=self.KNN)
             self.knn_sites[:,self.KNN*curr_it:self.KNN*(curr_it+1)] = np.asarray(self.lvl_sites[self.lvl-curr_it][idx[:,:]])  
             curr_it = curr_it + 1
-            print("level curr", lvl_curr)"""
+            print("level curr", lvl_curr)
 
         self.knn_sites = torch.from_numpy(self.knn_sites).int().cuda().contiguous()
         #print('KDTreeFlann time:', timer() - start)    
@@ -518,7 +523,7 @@ class Tet32(Process):
 
         return sdf.cpu().numpy(), fine_features.cpu().numpy()
 
-    def upsample(self, sdf, feat, visual_hull, res, cam_sites, cam_ids, lr, flag = True, radius = 0.3):    
+    def upsample(self, sdf, sdf_smooth, feat, visual_hull, res, cam_sites, cam_ids, lr, flag = True, radius = 0.3):    
         self.nb_pre_sites = self.sites.shape[0]
         if True: #self.nb_pre_sites < 1.0e6:  
             self.lvl_sites.append(np.arange(self.sites.shape[0]))
@@ -531,6 +536,7 @@ class Tet32(Process):
         self.tri_faces = np.asarray(tri_mesh.triangles)
         f = SDF(np.asarray(self.tri_vertices), np.asarray(self.tri_faces))
         true_sdf = -f(self.sites.cpu().numpy())
+        true_sdf = torch.from_numpy(true_sdf).float().cuda()
 
         sites = self.sites.cpu().numpy()
         outside_flag = np.zeros(sites.shape[0], np.int32)
@@ -544,9 +550,10 @@ class Tet32(Process):
         if True: #self.nb_pre_sites < 1.0e6:     
             #self.edges = torch.from_numpy(self.d['edges']).int().cuda().contiguous()       
             active_sites = torch.zeros(self.sites.shape[0], 1).int().cuda()
-            nb_new_sites = tet_utils.upsample_counter(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(true_sdf).float().cuda(), active_sites)
+            nb_new_sites = tet_utils.upsample_counter(self.edges.shape[0], radius, self.edges, self.sites, true_sdf, active_sites)
             active_sites[cam_ids.long()] = 1
-            #active_sites[outside_flag[:] == 1] = 1
+            #active_sites[true_sdf[:] < 0.0] = 1
+            active_sites[:] = 1
             active_sites = active_sites.reshape(-1).cpu().numpy()
                     
             #nb_new_sites = tet_utils.upsample_counter_tet(self.nb_tets, radius, self.summits, self.sites, torch.from_numpy(sdf).float().cuda())
@@ -555,7 +562,7 @@ class Tet32(Process):
             new_sdf = torch.zeros([nb_new_sites]).float().cuda().contiguous()
             new_feat = torch.zeros([nb_new_sites,feat.shape[1]]).float().cuda().contiguous()
 
-            tet_utils.upsample(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(sdf).float().cuda().contiguous(), torch.from_numpy(true_sdf).float().cuda().contiguous(), torch.from_numpy(feat).float().cuda().contiguous(),
+            tet_utils.upsample(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(sdf).float().cuda().contiguous(), true_sdf, torch.from_numpy(feat).float().cuda().contiguous(),
                             new_sites, new_sdf, new_feat)
             #del self.edges
             
@@ -615,21 +622,19 @@ class Tet32(Process):
                 
         self.sites = torch.from_numpy(self.sites).float().cuda()
         self.CVT(outside_flag, cam_ids.long(), torch.from_numpy(true_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, radius, 0.1, lr)
-        #in_sdf, in_feat
-
+       
         #ply.save_ply("Exp/bmvs_man/testprevlvlv.ply", (self.sites[self.lvl_sites[0][:]]).transpose())
         prev_kdtree = scipy.spatial.KDTree(new_sites)
+
+        self.lvl = self.lvl + 1
 
         self.run(radius)
 
         #new_sites = np.asarray(self.vertices)  
-        self.KDtree = scipy.spatial.KDTree(self.sites)
-        
-        """if True: #self.nb_pre_sites < 1.0e6:  
-            self.lvl = self.lvl + 1
-            
-        for lvl_curr in range(self.lvl):
-            _, idx = self.KDtree.query(new_sites[self.lvl_sites[lvl_curr][:]], k=1)
+        #self.KDtree = scipy.spatial.KDTree(self.sites)
+                    
+        """for lvl_curr in range(self.lvl):
+            _, idx = self.KDtree.query(new_new_sites[self.lvl_sites[lvl_curr][:]], k=1)
             self.lvl_sites[lvl_curr][:] = idx[:]"""
 
         #_, idx = prev_kdtree.query(self.sites, k=1)
@@ -646,12 +651,13 @@ class Tet32(Process):
         out_sdf = out_sdf.cpu().numpy()
         
         #out_sdf = -f(self.sites)
-        mask_background = -f(self.sites) > 2*radius
+        mask_background = abs(f(self.sites)) > 10.0*radius
+        self.mask_background = torch.from_numpy(mask_background).int().cuda()
 
         #if flag:
         #    out_sdf[mask_background[:] == True] = radius
 
-        if flag:
+        if True: #flag:
             out_sdf = -f(self.sites)
             #out_sdf[abs(out_sdf) > 0] = -f(self.sites)[abs(out_sdf) > 0]
             #out_sdf[out_sdf < 0] = -radius/2.0
@@ -672,101 +678,6 @@ class Tet32(Process):
                                         torch.from_numpy(knn_sites).int().cuda().contiguous(), out_feat)
         out_feat = out_feat.cpu().numpy()
                 
-        self.sdf_init = torch.from_numpy(out_sdf).float().cuda()
-
-        return torch.from_numpy(out_sdf).float().cuda(), torch.from_numpy(out_feat).float().cuda(), torch.from_numpy(mask_background).float().cuda()
-
-    def upsample2(self, sdf, feat, visual_hull, res, cam_sites, lr, flag = True, radius = 0.3):    
-        self.lvl_sites.append(np.arange(self.sites.shape[0]))
-        self.nb_pre_sites = self.sites.shape[0]
-        
-        ## Smooth current mesh and build sdf        
-        tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(sdf.astype(np.float64)),0.0)
-        #tri_mesh.filter_smooth_laplacian(number_of_iterations=3)
-
-        self.tri_vertices = np.asarray(tri_mesh.vertices)
-        self.tri_faces = np.asarray(tri_mesh.triangles)
-        f = SDF(np.asarray(self.tri_vertices), np.asarray(self.tri_faces))
-        true_sdf = -f(self.sites.cpu().numpy())
-
-        if self.nb_pre_sites < 1.0e6:
-            self.edges = torch.from_numpy(self.d['edges']).int().cuda().contiguous()       
-            nb_new_sites = tet_utils.upsample_counter(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(true_sdf).float().cuda())
-                    
-            new_sites = torch.zeros([nb_new_sites,3]).float().cuda().contiguous()
-            new_sdf = torch.zeros([nb_new_sites]).float().cuda().contiguous()
-            new_feat = torch.zeros([nb_new_sites,feat.shape[1]]).float().cuda().contiguous()
-
-            tet_utils.upsample(self.edges.shape[0], radius, self.edges, self.sites, torch.from_numpy(sdf).float().cuda().contiguous(), torch.from_numpy(true_sdf).float().cuda().contiguous(), torch.from_numpy(feat).float().cuda().contiguous(),
-                            new_sites, new_sdf, new_feat)
-            del self.edges
-            
-            new_sites = new_sites.cpu().numpy()
-            new_sdf = new_sdf.cpu().numpy()
-            new_feat = new_feat.cpu().numpy()
-            sites = self.sites.cpu().numpy()
-
-            print("nb new sites: ", new_sites.shape)
-            self.sites = np.concatenate((sites, new_sites))
-            in_sdf = np.concatenate((sdf, new_sdf))
-            true_in_sdf = np.concatenate((true_sdf, np.zeros(new_sdf.shape[0], np.float32)))
-            in_feat = np.concatenate((feat, new_feat))
-        else:
-            in_sdf = np.copy(sdf)
-            in_feat = np.copy(feat)
-            self.sites = self.sites.cpu().numpy()
-
-        new_sites = self.sites
-
-        outside_flag = np.zeros(self.sites.shape[0], np.int32)
-        outside_flag[abs(true_in_sdf) > 2*radius] = 1
-
-        cam_ids = np.stack([np.where((self.sites == cam_sites[i,:]).all(axis = 1))[0] for i in range(cam_sites.shape[0])]).reshape(-1)
-        cam_ids = torch.from_numpy(cam_ids).int().cuda()
-        outside_flag[cam_ids.cpu().numpy()] = 1
-                
-        self.sites = torch.from_numpy(self.sites).float().cuda()
-        in_sdf, in_feat = self.CVT(outside_flag, cam_ids.long(), torch.from_numpy(in_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, radius, 0.1, lr)
-
-        print("nb sites: ", self.sites.shape)
-        outside_flag[:] = 0
-        outside_flag[-f(self.sites) < 2*radius] = 1
-        outside_flag[cam_ids.cpu().numpy()] = 1
-        self.sites = self.sites[outside_flag == 1]
-        in_feat = in_feat[outside_flag == 1]
-        in_sdf = in_sdf[outside_flag == 1]
-        print("nb sites: ", self.sites.shape)
-
-        #ply.save_ply("Exp/bmvs_man/testprevlvlv.ply", (self.sites[self.lvl_sites[0][:]]).transpose())
-        prev_kdtree = scipy.spatial.KDTree(new_sites)
-
-        self.run(radius)
-
-        self.KDtree = scipy.spatial.KDTree(self.sites)
-        
-        for lvl_curr in range(self.lvl+1):
-            _, idx = self.KDtree.query(new_sites[self.lvl_sites[lvl_curr][:]], k=1)
-            self.lvl_sites[lvl_curr][:] = idx[:]
-
-        knn_sites = -1 * np.ones((self.sites.shape[0], 32))
-        _, idx = prev_kdtree.query(self.sites, k=32)
-        knn_sites[:,:32] = np.asarray(idx[:,:])
-        out_sdf = torch.zeros(self.sites.shape[0]).float().cuda().contiguous()
-        backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius/8.0, 1, torch.from_numpy(new_sites).float().cuda().contiguous(), 
-                                        torch.from_numpy(self.sites).float().cuda().contiguous(), torch.from_numpy(in_sdf).float().cuda().contiguous(), 
-                                        torch.from_numpy(knn_sites).int().cuda().contiguous(), out_sdf)
-        out_sdf = out_sdf.cpu().numpy()
-        
-        mask_background = -f(self.sites) > 2*radius
-        
-        out_feat = torch.zeros(self.sites.shape[0],feat.shape[1]).float().cuda().contiguous()
-        backprop_cuda.knn_interpolate(self.sites.shape[0], 32, radius/8.0, feat.shape[1], torch.from_numpy(new_sites).float().cuda().contiguous(), 
-                                        torch.from_numpy(self.sites).float().cuda().contiguous(), torch.from_numpy(in_feat).float().cuda().contiguous(), 
-                                        torch.from_numpy(knn_sites).int().cuda().contiguous(), out_feat)
-        out_feat = out_feat.cpu().numpy()
-                
-        self.lvl = self.lvl + 1
-
         self.sdf_init = torch.from_numpy(out_sdf).float().cuda()
 
         return torch.from_numpy(out_sdf).float().cuda(), torch.from_numpy(out_feat).float().cuda(), torch.from_numpy(mask_background).float().cuda()
@@ -882,8 +793,8 @@ class Tet32(Process):
         ply.save_ply(filename, self.sites.cpu().numpy().transpose(), f=(np.asarray(faces_list)).transpose())
 
     def save_multi_lvl(self, filename):
-        #for lvl_curr in range(self.lvl):
-        #    ply.save_ply(filename+"{:0>2d}.ply".format(lvl_curr), (self.sites[self.lvl_sites[lvl_curr][:]]).cpu().numpy().transpose())
+        for lvl_curr in range(self.lvl):
+            ply.save_ply(filename+"{:0>2d}.ply".format(lvl_curr), (self.sites[self.lvl_sites[lvl_curr][:]]).cpu().numpy().transpose())
         ply.save_ply(filename+".ply", self.sites.cpu().numpy().transpose())
 
 

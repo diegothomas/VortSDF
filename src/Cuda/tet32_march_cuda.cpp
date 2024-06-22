@@ -58,6 +58,7 @@ int tet32_march_count_cuda(
     torch::Tensor sdf, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor nei_tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor valid_tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor cam_id_rays,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor cam_ids,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor offsets_cam,    // [N_sites, 3] for each voxel => it's vertices
@@ -75,6 +76,7 @@ void tet32_march_offset_cuda(
     torch::Tensor sdf, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor nei_tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor valid_tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor cam_id_rays,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor cam_ids,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor offsets_cam,    // [N_sites, 3] for each voxel => it's vertices
@@ -199,6 +201,7 @@ int tet32_march_count(
     torch::Tensor sdf, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor nei_tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor valid_tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor cam_id_rays,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor cam_ids,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor offsets_cam,    // [N_sites, 3] for each voxel => it's vertices
@@ -214,6 +217,7 @@ int tet32_march_count(
             sdf, 
             tets, 
             nei_tets,
+            valid_tets,
             cam_id_rays,   
             cam_ids,  
             offsets_cam,   
@@ -231,6 +235,7 @@ void tet32_march_offset(
     torch::Tensor sdf, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor nei_tets, // [N_voxels, 26] for each voxel => it's neighbors
+    torch::Tensor valid_tets, // [N_voxels, 26] for each voxel => it's neighbors
     torch::Tensor cam_id_rays,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor cam_ids,    // [N_sites, 3] for each voxel => it's vertices
     torch::Tensor offsets_cam,    // [N_sites, 3] for each voxel => it's vertices
@@ -255,6 +260,7 @@ void tet32_march_offset(
         sdf, 
         tets, 
         nei_tets, 
+        valid_tets,
         cam_id_rays,  
         cam_ids, 
         offsets_cam, 

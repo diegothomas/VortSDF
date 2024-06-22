@@ -360,6 +360,21 @@ def chamfer(GT_path, dir_path, heat_map_path, mesh_list, THRESH, device = None, 
     
     GT_f = SDF(verts_GT_tensor.reshape(-1,3).cpu().numpy(), face_GT.reshape(-1,3).cpu().numpy())
 
+    """verts_GT_tensor_dx_m = np.clone(verts_GT_tensor.reshape(-1,3).cpu().numpy())
+    verts_GT_tensor_dx_m[:,0] = verts_GT_tensor_dx_m[:,0] - 0.001
+    verts_GT_tensor_dx_M = np.clone(verts_GT_tensor.reshape(-1,3).cpu().numpy())
+    verts_GT_tensor_dx_M[:,0] = verts_GT_tensor_dx_M[:,0] + 0.001
+    
+    verts_GT_tensor_dy_m = np.clone(verts_GT_tensor.reshape(-1,3).cpu().numpy())
+    verts_GT_tensor_dy_m[:,1] = verts_GT_tensor_dy_m[:,1] - 0.001
+    verts_GT_tensor_dy_M = np.clone(verts_GT_tensor.reshape(-1,3).cpu().numpy())
+    verts_GT_tensor_dy_M[:,1] = verts_GT_tensor_dy_M[:,1] + 0.001
+    
+    verts_GT_tensor_dz_m = np.clone(verts_GT_tensor.reshape(-1,3).cpu().numpy())
+    verts_GT_tensor_dz_m[:,2] = verts_GT_tensor_dz_m[:,2] - 0.001
+    verts_GT_tensor_dz_M = np.clone(verts_GT_tensor.reshape(-1,3).cpu().numpy())
+    verts_GT_tensor_dz_M[:,2] = verts_GT_tensor_dz_M[:,2] + 0.001"""
+
     print("start computing iou")
     sdf_list = []
     iou_list = []
@@ -371,6 +386,18 @@ def chamfer(GT_path, dir_path, heat_map_path, mesh_list, THRESH, device = None, 
         sdf_f = abs(f(verts_GT_tensor.reshape(-1,3).cpu().numpy()))
         sdf_list.append(sdf_f)
         mask = mask + (sdf_f < THRESH) 
+
+        # Compute gradients of sdf = normal vectors
+        """grad_x = (f((verts_GT_tensor_dx_M).reshape(-1,3).cpu().numpy()) - f(verts_GT_tensor_dx_m.reshape(-1,3).cpu().numpy())) / 0.002
+        grad_y = (f((verts_GT_tensor_dy_M).reshape(-1,3).cpu().numpy()) - f(verts_GT_tensor_dy_m.reshape(-1,3).cpu().numpy())) / 0.002
+        grad_z = (f((verts_GT_tensor_dz_M).reshape(-1,3).cpu().numpy()) - f(verts_GT_tensor_dz_m.reshape(-1,3).cpu().numpy())) / 0.002
+
+        grad = np.stack((grad_x, grad_y, grad_z))
+        
+        norm_grad = np.linalg.norm(grad, ord=2, axis=-1, keepdims=True).reshape(-1, 1)
+        norm_grad[norm_grad == 0.0] = 1.0
+        grad = grad / norm_grad.expand(-1, 3)
+        """
 
         Psdf_f = abs(GT_f(verts_tensor_list[i].reshape(-1,3).cpu().numpy()))
         #iou = ((sdf_f < THRESH).sum())/(len(verts_GT))

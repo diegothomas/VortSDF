@@ -374,8 +374,8 @@ class Dataset:
         self.image_pixels = self.H * self.W
 
 
-        self.gen_all_rays()
-        self.gen_all_rays_masked()
+        #self.gen_all_rays()
+        #self.gen_all_rays_masked()
 
         print('Load data: End')
 
@@ -1005,7 +1005,7 @@ class Dataset:
         return z_buff[norm_pix > 0], torch.cat([rays_o[norm_pix > 0], rays_v[norm_pix > 0], color[norm_pix > 0], color_smooth[norm_pix > 0], mask[norm_pix > 0]], dim=-1)
         #return z_buff[rdm_smpls], torch.cat([rays_o[rdm_smpls], rays_v[rdm_smpls], color[rdm_smpls], mask[rdm_smpls]], dim=-1)
     
-    def gen_all_rays(self):
+    def gen_all_rays(self, lvl = 1):
         """
         Generate all rays at world space from all camera.
         """
@@ -1018,21 +1018,89 @@ class Dataset:
 
         for img_idx in range(self.n_images):
 
-            if self.data_type == 'KINOVIS':
-                tx = torch.linspace(self.all_min_x[img_idx], self.all_max_x[img_idx]-1, self.all_max_x[img_idx] - self.all_min_x[img_idx])
-                ty = torch.linspace(self.all_min_y[img_idx], self.all_max_y[img_idx]-1, self.all_max_y[img_idx] - self.all_min_y[img_idx])
-                pixels_x, pixels_y = torch.meshgrid(tx, ty)
-                color = self.images[img_idx][(pixels_y.long(), pixels_x.long())]    # batch_size, 3
-                mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3
-            else:
-                tx = torch.linspace(0, self.W - 1, self.W)
-                ty = torch.linspace(0, self.H - 1, self.H)
-                pixels_x, pixels_y = torch.meshgrid(tx, ty)
-                color = self.images[img_idx][(pixels_y.long(), pixels_x.long())]    # batch_size, 3
-                mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3"""
+            if lvl == 1:
+                if self.data_type == 'KINOVIS':
+                    tx = torch.linspace(self.all_min_x[img_idx], self.all_max_x[img_idx]-1, self.all_max_x[img_idx] - self.all_min_x[img_idx])
+                    ty = torch.linspace(self.all_min_y[img_idx], self.all_max_y[img_idx]-1, self.all_max_y[img_idx] - self.all_min_y[img_idx])
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images[img_idx][(pixels_y.long(), pixels_x.long())]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3
+                else:
+                    tx = torch.linspace(0, 2*self.W - 2, 2*self.W)
+                    ty = torch.linspace(0, 2*self.H - 2, 2*self.H)
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images[img_idx][(pixels_y.long()//2, pixels_x.long()//2)]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long()//2, pixels_x.long()//2)]      # batch_size, 3"""
 
-            pixels_x_f = pixels_x.float()# + torch.rand(pixels_x.shape)-0.5
-            pixels_y_f = pixels_y.float()# + torch.rand(pixels_y.shape)-0.5
+                pixels_x_f = pixels_x.float()/2.0# + torch.rand(pixels_x.shape)-0.5
+                pixels_y_f = pixels_y.float()/2.0# + torch.rand(pixels_y.shape)-0.5
+                p = torch.stack([pixels_x_f, pixels_y_f, torch.ones_like(pixels_y_f)], dim=-1).float().to(self.device)   # batch_size, 3
+                p = torch.matmul(self.intrinsics_all_inv[img_idx, None, None, :3, :3], p[:, :, :, None]).squeeze() # batch_size, 3
+                rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)    # batch_size, 3
+                rays_v = torch.matmul(self.pose_all[img_idx, None, None, :3, :3], rays_v[:, :, :, None]).squeeze()  # batch_size, 3
+                rays_o = self.pose_all[img_idx, None, None, :3, 3].expand(rays_v.shape) # batch_size, 3
+                
+                self.all_rays_o.append(rays_o.cpu().reshape(-1,3))
+                self.all_rays_v.append(rays_v.cpu().reshape(-1,3))
+                self.all_masks.append(mask.cpu().reshape(-1,3)[:,:1])
+                self.all_colors.append(color.cpu().reshape(-1,3))
+                self.all_ids.append(img_idx*np.ones((color.shape[0]*color.shape[1], 1)))
+                continue
+            
+            elif lvl == 2:
+                if self.data_type == 'KINOVIS':
+                    tx = torch.linspace(self.all_min_x[img_idx], self.all_max_x[img_idx]-lvl, self.all_max_x[img_idx] - self.all_min_x[img_idx])
+                    ty = torch.linspace(self.all_min_y[img_idx], self.all_max_y[img_idx]-lvl, self.all_max_y[img_idx] - self.all_min_y[img_idx])
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images_smooth_2[img_idx][(pixels_y.long()//2, pixels_x.long()//2)]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]  
+                else:
+                    tx = torch.linspace(0, self.W - lvl, self.W)
+                    ty = torch.linspace(0, self.H - lvl, self.H)
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images_smooth_2[img_idx][(pixels_y.long()//2, pixels_x.long()//2)]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]  
+
+            elif lvl == 3:
+                if self.data_type == 'KINOVIS':
+                    tx = torch.linspace(self.all_min_x[img_idx], self.all_max_x[img_idx]-lvl, self.all_max_x[img_idx] - self.all_min_x[img_idx])
+                    ty = torch.linspace(self.all_min_y[img_idx], self.all_max_y[img_idx]-lvl, self.all_max_y[img_idx] - self.all_min_y[img_idx])
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images_smooth_3[img_idx][(pixels_y.long()//3, pixels_x.long()//3)]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]  
+                else:
+                    tx = torch.linspace(0, self.W - lvl, self.W)
+                    ty = torch.linspace(0, self.H - lvl, self.H)
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images_smooth_3[img_idx][(pixels_y.long()//3, pixels_x.long()//3)]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]  
+                    
+
+            elif lvl == 5:
+                if self.data_type == 'KINOVIS':
+                    tx = torch.linspace(self.all_min_x[img_idx], self.all_max_x[img_idx]-lvl, self.all_max_x[img_idx] - self.all_min_x[img_idx])
+                    ty = torch.linspace(self.all_min_y[img_idx], self.all_max_y[img_idx]-lvl, self.all_max_y[img_idx] - self.all_min_y[img_idx])
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images_smooth_5[img_idx][(pixels_y.long()//5, pixels_x.long()//5)]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3
+                else:
+                    """tx = torch.linspace(0, self.W_smooth_5 - 1, self.W_smooth_5)
+                    ty = torch.linspace(0, self.H_smooth_5 - 1, self.H_smooth_5)
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images_smooth_5[img_idx][(pixels_y.long(), pixels_x.long())]    # batch_size, 3
+                    mask = self.masks_smooth_5[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3"""
+                    tx = torch.linspace(0, self.W - lvl, self.W)
+                    ty = torch.linspace(0, self.H - lvl, self.H)
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images_smooth_5[img_idx][(pixels_y.long()//5, pixels_x.long()//5)]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3"""
+
+            else:
+                print("WRONG LVL")
+                exit()
+
+            pixels_x_f = pixels_x.float() #*lvl# + torch.rand(pixels_x.shape)-0.5
+            pixels_y_f = pixels_y.float() #*lvl# + torch.rand(pixels_y.shape)-0.5
             p = torch.stack([pixels_x_f, pixels_y_f, torch.ones_like(pixels_y_f)], dim=-1).float().to(self.device)   # batch_size, 3
             p = torch.matmul(self.intrinsics_all_inv[img_idx, None, None, :3, :3], p[:, :, :, None]).squeeze() # batch_size, 3
             rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)    # batch_size, 3
@@ -1057,7 +1125,7 @@ class Dataset:
         print(self.all_colors.shape)
         print(self.all_ids.shape)
         
-    def gen_all_rays_masked(self):
+    def gen_all_rays_masked(self, lvl = 1):
         """
         Generate all rays at world space from all camera.
         """
@@ -1069,22 +1137,89 @@ class Dataset:
         self.all_ids_masked = []
 
         for img_idx in range(self.n_images):
+            if lvl == 1:
+                if self.data_type == 'KINOVIS':
+                    tx = torch.linspace(self.all_min_x[img_idx], self.all_max_x[img_idx]-1, self.all_max_x[img_idx] - self.all_min_x[img_idx])
+                    ty = torch.linspace(self.all_min_y[img_idx], self.all_max_y[img_idx]-1, self.all_max_y[img_idx] - self.all_min_y[img_idx])
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images[img_idx][(pixels_y.long(), pixels_x.long())]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3
+                else:
+                    tx = torch.linspace(0, 2*self.W - 2, 2*self.W)
+                    ty = torch.linspace(0, 2*self.H - 2, 2*self.H)
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images[img_idx][(pixels_y.long()//2, pixels_x.long()//2)]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long()//2, pixels_x.long()//2)]      # batch_size, 3"""
 
-            if self.data_type == 'KINOVIS':
-                tx = torch.linspace(self.all_min_x[img_idx], self.all_max_x[img_idx]-1, self.all_max_x[img_idx] - self.all_min_x[img_idx])
-                ty = torch.linspace(self.all_min_y[img_idx], self.all_max_y[img_idx]-1, self.all_max_y[img_idx] - self.all_min_y[img_idx])
-                pixels_x, pixels_y = torch.meshgrid(tx, ty)
-                color = self.images[img_idx][(pixels_y.long(), pixels_x.long())]    # batch_size, 3
-                mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3
+                pixels_x_f = pixels_x.float()/2.0# + torch.rand(pixels_x.shape)-0.5
+                pixels_y_f = pixels_y.float()/2.0# + torch.rand(pixels_y.shape)-0.5
+                p = torch.stack([pixels_x_f, pixels_y_f, torch.ones_like(pixels_y_f)], dim=-1).float().to(self.device)   # batch_size, 3
+                p = torch.matmul(self.intrinsics_all_inv[img_idx, None, None, :3, :3], p[:, :, :, None]).squeeze() # batch_size, 3
+                rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)    # batch_size, 3
+                rays_v = torch.matmul(self.pose_all[img_idx, None, None, :3, :3], rays_v[:, :, :, None]).squeeze()  # batch_size, 3
+                rays_o = self.pose_all[img_idx, None, None, :3, 3].expand(rays_v.shape) # batch_size, 3
+                
+                self.all_rays_o_masked.append(rays_o.cpu().reshape(-1,3))
+                self.all_rays_v_masked.append(rays_v.cpu().reshape(-1,3))
+                self.all_masks_masked.append(mask.cpu().reshape(-1,3)[:,:1])
+                self.all_colors_masked.append(color.cpu().reshape(-1,3))
+                self.all_ids_masked.append(img_idx*np.ones((color.shape[0]*color.shape[1], 1)))
+                continue
+            
+            elif lvl == 2:
+                if self.data_type == 'KINOVIS':
+                    tx = torch.linspace(self.all_min_x[img_idx], self.all_max_x[img_idx]-lvl, self.all_max_x[img_idx] - self.all_min_x[img_idx])
+                    ty = torch.linspace(self.all_min_y[img_idx], self.all_max_y[img_idx]-lvl, self.all_max_y[img_idx] - self.all_min_y[img_idx])
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images_smooth_2[img_idx][(pixels_y.long()//2, pixels_x.long()//2)]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]  
+                else:
+                    tx = torch.linspace(0, self.W - lvl, self.W)
+                    ty = torch.linspace(0, self.H - lvl, self.H)
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images_smooth_2[img_idx][(pixels_y.long()//2, pixels_x.long()//2)]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]  
+
+            elif lvl == 3:
+                if self.data_type == 'KINOVIS':
+                    tx = torch.linspace(self.all_min_x[img_idx], self.all_max_x[img_idx]-lvl, self.all_max_x[img_idx] - self.all_min_x[img_idx])
+                    ty = torch.linspace(self.all_min_y[img_idx], self.all_max_y[img_idx]-lvl, self.all_max_y[img_idx] - self.all_min_y[img_idx])
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images_smooth_3[img_idx][(pixels_y.long()//3, pixels_x.long()//3)]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]  
+                else:
+                    tx = torch.linspace(0, self.W - lvl, self.W)
+                    ty = torch.linspace(0, self.H - lvl, self.H)
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images_smooth_3[img_idx][(pixels_y.long()//3, pixels_x.long()//3)]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]  
+                    
+
+            elif lvl == 5:
+                if self.data_type == 'KINOVIS':
+                    tx = torch.linspace(self.all_min_x[img_idx], self.all_max_x[img_idx]-lvl, self.all_max_x[img_idx] - self.all_min_x[img_idx])
+                    ty = torch.linspace(self.all_min_y[img_idx], self.all_max_y[img_idx]-lvl, self.all_max_y[img_idx] - self.all_min_y[img_idx])
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images_smooth_5[img_idx][(pixels_y.long()//5, pixels_x.long()//5)]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3
+                else:
+                    """tx = torch.linspace(0, self.W_smooth_5 - 1, self.W_smooth_5)
+                    ty = torch.linspace(0, self.H_smooth_5 - 1, self.H_smooth_5)
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images_smooth_5[img_idx][(pixels_y.long(), pixels_x.long())]    # batch_size, 3
+                    mask = self.masks_smooth_5[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3"""
+                    tx = torch.linspace(0, self.W - lvl, self.W)
+                    ty = torch.linspace(0, self.H - lvl, self.H)
+                    pixels_x, pixels_y = torch.meshgrid(tx, ty)
+                    color = self.images_smooth_5[img_idx][(pixels_y.long()//5, pixels_x.long()//5)]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3"""
+
             else:
-                tx = torch.linspace(0, self.W - 1, self.W)
-                ty = torch.linspace(0, self.H - 1, self.H)
-                pixels_x, pixels_y = torch.meshgrid(tx, ty)
-                color = self.images[img_idx][(pixels_y.long(), pixels_x.long())]    # batch_size, 3
-                mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3"""
+                print("WRONG LVL")
+                exit()
 
-            pixels_x_f = pixels_x.float()# + torch.rand(pixels_x.shape)-0.5
-            pixels_y_f = pixels_y.float()# + torch.rand(pixels_y.shape)-0.5
+            pixels_x_f = pixels_x.float() #*lvl# + torch.rand(pixels_x.shape)-0.5
+            pixels_y_f = pixels_y.float() #*lvl# + torch.rand(pixels_y.shape)-0.5
             p = torch.stack([pixels_x_f, pixels_y_f, torch.ones_like(pixels_y_f)], dim=-1).float().to(self.device)   # batch_size, 3
             p = torch.matmul(self.intrinsics_all_inv[img_idx, None, None, :3, :3], p[:, :, :, None]).squeeze() # batch_size, 3
             rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)    # batch_size, 3
@@ -1141,4 +1276,37 @@ class Dataset:
     def image_at(self, idx, resolution_level):
         img = cv.imread(self.images_lis[idx])
         return (cv.resize(img, (self.W // resolution_level, self.H // resolution_level))).clip(0, 255)
+    
+    def clean_pc(self, samples):
+        valid = np.zeros(samples.shape[0])
+        for id_curr in range(self.n_images):
+            rays_o = self.pose_all[id_curr, None, :3, 3].expand(samples.shape)
+            p = samples-rays_o
+            rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)
+            
+            p = torch.transpose(p,0,1)
+            p = torch.matmul(self.pose_all_inv[id_curr,:3,:3], p[:,:]).squeeze()
+            p = torch.matmul(self.intrinsics_all[id_curr, :3,:3], p[:,:]).squeeze()
+            z = torch.stack([p[2,:], p[2,:]], dim=0)
+            pixels = (p[:2,:]/z[:]).cpu().detach().numpy()
+            pixels = pixels.astype(np.int32)
+            pixels_clipped = np.copy(pixels)
+
+            pixels_clipped[0,pixels[0,:] < 0] = 0
+            pixels_clipped[1,pixels[1,:] < 0] = 0
+            pixels_clipped[0,pixels[0,:] > self.W-1] = self.W-1
+            pixels_clipped[1,pixels[1,:] > self.H-1] = self.H-1
+
+            mask = self.masks[id_curr][pixels_clipped[1,:], pixels_clipped[0,:], 0]
+            mask = mask * (pixels[0,:] >= 0)
+            mask = mask * (pixels[1,:] >= 0)
+            mask = mask * (pixels[0,:] <= self.W-1)
+            mask = mask * (pixels[1,:] <= self.H-1)
+
+            valid[mask == 1] = valid[mask == 1] + 1   
+
+        return valid
+    
+    
+
 

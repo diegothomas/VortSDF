@@ -20,6 +20,8 @@ from src.Models.fields import ColorNetwork, SDFNetwork
 from numpy import random
 from glob import glob
 import scipy.spatial
+import igl
+import scipy as sp
 
 
 from torch.utils.cpp_extension import load
@@ -33,7 +35,8 @@ cvt_grad_cuda = load('cvt_grad_cuda', ['src/Geometry/CVT_gradients.cpp', 'src/Ge
 
 laplacian = load(name='laplacian', sources=['src/Geometry/laplacian.cpp', 'src/Geometry/laplacian.cu'], extra_include_paths=['C:/Users/thomas/Documents/Projects/lib/eigen-3.4.0', 'C:/Users/thomas/Documents/Projects/lib/libigl/include'], verbose=True)
 
-up_iters = [2000, 6000, 13000, 20000, 30000]
+#up_iters = [2000, 10000, 20000, 30000, 40000]
+up_iters = [2000, 5000, 10000, 15000, 20000]
 
 class Runner:
     def __init__(self, conf_path, data_name, mode='train', is_continue=False, checkpoint = '', position_encoding = True, double_net = True):
@@ -175,8 +178,10 @@ class Runner:
         print("Preparing CVT model")
         sites = self.tet32.sites
         #self.tet32 = tet32.Tet32(self.tet32.sites, id = 0)
-        self.tet32.run(0.3) 
-        self.tet32.load_cuda()
+        self.tet32.run(2.0*self.sigma_start) 
+        self.tet32.mask_background = abs(self.sdf) > 12.0*self.sigma_start
+        self.tet32.mask_background = self.tet32.mask_background.int().cuda()
+        self.tet32.load_cuda(2.0*self.sigma_start)
 
         #reorganize sdf
         KDtree = scipy.spatial.KDTree(self.tet32.vertices)
@@ -251,6 +256,7 @@ class Runner:
             #print("parallel process started")
             #self.tet32.join()
             self.tet32.run(0.3) 
+            self.tet32.mask_background = torch.zeros(sites.shape[0]).int().cuda().contiguous()  
             self.tet32.load_cuda()
             #self.tet32.save("Exp/bmvs_man/test.ply")    
             
@@ -282,11 +288,14 @@ class Runner:
             centers[:,0] = (self.visual_hull[3]+self.visual_hull[0])/2.0
             centers[:,1] = (self.visual_hull[4]+self.visual_hull[1])/2.0
             centers[:,2] = (self.visual_hull[5]+self.visual_hull[2])/2.0
-            with torch.no_grad():
+            """with torch.no_grad():
                 norm_sites = torch.linalg.norm(self.tet32.sites - centers, ord=2, axis=-1, keepdims=True)
             self.sdf = norm_sites[:,0] - 0.2
             self.sdf = self.sdf.contiguous()
-            self.sdf.requires_grad_(True)      
+            self.sdf.requires_grad_(True) """
+            self.sdf = 1000.0*torch.ones(self.tet32.sites.shape[0]).float().cuda()     
+            self.sdf = self.sdf.contiguous()
+            self.sdf.requires_grad_(True)  
 
         ##### 2. Initialize feature field    
         if not hasattr(self, 'fine_features'):
@@ -332,7 +341,8 @@ class Runner:
         else:
             cam_ids = self.cam_ids
         
-        #self.tet32.save_multi_lvl("Exp/{}/multi_lvl".format(self.data_name))    
+        self.tet32.save_multi_lvl("Exp/{}/multi_lvl".format(self.data_name))    
+        
 
         sites = self.tet32.sites.cpu().numpy()
         outside_flag = np.zeros(self.tet32.sites.shape[0], np.int32)
@@ -345,15 +355,36 @@ class Runner:
         
         cvt_grad_cuda.diff_tensor(self.tet32.nb_tets, self.tet32.summits, self.tet32.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff)
 
-        L_vals, L_nonZeros, L_outer, L_sizes = laplacian.MakeLaplacian(self.tet32.sites.shape[0], self.tet32.nb_tets, self.tet32.sites.cpu(), self.tet32.summits.cpu())
+        M_vals, L_vals, L_nonZeros, L_outer, L_sizes = laplacian.MakeLaplacian(self.tet32.sites.shape[0], self.tet32.nb_tets, self.tet32.sites.cpu(), self.tet32.summits.cpu(), self.tet32.valid_tets.cpu())
+            
 
         L_nnZ = L_sizes[0]
         L_outerSize = L_sizes[1]
         L_cols = L_sizes[2]
-
+        
+        M_vals = M_vals.float().cuda()
         L_vals = L_vals.float().cuda()
         L_nonZeros = L_nonZeros.cuda()
-        L_outer = L_outer.cuda()
+        L_outer = L_outer.cuda()        
+
+        #l = igl.cotmatrix(self.tet32.sites.cpu().numpy(), self.tet32.tetras)
+        m = igl.massmatrix(self.tet32.sites.cpu().numpy(), self.tet32.tetras, igl.MASSMATRIX_TYPE_BARYCENTRIC)
+        m_d = m.diagonal()
+        print(m_d[m_d > 0.0].min())
+        #for i in range(self.tet32.sites.shape[0]):
+        #    print(m_d[i])
+        
+        M_vals = torch.from_numpy(np.asarray(m_d)).float().cuda()
+
+        """
+        minv = sp.sparse.diags(1 / m.diagonal())
+        print(l.shape)
+        print(minv.shape)
+        with torch.no_grad():
+            hn = -minv.dot(l.dot(self.sdf.detach().cpu().numpy()))
+        print(hn.shape)
+        exit()"""
+
                         
         if not hasattr(self, 'optimizer_sdf'):
             self.optimizer_sdf = torch.optim.Adam([self.sdf], lr=self.learning_rate_sdf) #, betas=(0.9, 0.98))     # Beta ??   0.98, 0.995 => 0.9
@@ -379,22 +410,27 @@ class Runner:
             self.s_start = 10.0
             self.inv_s = 0.1
             self.sigma_start = min((self.visual_hull[3]-self.visual_hull[0]), (self.visual_hull[4]-self.visual_hull[1]), (self.visual_hull[5]-self.visual_hull[2]))/res #0.1 #
-            self.sigma_max = self.sigma_start * 0.8
+            self.sigma_max = min((self.visual_hull[3]-self.visual_hull[0]), (self.visual_hull[4]-self.visual_hull[1]), (self.visual_hull[5]-self.visual_hull[2]))/res
             self.w_g = 1.0
 
         lamda_c = 0.2
             
         self.sigma_feat = 0.06
-        warm_up = 0 #200
         self.loc_iter = 0
         image_perm = self.get_image_perm()
         num_rays = self.batch_size
 
-        full_reg = 50 #self.end_iter #3 #self.end_iter
+        full_reg = 3 #self.end_iter #3 #self.end_iter
         self.activated[:] = 1
         with torch.no_grad():
             self.sdf_smooth[:] = self.sdf[:]
 
+        if not is_continue:
+            self.dataset.gen_all_rays(1)
+            warm_up = 0
+        else:
+            warm_up = 500
+        
         print("Start optimization")
         #input()
 
@@ -408,8 +444,7 @@ class Runner:
             #self.inv_s = min(self.s_max, self.loc_iter/self.R + self.s_start)
             #self.inv_s = self.s_start + (self.s_max-self.s_start)*(1.0 - math.cos(0.5*math.pi*self.loc_iter/self.end_iter_loc))
             self.inv_s = self.s_start + (self.s_max-self.s_start)*(self.loc_iter/self.end_iter_loc)
-            self.sigma = self.sigma_start + (self.sigma_max-self.sigma_start)*(self.loc_iter/self.end_iter_loc)
-
+            self.sigma = self.sigma_start #1.0e-5 + self.sigma_start*math.sin(((self.loc_iter)/(self.end_iter_loc))*0.5*math.pi) #+ (self.sigma_max-self.sigma_start)*(self.loc_iter/self.end_iter_loc)
 
             ## Generate rays
             lvl = 1
@@ -430,7 +465,7 @@ class Runner:
 
             #data = self.dataset.gen_random_rays_zbuff_at(img_idx, num_rays, 0) 
             #data = self.dataset.gen_random_rays_smooth_at(img_idx, num_rays, lvl) 
-            if True: #iter_step+1 < up_iters[4]:
+            if True: #iter_step % 2 == 0 or iter_step+1 <= up_iters[4]:
                 data = self.dataset.get_random_rays(num_rays)
             else:
                 data = self.dataset.get_random_rays_masked(num_rays)
@@ -456,12 +491,27 @@ class Runner:
             img_ids = img_ids.contiguous().int()    
 
             if True: #not (iter_step > 5000 and self.loc_iter > 0 and self.loc_iter < warm_up): 
-                if iter_step % acc_it == 0:
-                    self.activated[:] = 2
-                    with torch.no_grad():
-                        self.sdf_smooth[:] = self.sdf[:]
-                    backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites,  self.activated,
-                                            self.grad_sdf_space, self.sdf.detach(), self.fine_features.detach(), self.tet32.knn_sites, self.sdf_smooth)
+                self.activated[:] = 2
+                with torch.no_grad():
+                    self.sdf_smooth[:] = self.sdf[:]
+                backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites,  self.activated,
+                                        self.grad_sdf_space, self.sdf.detach(), self.fine_features.detach(), self.tet32.knn_sites, self.sdf_smooth)
+                
+                self.sdf_smooth_2[:] = self.sdf_smooth[:]
+                backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites,  self.activated,
+                                        self.grad_sdf_space, self.sdf_smooth, self.fine_features.detach(), self.tet32.knn_sites, self.sdf_smooth_2)
+                
+                sign = -1.0
+                if iter_step %2 == 0:
+                    sign = 1.0
+
+                """self.div[:] = 0.0
+                laplacian.MeanCurve(self.div, self.sdf, 1, self.activated, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
+                self.div[self.cam_ids[:] ] = 0.0
+                self.div[outside_flag[:] == 1] = 0.0
+                self.div[self.mask_background[:] == 1] = 0.0
+                with torch.no_grad():
+                    self.sdf_smooth[:] = self.sdf[:] + sign*self.div"""
                 
             ## sample points along the rays
             """start = timer()
@@ -473,7 +523,12 @@ class Runner:
             
             start = timer()
             self.offsets[:] = 0
-            nb_samples = tet32_march_cuda.tet32_march_count(self.inv_s, rays_o.shape[0], rays_d, self.tet32.sites, self.sdf, self.tet32.summits, self.tet32.neighbors, img_ids, 
+            self.activated[:] = 0
+            if False: #iter_step <= up_iters[4]:
+                nb_samples = tet32_march_cuda.tet32_march_count(self.inv_s, rays_o.shape[0], rays_d, self.tet32.sites, self.sdf, self.tet32.summits, self.tet32.neighbors, img_ids, 
+                                               cam_ids, self.tet32.offsets_cam, self.tet32.cam_tets, self.activated, self.offsets)                
+            else:
+                nb_samples = tet32_march_cuda.tet32_march_count(self.inv_s, rays_o.shape[0], rays_d, self.tet32.sites, self.sdf_smooth, self.tet32.summits, self.tet32.neighbors, self.tet32.valid_tets, img_ids, 
                                                cam_ids, self.tet32.offsets_cam, self.tet32.cam_tets, self.activated, self.offsets)
             
             if verbose:
@@ -487,51 +542,50 @@ class Runner:
                 input()
                  
 
-            if True: #not (iter_step > 5000 and self.loc_iter > 0 and self.loc_iter < warm_up): 
-                start = timer()
-                self.activated_buff[:] = self.activated[:]
-                backprop_cuda.activate_sites(rays_o.shape[0], self.tet32.sites.shape[0], self.knn*self.hlvl, self.out_ids, self.offsets, self.tet32.knn_sites, self.activated_buff, self.activated)
-                self.activated = self.activated + self.activated_buff
-                if verbose:
-                    print('activate time:', timer() - start)   
-                    
-                if iter_step % full_reg == 0:
-                    self.activated[:] = 1
-
-                ############ Compute spatial SDF gradients
-                if iter_step % acc_it == 0:
-                    start = timer()   
-                    self.grad_sdf_space[:] = 0.0
-                    self.weights_grad[:] = 0.0
-                    self.grad_eik[:] = 0.0
-                    self.grad_norm_smooth[:] = 0.0
-                    self.eik_loss[:] = 0.0
-                    #self.activated[:] = 1
-
-                    cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.tet32.sites.shape[0], self.tet32.summits, self.tet32.sites, self.activated, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
-                                                self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.eik_loss)
-                    
-                    if math.isnan(self.grad_sdf_space.mean()):
-                        print("self.grad_sdf_space", self.grad_sdf_space.mean())
-                        input()
-
-                    self.norm_grad = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1, 1)
-                    self.norm_grad[self.norm_grad == 0.0] = 1.0
-                    self.unormed_grad[:] = self.grad_sdf_space[:]
-                    self.grad_sdf_space = self.grad_sdf_space / self.norm_grad.expand(-1, 3)
-                    
-                    if math.isnan(self.grad_sdf_space.mean()):
-                        print("self.grad_sdf_space unit", self.grad_sdf_space.mean())
-                        input()
-
+            start = timer()
+            self.activated_buff[:] = self.activated[:]
+            backprop_cuda.activate_sites(rays_o.shape[0], self.tet32.sites.shape[0], self.knn*self.hlvl, self.out_ids, self.offsets, self.tet32.knn_sites, self.activated_buff, self.activated)
+            self.activated = self.activated + self.activated_buff
+            if verbose:
+                print('activate time:', timer() - start)   
                 
-                    self.grad_eik[outside_flag[:] == 1] = 0.0
-                    
-                    self.grad_norm_smooth[outside_flag[:] == 1] = 0.0
-                    eik_loss = 0.0 #self.eik_loss.sum()
+            if iter_step % full_reg == 0:
+                self.activated[:] = 1
 
-                if verbose:
-                    print('eikonal_grad time:', timer() - start)
+            ############ Compute spatial SDF gradients
+            start = timer()   
+            self.grad_sdf_space[:] = 0.0
+            self.weights_grad[:] = 0.0
+            self.grad_eik[:] = 0.0
+            self.grad_norm_smooth[:] = 0.0
+            self.eik_loss[:] = 0.0
+            #self.activated[:] = 1
+            #self.activated[self.cam_ids] = -1
+
+            cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.tet32.sites.shape[0], self.tet32.summits, self.tet32.valid_tets, self.tet32.sites, self.activated, self.sdf_smooth, self.sdf_smooth_2, self.fine_features.detach(), 
+                                        self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.eik_loss)
+            
+            if math.isnan(self.grad_sdf_space.mean()):
+                print("self.grad_sdf_space", self.grad_sdf_space.mean())
+                input()
+
+            self.norm_grad = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1, 1)
+            self.norm_grad[self.norm_grad == 0.0] = 1.0
+            self.unormed_grad[:] = self.grad_sdf_space[:]
+            self.grad_sdf_space = self.grad_sdf_space / self.norm_grad.expand(-1, 3)
+            
+            if math.isnan(self.grad_sdf_space.mean()):
+                print("self.grad_sdf_space unit", self.grad_sdf_space.mean())
+                input()
+
+        
+            self.grad_eik[outside_flag[:] == 1] = 0.0
+            
+            self.grad_norm_smooth[outside_flag[:] == 1] = 0.0
+            eik_loss = 0.0 #self.eik_loss.sum()
+
+            if verbose:
+                print('eikonal_grad time:', timer() - start)
             
             start = timer()
             self.samples[:] = 0.0
@@ -540,10 +594,16 @@ class Runner:
             self.out_sdf[:] = 0.0
             self.out_weights[:] = 0.0
             self.out_ids[:] = 0
-            tet32_march_cuda.tet32_march_offset(self.inv_s, rays_o.shape[0], rays_d, self.tet32.sites, self.sdf, self.tet32.summits, self.tet32.neighbors, img_ids, 
-                                                cam_ids, self.tet32.offsets_cam, self.tet32.cam_tets, self.grad_sdf_space, self.fine_features.detach(),  
-                                                self.out_weights, self.out_z, self.out_sdf, self.out_ids, self.out_grads, self.out_feat, self.samples_rays, self.samples, 
-                                                self.offsets)
+            if False: #iter_step <= up_iters[4]:
+                tet32_march_cuda.tet32_march_offset(self.inv_s, rays_o.shape[0], rays_d, self.tet32.sites, self.sdf, self.tet32.summits, self.tet32.neighbors, img_ids, 
+                                                    cam_ids, self.tet32.offsets_cam, self.tet32.cam_tets, self.grad_sdf_space, self.fine_features.detach(),  
+                                                    self.out_weights, self.out_z, self.out_sdf, self.out_ids, self.out_grads, self.out_feat, self.samples_rays, self.samples, 
+                                                    self.offsets)
+            else:
+                tet32_march_cuda.tet32_march_offset(self.inv_s, rays_o.shape[0], rays_d, self.tet32.sites, self.sdf_smooth, self.tet32.summits, self.tet32.neighbors, self.tet32.valid_tets, img_ids, 
+                                                    cam_ids, self.tet32.offsets_cam, self.tet32.cam_tets, self.grad_sdf_space, self.fine_features.detach(),  
+                                                    self.out_weights, self.out_z, self.out_sdf, self.out_ids, self.out_grads, self.out_feat, self.samples_rays, self.samples, 
+                                                    self.offsets)
                       
             if verbose:
                 print('tet32_march_offset time:', timer() - start) 
@@ -757,6 +817,7 @@ class Runner:
                 if verbose:
                     print('backprop_multi sites time:', timer() - start)"""
                 
+                
                 start = timer()
                 self.grad_sdf_norm[:] = 0.0
                 #backprop_cuda.backprop_norm(self.tet32.nb_tets, self.tet32.summits, self.tet32.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.grad_norm_feat, self.grad_sdf_norm, self.activated)
@@ -794,28 +855,18 @@ class Runner:
 
             self.grad_sdf[outside_flag[:] == 1] = 0.0   
 
+              
 
-
-
-
-
-
-            """#self.activated[:] = -1
-            start = timer()   
-            #self.activated[abs(self.grad_sdf) > 0.0] = 1
-            #self.activated[grad_sdf == 0.0] = -1
-            self.grad_sdf_smooth[:] = 0.0
-            backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites, self.activated,
-                                        self.grad_sdf_space, self.grad_sdf, self.fine_features, self.tet32.knn_sites, self.grad_sdf_smooth)
-            self.grad_sdf[:] = self.grad_sdf_smooth[:]
-            self.grad_sdf[outside_flag[:] == 1.0] = 0.0   
-            if verbose:
-                print('knn_smooth time:', timer() - start)"""
             
-
-
-
-
+            if False: #iter_step > up_iters[4]:
+                start = timer()   
+                self.grad_sdf_smooth[:] = 0.0
+                backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites, self.activated,
+                                            self.grad_sdf_space, self.grad_sdf, self.fine_features, self.tet32.knn_sites, self.grad_sdf_smooth)
+                self.grad_sdf[:] = self.grad_sdf_smooth[:]
+                self.grad_sdf[outside_flag[:] == 1.0] = 0.0   
+                if verbose:
+                    print('knn_smooth time:', timer() - start)
 
 
                             
@@ -840,12 +891,12 @@ class Runner:
             if verbose:
                 print('space_reg time:', timer() - start)"""
         
-            if False: #iter_step % full_reg == 0: # and (iter_step % 3 == 0 or (iter_step+1) < 10000): # and ((iter_step+1) < 35000 or iter_step % 3 == 0):
+            if iter_step % full_reg == 0: #iter_step > up_iters[4]: #iter_step % full_reg == 0: # and (iter_step % 3 == 0 or (iter_step+1) < 10000): # and ((iter_step+1) < 35000 or iter_step % 3 == 0):
                 start = timer()   
                 self.grad_sdf_smooth[:] = 0.0
                 self.grad_feat_smooth[:] = 0.0
                 self.weight_sdf_smooth[:] = 0.0
-                #self.activated[:] = 1
+                self.activated[:] = 2
                 #if (iter_step+1) < 35000:
                 #self.activated[grad_sdf == 0.0] = 0 #self.sigma
 
@@ -853,39 +904,76 @@ class Runner:
                 #                         self.sdf, self.fine_features, self.tet32.edges, self.grad_sdf_smooth, self.grad_feat_smooth, self.weight_sdf_smooth)
                 
                 self.grad_sdf_L2[:] = 0.0
-                backprop_cuda.sdf_smooth(self.tet32.sites.shape[0], 1, self.activated, self.sdf.detach(), self.sdf_smooth, self.grad_sdf_L2)
+                backprop_cuda.sdf_smooth(self.tet32.sites.shape[0], 1, self.activated, self.sdf_smooth, self.sdf_smooth_2, self.grad_sdf_L2)
                 
+                """start = timer()   
+                self.grad_sdf_smooth[:] = 0.0
+                self.activated[:] = 2
+                backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites, self.activated,
+                                            self.grad_sdf_space, self.grad_sdf_L2, self.fine_features, self.tet32.knn_sites, self.grad_sdf_smooth)
+                self.grad_sdf_L2[:] = self.grad_sdf_L2[:] - self.grad_sdf_smooth[:]
+                if verbose:
+                    print('knn_smooth time:', timer() - start)"""
+
+                """"""""""""""""""""""""""""""
+                """"""""""""""""""""""""""""""
+                """ Smooth normals """
+                """self.norm_smooth[:] = 0.0
+                backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 3, self.tet32.sites, self.activated,
+                                            self.grad_sdf_space, self.unormed_grad, self.fine_features, self.tet32.knn_sites, self.norm_smooth)
+                
+                self.grad_norm_L2[:] = 0.0
+                backprop_cuda.sdf_smooth(self.tet32.sites.shape[0], 3, self.activated, self.unormed_grad, self.norm_smooth, self.grad_norm_L2)
+
+                self.grad_norm_sdf_L2[:] = 0.0
+                #cvt_grad_cuda.backprop_norm_grad(self.tet32.nb_tets, self.tet32.summits, self.tet32.sites, self.activated, self.grad_norm_L2, self.grad_norm_sdf_L2, self.vol_tet32, self.weights_diff, self.weights_tot_diff)
+
+                self.grad_norm_sdf_L2[outside_flag[:] == 1] = 0.0   """
+                """"""""""""""""""""""""""""""
+                """"""""""""""""""""""""""""""
+                
+                """"""""""""""""""""""""""""""
+                """"""""""""""""""""""""""""""
+                """ Smooth features """
+                self.feat_smooth[:] = 0.0
+                backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, self.dim_feats, self.tet32.sites, self.activated,
+                                            self.grad_sdf_space, self.fine_features, self.fine_features, self.tet32.knn_sites, self.feat_smooth)
+                
+                self.grad_feat_smooth[:] = 0.0
+                backprop_cuda.sdf_smooth(self.tet32.sites.shape[0], self.dim_feats, self.activated, self.fine_features, self.feat_smooth, self.grad_feat_smooth)
+
+                self.grad_feat_smooth[outside_flag[:] == 1,:] = 0.0   
+                """"""""""""""""""""""""""""""
+                """"""""""""""""""""""""""""""
 
                 #self.weight_sdf_smooth[self.weight_sdf_smooth[:] == 0.0] = 1.0
                 #self.grad_sdf_smooth = self.grad_sdf_smooth / self.weight_sdf_smooth[:]
                 #self.grad_sdf_smooth[:] = self.grad_sdf_smooth[:] / self.tet32.sites.shape[0]
                 #self.grad_feat_smooth = self.grad_feat_smooth / self.weight_sdf_smooth[:].reshape(-1,1)
                 #self.grad_feat_smooth[:,:] = self.grad_feat_smooth[:,:] / self.sigma
-                self.grad_sdf_smooth[outside_flag[:] == 1] = 0.0   
+                self.grad_sdf_L2[outside_flag[:] == 1] = 0.0   
                 if verbose:
                     print('smooth_sdf time:', timer() - start)
             else:
-                self.grad_sdf_smooth[:] = 0.0
+                self.grad_norm_sdf_L2[:] = 0.0
                 self.grad_feat_smooth[:] = 0.0
+                self.grad_sdf_L2[:] = 0.0
             
             ########################################
             ####### Optimize features ##############
             ########################################
             
-            if iter_step % acc_it == 0:
-                self.optimizer_feat.zero_grad()
+            self.optimizer_feat.zero_grad()
 
-            if self.fine_features.grad is None:
-                self.fine_features.grad = self.grad_features  
-            else:
-                self.fine_features.grad = self.fine_features.grad + self.grad_features # + self.tv_f*self.tv_w*self.grad_feat_smooth #+ 1.0e+5*self.grad_feat_reg / (mask_sum + 1.0e-5)
-            
-            if not iter_step % full_reg == 0:
-                self.grad_feat_smooth[self.grad_sdf[:] == 0.0] = 0.0
+            self.fine_features.grad = self.grad_features + self.tv_f*self.grad_feat_smooth
 
-            if iter_step % acc_it == acc_it-1:
-                self.fine_features.grad = self.fine_features.grad + self.w_g*self.tv_f*self.grad_feat_smooth
-                self.optimizer_feat.step()
+            self.optimizer_feat.step()
+
+            if False: #iter_step % full_reg == 0:
+                self.div_feat[:] = 0
+                laplacian.MeanCurve(self.div_feat, self.fine_features, self.dim_feats, self.activated, M_vals, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
+                with torch.no_grad():
+                    self.fine_features[:] = self.fine_features[:] + sign*0.01*self.div_feat[:]
 
             if iter_step > 5000 and self.loc_iter < warm_up:
                 self.update_learning_rate(self.loc_iter)
@@ -895,137 +983,150 @@ class Runner:
             ########################################
             ####### Optimize sdf values ############
             ########################################
+            self.optimizer_sdf.zero_grad() 
 
-            #grad_sdf = (0.5*self.voro_renderer_coarse.grads_sdf[:,0] + 1.0*self.voro_renderer_fine.grads_sdf[:,0]) / (mask_sum + 1.0e-5)
-           
-            norm_grad = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1)
-
-            """if (iter_step+1) > 5000:
-                self.grad_norm_smooth[abs(self.sdf) > 3.0*self.sigma] = 0.0
-                self.grad_eik[abs(self.sdf) > 3.0*self.sigma] = 0.0
-                self.grad_sdf_smooth[abs(self.sdf) > 3.0*self.sigma] = 0.0"""
-            
-            #self.grad_norm_smooth = self.grad_norm_smooth / self.tet32.sites.shape[0]
-            #self.grad_eik = self.grad_eik / self.tet32.sites.shape[0]
-            #self.grad_sdf_smooth = self.grad_sdf_smooth / self.sigma
+            #self.norm_grad = torch.linalg.norm(self.unormed_grad, ord=2, axis=-1, keepdims=True).reshape(-1)           
                 
-            if False: #iter_step % 3 != 0 or (iter_step+1) < 25000:    
-                self.grad_norm_smooth[grad_sdf == 0.0] = 0.0
-                self.grad_eik[grad_sdf == 0.0] = 0.0
-                self.grad_sdf_smooth[grad_sdf == 0.0] = 0.0
-                
-            """if iter_step % 3 != 0: # or (iter_step+1) > 5000:# and (iter_step+1) > 5000: # or (iter_step+1) > 10000:   
-                self.grad_norm_smooth[:] = 0.0
-                self.grad_eik[:] = 0.0
-                self.grad_sdf_smooth[:] = 0.0"""
+            """self.div_norm[:] = 0.0
+            laplacian.MeanCurve(self.div_norm, self.unormed_grad, 3, self.activated, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
+            self.grad_norm_Lapl[:] = 0.0
+            cvt_grad_cuda.backprop_norm_grad(self.tet32.nb_tets, self.tet32.summits, self.tet32.sites, self.activated, self.div_norm, self.grad_norm_Lapl, self.vol_tet32, self.weights_diff, self.weights_tot_diff)"""
 
-                
-            """if iter_step % 5 != 0 and (iter_step+1) > 15000: # or (iter_step+1) > 10000:   
-                self.grad_norm_smooth[:] = 0.0
-                self.grad_eik[:] = 0.0
-                self.grad_sdf_smooth[:] = 0.0""" 
-
-
-            if iter_step % acc_it == 0:
-                self.optimizer_sdf.zero_grad() # 0.00001*self.grad_mean_curve +\ # self.e_w*self.grad_eik +\
-
-            self.norm_grad = torch.linalg.norm(self.unormed_grad, ord=2, axis=-1, keepdims=True).reshape(-1)
-            #self.grad_sdf[self.mask_background[:] == 1.0] = 0.0
-            #self.grad_sdf[outside_flag[:] == 1] = 0.0
-
-            ###self.norm_grad * 
-            if (iter_step+1) < 2000: 
-                if self.sdf.grad is None:
-                    self.sdf.grad = self.grad_sdf #+ (self.e_w*self.grad_eik+\
-                                            #    self.s_w*self.grad_norm_smooth  +\
-                                             #   self.tv_w*self.grad_sdf_smooth) 
-                else:
-                    self.sdf.grad = self.sdf.grad + self.grad_sdf #+ (self.e_w*self.grad_eik+\
-                                                #self.s_w*self.grad_norm_smooth  +\
-                                                #self.tv_w*self.grad_sdf_smooth) 
+            """self.div[:] = 0.0
+            if False: #iter_step > 2000:
+                laplacian.MeanCurve(self.div, self.sdf, 1, self.activated, M_vals, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
             else:
-                if self.sdf.grad is None:
-                    self.sdf.grad = self.grad_sdf #+ abs(grad_sdf)*(0.0000001*self.grad_eik+\
-                                            #                0.0005*self.grad_norm_smooth+\
-                                            #                0.0001*self.grad_sdf_smooth) 
-                else:
-                    self.sdf.grad = self.sdf.grad + self.grad_sdf #+ abs(grad_sdf)*(0.0000001*self.grad_eik+\
-                                                            #0.0005*self.grad_norm_smooth+\
-                                                           # 0.0001*self.grad_sdf_smooth) 
-            if iter_step % acc_it == acc_it-1:
-                """self.grad_norm_smooth[self.sdf.grad[:] == 0.0] = 0.0
-                self.grad_eik[self.sdf.grad[:] == 0.0] = 0.0
-                self.grad_sdf_smooth[self.sdf.grad[:] == 0.0] = 0.0
+                laplacian.MeanCurve(self.div, self.sdf_smooth, 1, self.activated, M_vals, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
+            self.div_2[:] = 0.0
+            #laplacian.MeanCurve(self.div_2, self.div, 1, self.activated, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
+            self.div[outside_flag[:] == 1] = 0.0
+            #self.div[self.cam_ids[:] ] = 0.0
+            self.div_2[outside_flag[:] == 1] = 0.0
+            self.div_2[self.cam_ids[:]] = 0.0
+            self.div[self.mask_background[:] == 1] = 0.0
+            self.div_2[self.mask_background[:] == 1] = 0.0
+            self.grad_eik[self.mask_background[:] == 1] = 0.0"""
+            
+            if not iter_step % full_reg == 0:
+                self.grad_norm_smooth[:] = 0.0
+                self.grad_eik[:] = 0.0
+                self.grad_sdf_L2[:] = 0.0
 
-                self.grad_norm_smooth[self.mask_background[:] == 1.0] = 0.0
-                self.grad_eik[self.mask_background[:] == 1.0] = 0.0
-                self.grad_sdf_smooth[self.mask_background[:] == 1.0] = 0.0"""
+                #self.grad_norm_smooth[self.activated[:] < 2] = 0.0
+                #self.grad_eik[self.activated[:] < 2] = 0.0
+            
+            #self.grad_norm_smooth[self.mask_background[:] == 1] = 0.0
 
-                if not iter_step % full_reg == 0:
-                    self.grad_norm_smooth[self.sdf.grad[:] == 0.0] = 0.0
-                    #self.grad_eik[self.sdf.grad[:] == 0.0] = 0.0
-                    self.grad_sdf_L2[self.sdf.grad[:] == 0.0] = 0.0
-                    self.grad_sdf_smooth[self.sdf.grad[:] == 0.0] = 0.0
-                    """self.grad_norm_smooth[:] = 0.0
-                    self.grad_eik[:] = 0.0
-                    self.grad_sdf_smooth[:] = 0.0
-                    self.grad_sdf_L2[:] = 0.0"""
-                else: 
-                    self.grad_norm_smooth[outside_flag[:] == 1] = 0.0
-                    self.grad_eik[outside_flag[:] == 1] = 0.0
-                    self.grad_sdf_smooth[outside_flag[:] == 1] = 0.0
-                    self.grad_sdf_L2[outside_flag[:] == 1] = 0.0
-                    """self.grad_norm_smooth[self.sdf.grad[:] == 0.0] = 0.0
-                    self.grad_eik[self.sdf.grad[:] == 0.0] = 0.0
-                    self.grad_sdf_smooth[self.sdf.grad[:] == 0.0] = 0.0"""
+            lbda = 0.5 #0.5 #0.6 # 0.5
+            mu = -0.5   
 
-                """self.grad_norm_smooth[self.activated[:] < 2] = 0.0
-                self.grad_eik[self.activated[:] < 2] = 0.0
-                self.grad_sdf_smooth[self.activated[:] < 2] = 0.0"""
-                #abs(self.sdf.grad)*
 
-                    #w_photo = (self.grad_sdf_space * self.samples_rays[:nb_samples,:]).sum()
-
-                self.div[:] = 0.0
-                laplacian.MeanCurve(self.div, self.sdf, self.activated, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
-                self.div_2[:] = 0.0
-                laplacian.MeanCurve(self.div_2, self.div, self.activated, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
+            self.div[:] = 0.0
+            if iter_step % full_reg == 0:
+                laplacian.MeanCurve(self.div, self.sdf_smooth, 1, self.activated, M_vals, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
                 self.div[outside_flag[:] == 1] = 0.0
-                self.div_2[outside_flag[:] == 1] = 0.0
-                
-                lbda = 0.6 # 0.5
-                mu = -0.53   
+                #self.div[self.mask_background[:] == 1] = 0.0
+            
+            #if iter_step > up_iters[3]:
+            #    self.grad_sdf[:] = 0.0
+            #    self.grad_norm_smooth[:] = 0.0
 
-                if False: #(iter_step+1) > 70000: 
-                    self.sdf.grad = self.norm_grad * self.sdf.grad + self.w_g *(self.e_w*self.grad_eik+\
-                                                                                self.s_w*self.grad_norm_smooth+\
-                                                                                self.tv_w*self.grad_sdf_smooth) #abs(self.sdf.grad)*
-                else: 
-                    self.sdf.grad = self.sdf.grad + self.s_w*self.grad_norm_smooth + self.tv_w*((lbda + mu)*self.div - lbda*mu*self.div_2) + self.e_w*self.grad_eik
-                    #self.sdf.grad = self.sdf.grad + self.s_w*(self.grad_norm_smooth + self.grad_sdf_L2) + self.tv_w*self.grad_sdf_smooth + self.e_w*self.grad_eik
-                    
-                """self.activated[:] = 0
-                self.activated[abs(self.sdf.grad[:]) > 0] = 1
-                start = timer()
-                self.activated_buff[:] = self.activated[:]
-                backprop_cuda.activate_sites(rays_o.shape[0], self.tet32.sites.shape[0], 96, self.out_ids, self.offsets, self.tet32.knn_sites, self.activated_buff, self.activated)
-                #self.activated[:] = self.activated_buff[:]
+            if iter_step % 2 == 0:
+                self.grad_sdf = self.grad_sdf + (self.s_w*self.grad_norm_smooth + lbda*self.tv_w*self.div) + self.e_w*self.grad_eik + 1.0e2*self.tv_w*self.grad_norm_sdf_L2
+            else:
+                self.grad_sdf = self.grad_sdf + (self.s_w*self.grad_norm_smooth + mu*self.tv_w*self.div) + self.e_w*self.grad_eik + 1.0e2*self.tv_w*self.grad_norm_sdf_L2 #Ｓ    self.tv_w*self.grad_sdf_smooth #
+
+            #self.grad_sdf = self.grad_sdf + self.e_w*self.grad_eik + self.s_w*self.grad_norm_smooth + self.tv_w*self.grad_norm_sdf_L2
+            #self.grad_sdf[self.mask_background[:] == 1] = 0.0
+
+            if True: #iter_step > up_iters[4]:
+                start = timer()   
+                self.grad_sdf_smooth[:] = 0.0
+                backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites, self.activated,
+                                            self.grad_sdf_space, self.grad_sdf, self.fine_features, self.tet32.knn_sites, self.grad_sdf_smooth)
+                self.grad_sdf[:] = self.grad_sdf_smooth[:]
+                self.grad_sdf[outside_flag[:] == 1.0] = 0.0                   
+                #self.grad_sdf[self.mask_background[:] == 1] = 0.0
                 if verbose:
-                    print('activate time:', timer() - start)"""
+                    print('knn_smooth time:', timer() - start)
 
+                """self.div_2[:] = 0.0
+                laplacian.MeanCurve(self.div_2, self.grad_sdf, 1, self.activated, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
+                self.div_2[self.cam_ids[:] ] = 0.0
+                self.div_2[outside_flag[:] == 1] = 0.0
+                self.div_2[self.mask_background[:] == 1] = 0.0
+                with torch.no_grad():
+                    self.grad_sdf[:] = self.grad_sdf[:] + sign*self.div_2"""
+
+            if False: #iter_step > 2000:
+                self.sdf.grad = self.grad_sdf
+            else:
+                #self.sdf.grad = self.grad_sdf + self.s_w*(0.01*self.grad_norm_smooth + self.grad_sdf_L2)
+                """self.div[:] = 0.0
+                laplacian.MeanCurve(self.div, self.sdf, 1, self.activated, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
+                self.div[self.cam_ids[:] ] = 0.0
+                self.div[outside_flag[:] == 1] = 0.0
+                self.div[self.mask_background[:] == 1] = 0.0"""
+                self.sdf.grad = self.grad_sdf #+ self.e_w*self.grad_sdf_L2 #+ 0.001*self.s_w*self.grad_norm_smooth #self.s_w*self.grad_sdf_L2 + sign*self.div
+
+            #self.sdf.grad[self.mask_background[:] == 1] = 0.0
+
+            if False: # iter_step > 2000:
+                with torch.no_grad():
+                    if iter_step % 2 == 0:
+                        self.sdf[:] = self.sdf[:] + 0.0001*lbda*self.div[:]
+                    else:
+                        self.sdf[:] = self.sdf[:] + 0.0001*mu*self.div[:]
+            else:
                 self.optimizer_sdf.step()
 
+            """with torch.no_grad():
+                self.div[:] = 0.0
+                laplacian.MeanCurve(self.div, self.sdf, 1, self.activated, M_vals, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
+                self.div[outside_flag[:] == 1] = 0.0
+                self.div[self.mask_background[:] == 1] = 0.0
+                if iter_step % 2 == 0:
+                    self.sdf[:] = self.sdf[:] + 0.001*lbda*self.div[:]
+                else:
+                    self.sdf[:] = self.sdf[:] + 0.001*mu*self.div[:]"""
 
-            #with torch.no_grad():
-            #    self.fine_features[:,0] = self.sdf[:]
-            #    self.fine_features[self.activated[:] == 1, 1:4] = self.grad_sdf_space[self.activated[:] == 1,:]
 
             ########################################
             ##### Optimize sites positions #########
             ########################################
-            if (iter_step+1) in up_iters: #== 2000 or (iter_step+1) == 10000 or (iter_step+1) == 30000 or (iter_step+1) == 50000 or (iter_step+1) == 70000:# or (iter_step+1) == 45000:
-                
-                self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/{}/meshes/test_tri_up_{}.ply".format(self.data_name, (iter_step+1))) #, self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][:3, :3])
+            if (iter_step+1) in up_iters: #== 2000 or (iter_step+1) == 10000 or (iter_step+1) == 30000 or (iter_step+1) == 50000 or (iter_step+1) == 70000:# or (iter_step+1) == 45000:        
+                  
+
+                self.optimizer_sdf = torch.optim.Adam([self.sdf], lr=self.learning_rate_sdf, betas=(0.9, 0.98))     
+                for Taub_it in range(0):
+                    self.optimizer_sdf.zero_grad()      
+                    self.activated[:] = 2
+                    backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites, self.activated,
+                                                self.grad_sdf_space, self.sdf.detach(), self.fine_features, self.tet32.knn_sites, self.sdf_smooth_2)
+                    
+                    self.div[:] = 0.0
+                    laplacian.MeanCurve(self.div, self.sdf_smooth, 1, self.activated, M_vals, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
+                    self.div[outside_flag[:] == 1] = 0.0
+                    
+                    self.grad_sdf[:] = 0.0
+                    if Taub_it % 2 == 0:
+                        self.grad_sdf = lbda*self.div 
+                    else:
+                        self.grad_sdf = mu*self.div 
+                        
+                    start = timer()   
+                    self.grad_sdf_smooth[:] = 0.0
+                    backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites, self.activated,
+                                                self.grad_sdf_space, self.grad_sdf, self.fine_features, self.tet32.knn_sites, self.grad_sdf_smooth)
+                    self.sdf.grad = self.grad_sdf_smooth
+                    if verbose:
+                        print('knn_smooth time:', timer() - start)
+
+                    self.optimizer_sdf.step()
+
+                self.sdf_smooth[self.mask_background[:] == 1] = 1.0
+                valid_sites = self.dataset.clean_pc(self.tet32.sites)
+                self.sdf_smooth[valid_sites[:] < 3] = 1.0
                 
                 #if (iter_step+1) == 20000:
                 #    self.batch_size = 10240
@@ -1033,12 +1134,14 @@ class Runner:
                 #if self.tet32.sites.shape[0] > 500000:
                 #    self.sdf, self.fine_features = self.tet32.upsample(self.sdf.detach().cpu().numpy(), self.fine_features.detach().cpu().numpy(), visual_hull, res, cam_sites, self.learning_rate_cvt, False, 0.0) #(iter_step+1) > 2000
                 #else:
-                self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf.cpu().numpy(), self.fine_features.detach().cpu().numpy(), self.visual_hull, res, cam_sites, cam_ids, self.learning_rate_cvt, (iter_step+1) <= up_iters[2], self.sigma_start)
+                self.sdf, self.fine_features, self.mask_background = self.tet32.upsample(self.sdf_smooth.detach().cpu().numpy(), self.sdf_smooth.cpu().numpy(), self.fine_features.detach().cpu().numpy(), 
+                                                                                         self.visual_hull, res, cam_sites, cam_ids, self.learning_rate_cvt, (iter_step+1) <= up_iters[2], self.sigma_max)
+
                 self.sdf = self.sdf.contiguous()
                 self.sdf.requires_grad_(True)
                 self.fine_features = self.fine_features.contiguous()
                 self.fine_features.requires_grad_(True)
-                self.tet32.load_cuda()
+                self.tet32.load_cuda(self.sigma_max)
 
                 print(self.mask_background.max())
                 print(self.mask_background.min())
@@ -1065,14 +1168,26 @@ class Runner:
                 
                 cvt_grad_cuda.diff_tensor(self.tet32.nb_tets, self.tet32.summits, self.tet32.sites, self.vol_tet32, self.weights_diff, self.weights_tot_diff)
 
-                L_vals, L_nonZeros, L_outer, L_sizes = laplacian.MakeLaplacian(self.tet32.sites.shape[0], self.tet32.nb_tets, self.tet32.sites.cpu(), self.tet32.summits.cpu())
+                M_vals, L_vals, L_nonZeros, L_outer, L_sizes = laplacian.MakeLaplacian(self.tet32.sites.shape[0], self.tet32.nb_tets, self.tet32.sites.cpu(), self.tet32.summits.cpu(), self.tet32.valid_tets.cpu())
 
                 L_nnZ = L_sizes[0]
                 L_outerSize = L_sizes[1]
                 L_cols = L_sizes[2]
+                
+                M_vals = M_vals.float().cuda()
                 L_vals = L_vals.float().cuda()
                 L_nonZeros = L_nonZeros.cuda()
-                L_outer = L_outer.cuda()
+                L_outer = L_outer.cuda()        
+
+                m = igl.massmatrix(self.tet32.sites.cpu().numpy(), self.tet32.tetras, igl.MASSMATRIX_TYPE_BARYCENTRIC)
+                m_d = m.diagonal()
+                print(m_d[m_d > 0.0].min())
+                
+                M_vals = torch.from_numpy(np.asarray(m_d)).float().cuda()
+
+                #mask_L = torch.zeros(self.tet32.sites.shape[0]).int().cuda()
+                #mask_L[self.cam_ids[:]] = 1
+                #laplacian.MaskLaplacian(mask_L, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
                                 
                 delta_sites = torch.zeros(self.tet32.sites.shape).float().cuda()
                 with torch.no_grad():  
@@ -1081,14 +1196,12 @@ class Runner:
                 with torch.no_grad():
                     self.sdf_smooth[:] = self.sdf[:]
 
+                """self.fine_features = 0.5*torch.ones([self.sdf.shape[0], self.dim_feats]).cuda()       
+                self.fine_features = self.fine_features.contiguous()
+                self.fine_features.requires_grad_(True)"""
+
                 self.optimizer_sdf = torch.optim.Adam([self.sdf], lr=self.learning_rate_sdf, betas=(0.9, 0.98))        
                 self.optimizer_feat = torch.optim.Adam([self.fine_features], lr=self.learning_rate_feat, betas=(0.9, 0.98))  
-                
-                if self.double_net:
-                    self.vortSDF_renderer_coarse_net.prepare_buffs(self.batch_size, self.n_samples, self.tet32.sites.shape[0])
-                else:
-                    self.vortSDF_renderer_coarse.prepare_buffs(self.batch_size, self.n_samples, self.tet32.sites.shape[0])
-                self.vortSDF_renderer_fine.prepare_buffs(self.batch_size, self.n_samples, self.tet32.sites.shape[0])
 
                 step_size = step_size / 1.5
                 self.e_w = self.e_w / 10.0
@@ -1096,9 +1209,15 @@ class Runner:
                 self.tv_w = self.tv_w / 2.0
                 self.learning_rate_cvt = self.learning_rate_cvt / 1.5 #2.0
 
-                self.sigma_start = self.sigma_start/2.0
+                if (iter_step+1) == up_iters[3]:
+                    self.sigma_start = self.sigma_start/1.8
+                    #self.sigma_start = (min((self.visual_hull[3]-self.visual_hull[0]), (self.visual_hull[4]-self.visual_hull[1]), (self.visual_hull[5]-self.visual_hull[2]))/res)/16.0
+                elif (iter_step+1) == up_iters[4]:
+                    self.sigma_start = self.sigma_start/1.8
+                else :
+                    self.sigma_start = self.sigma_start/2.0
                 self.sigma_max = self.sigma_max/2.0
-                self.sigma = self.sigma / 2.0
+                self.sigma = self.sigma_start #self.sigma / 2.0
                 self.w_g = 1.0
                 #full_reg = self.end_iter
                 centers = torch.zeros(self.tet32.sites.shape).float().cuda()
@@ -1106,9 +1225,47 @@ class Runner:
                 centers[:,1] = (self.visual_hull[4]+self.visual_hull[1])/2.0
                 centers[:,2] = (self.visual_hull[5]+self.visual_hull[2])/2.0
 
+                for _ in range(100):           
+                    self.optimizer_sdf.zero_grad()      
+                    self.activated[:] = 2
+                    backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites, self.activated,
+                                                self.grad_sdf_space, self.sdf.detach(), self.fine_features, self.tet32.knn_sites, self.sdf_smooth_2)
+                    
+                    self.grad_sdf_L2[:] = 0.0
+                    backprop_cuda.sdf_smooth(self.tet32.sites.shape[0], 1, self.activated, self.sdf_smooth_2, self.sdf_smooth, self.grad_sdf_L2)
+
+                    print(self.grad_sdf_L2.mean())
+                    
+                    start = timer()   
+                    self.grad_sdf_smooth[:] = 0.0
+                    backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites, self.activated,
+                                                self.grad_sdf_space, self.grad_sdf_L2, self.fine_features, self.tet32.knn_sites, self.grad_sdf_smooth)
+                    self.sdf.grad = self.grad_sdf_smooth
+                    if verbose:
+                        print('knn_smooth time:', timer() - start)
+
+                    self.optimizer_sdf.step()
+                    
+                
+                self.activated[:] = 2
+                self.sdf_smooth[:] = 0.0
+                backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites,  self.activated,
+                                        self.grad_sdf_space, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)
+                                
+                self.tet32.surface_from_sdf(self.sdf_smooth.cpu().numpy().reshape(-1), "Exp/{}/meshes/test_tri_up_{}.ply".format(self.data_name, (iter_step+1))) #, self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][:3, :3])
+                                
+                if self.double_net:
+                    self.vortSDF_renderer_coarse_net.prepare_buffs(self.batch_size, self.n_samples, self.tet32.sites.shape[0])
+                else:
+                    self.vortSDF_renderer_coarse.prepare_buffs(self.batch_size, self.n_samples, self.tet32.sites.shape[0])
+                self.vortSDF_renderer_fine.prepare_buffs(self.batch_size, self.n_samples, self.tet32.sites.shape[0])
+
+                
+
                 if (iter_step+1) == up_iters[0]:
-                    self.s_start = 100 #30/(10.0*self.sigma) #50.0
-                    self.s_max = 400 #60/(5.0*self.sigma) #200
+                    warm_up = 500
+                    self.s_start = 30 #30/(10.0*self.sigma) #50.0
+                    self.s_max = 50 #60/(5.0*self.sigma) #200
 
                     self.learning_rate = self.learning_rate_list[1]
                     self.learning_rate_sdf = self.learning_rate_sdf_list[1]
@@ -1128,8 +1285,9 @@ class Runner:
                     
 
                 if (iter_step+1) == up_iters[1]:
-                    self.s_start = 200 #30/(10.0*self.sigma) #50.0
-                    self.s_max = 800 #60/(5.0*self.sigma) #200
+                    warm_up = 500
+                    self.s_start = 50 #30/(10.0*self.sigma) #50.0
+                    self.s_max = 100 #60/(5.0*self.sigma) #200
 
                     self.learning_rate = self.learning_rate_list[2]
                     self.learning_rate_sdf = self.learning_rate_sdf_list[2]
@@ -1145,12 +1303,13 @@ class Runner:
                     self.vortSDF_renderer_fine.mask_reg = self.mask_w_list[2]
                     if self.double_net:
                         self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[2]
+                    #self.dataset.gen_all_rays(3)
                     
                     
                 if (iter_step+1) == up_iters[2]:
                     warm_up = 500
-                    self.s_start = 400 #30/(10.0*self.sigma) #50.0
-                    self.s_max = 1600 #60/(5.0*self.sigma) #200
+                    self.s_start = 100 #30/(10.0*self.sigma) #50.0
+                    self.s_max = 400 #60/(5.0*self.sigma) #200
 
                     self.learning_rate = self.learning_rate_list[3]
                     self.learning_rate_sdf = self.learning_rate_sdf_list[3]
@@ -1171,8 +1330,8 @@ class Runner:
 
                 if (iter_step+1) == up_iters[3]:
                     warm_up = 500
-                    self.s_start = 800# 30/(10.0*self.sigma) #50.0
-                    self.s_max = 3000# 60/(5.0*self.sigma) #200
+                    self.s_start = 100# 30/(10.0*self.sigma) #50.0
+                    self.s_max = 1000# 60/(5.0*self.sigma) #200
 
                     self.learning_rate = self.learning_rate_list[4]
                     self.learning_rate_sdf = self.learning_rate_sdf_list[4]
@@ -1189,11 +1348,12 @@ class Runner:
                     if self.double_net:
                         self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[4]
                     lamda_c = 0.5
-                    #full_reg = 3
+                    full_reg = 6
+                    #self.dataset.gen_all_rays(2)
                     
                 if (iter_step+1) == up_iters[4]:
-                    self.s_start = 1600#30/(10.0*self.sigma) #50.0
-                    self.s_max = 6000#60/(5.0*self.sigma) #200
+                    self.s_start = 100#30/(10.0*self.sigma) #50.0
+                    self.s_max = 2000#60/(5.0*self.sigma) #200
 
                     self.learning_rate = self.learning_rate_list[5]
                     self.learning_rate_sdf = self.learning_rate_sdf_list[5]
@@ -1210,6 +1370,9 @@ class Runner:
                     if self.double_net:
                         self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[5]
                     lamda_c = 0.2
+                    full_reg = 10
+                    #self.dataset.gen_all_rays(1)
+                    #self.dataset.gen_all_rays_masked(1)
 
                 print("SIGMA => ", self.sigma)
                 #with torch.no_grad():
@@ -1228,7 +1391,7 @@ class Runner:
                 #torch.cuda.empty_cache()
 
             if (iter_step+1) % self.report_freq == 0:
-                lapl_loss = ((lbda + mu)*self.div - lbda*mu*self.div_2)
+                lapl_loss = self.div# ((lbda + mu)*self.div - lbda*mu*self.div_2)
                 print('iter:{:8>d} loss = {}, loss_coarse = {}, scale={}, grad={}, grad_feat = {}, grad_nrm = {}, grad_tv_feat = {} lr={}'.format(iter_step, color_fine_loss, color_coarse_loss, self.inv_s, abs(self.grad_sdf[abs(self.grad_sdf) > 0.0]).mean(), abs(self.grad_features[abs(self.grad_features) > 0.0]).mean(), abs(self.grad_norm_smooth[abs(self.grad_norm_smooth) > 0.0]).mean(), abs(self.grad_feat_smooth[abs(self.grad_feat_smooth) > 0.0]).mean(), self.optimizer.param_groups[0]['lr']))
                 print('learning_rate_alpha:{} grad_lapl={}, grad_sdf_L2 = {}'.format(self.learning_rate_alpha, abs(lapl_loss[abs(lapl_loss) > 0.0]).mean(), abs(self.grad_sdf_L2[abs(self.grad_sdf_L2) > 0.0]).mean()))
                 print('iter:{:8>d} s_w = {}, e_w = {}, tv_w = {}, nb_samples={}, sigma={}, w_g={}, full_reg={}, lr={}'.format(iter_step, self.s_w, self.e_w, self.tv_w, nb_samples, self.sigma, self.w_g, full_reg, self.optimizer_sdf.param_groups[0]['lr']))
@@ -1242,15 +1405,20 @@ class Runner:
 
                 #self.tet32.make_clipped_CVT(self.sdf.detach(), self.grad_sdf_space, self.visual_hull, "Exp/{}/meshes/test_CVT_{}.obj".format(self.data_name, iter_step), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
 
-                self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), "Exp/{}/meshes/test_tri_{}.ply".format(self.data_name, iter_step), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][:3, :3])
+                self.tet32.surface_from_sdf(self.sdf_smooth.detach().cpu().numpy().reshape(-1), "Exp/{}/meshes/test_tri_{}.ply".format(self.data_name, iter_step), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][:3, :3])
                 #if iter_step % 3 == 0:
-                """self.activated[:] = 1
+                
+                """self.div[:] = 0.0
+                laplacian.MeanCurve(self.div, self.sdf, 1, self.activated, M_vals, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
+                #self.div_2[:] = 0.0
+                #laplacian.MeanCurve(self.div_2, self.div, 1, self.activated, M_vals, L_vals, L_outer, L_nonZeros, L_nnZ, L_outerSize, L_cols)
+                #self.div[self.cam_ids[:] ] = 0.0
+                self.div[outside_flag[:] == 1] = 0.0
+                self.div[self.mask_background[:] == 1] = 0.0
                 with torch.no_grad():
-                    self.sdf_smooth[:] = 0.0
-                backprop_cuda.knn_smooth(self.tet32.sites.shape[0], 96, self.sigma, self.sigma_feat, 1, self.tet32.sites,  self.activated,
-                                        self.grad_sdf_space, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)
-                """
-                self.tet32.surface_from_sdf(self.sdf_smooth.detach().cpu().numpy().reshape(-1), "Exp/{}/meshes/test_tri_smooth.ply".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][:3, :3])                               
+                    self.sdf_smooth[:] = self.sdf[:] + 0.001*lbda*self.div #((lbda + mu)*self.div - lbda*mu*self.div_2)
+                    #self.sdf_smooth[:] = self.sdf[:] + 0.001*((lbda + mu)*self.div - lbda*mu*self.div_2)"""
+                self.tet32.surface_from_sdf(self.sdf_smooth_2.detach().cpu().numpy().reshape(-1), "Exp/{}/meshes/test_tri_raw.ply".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][:3, :3])                               
                 
                 #self.tet32.marching_tets(self.sdf.detach(), "Exp/bmvs_man/test_MT.ply")
                 #if iter_step > 1000:
@@ -1265,9 +1433,9 @@ class Runner:
             #    self.s_w = 1.0e-6
             #    #self.learning_rate_sdf = 1.0e-5
 
-            """if iter_step > up_iters[4] and self.loc_iter == round(0.7*self.end_iter_loc): #iter_step == up_iters[3] + 0.6*self.end_iter_loc:
-                with torch.no_grad():
-                    self.sdf[:] = self.sdf[:] * 4.096"""
+            #if self.loc_iter == round(0.8*self.end_iter_loc):
+            #    with torch.no_grad():
+            #        self.sdf[:] = self.sdf[:] * 4.096
 
             #if iter_step > up_iters[3] and self.loc_iter == round(0.5*self.end_iter_loc): #iter_step == up_iters[3] + 0.6*self.end_iter_loc:
             #    self.w_g = 0.1
@@ -1357,7 +1525,7 @@ class Runner:
 
         #self.render_image(cam_ids, 0)
         self.save_checkpoint()  
-        self.tet32.surface_from_sdf(self.sdf.detach().cpu().numpy().reshape(-1), os.path.join(self.base_exp_dir, 'final_MT.ply'), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][:3, :3])        
+        self.tet32.surface_from_sdf(self.sdf_smooth_2.detach().cpu().numpy().reshape(-1), os.path.join(self.base_exp_dir, 'final_MT.ply'), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][:3, :3])        
         #self.tet32.make_clipped_CVT(self.sdf.detach(), 2*self.sigma, self.grad_sdf_space, self.visual_hull,  "Exp/{}/final_CVT.obj".format(self.data_name), self.dataset.scale_mats_np[0][:3, 3][None], self.dataset.scale_mats_np[0][0, 0])
         
         self.activated[:] = 2
@@ -1367,8 +1535,8 @@ class Runner:
                                         self.grad_sdf_space, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)
             
         self.grad_sdf_space[:] = 0.0
-        cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.tet32.sites.shape[0], self.tet32.summits, self.tet32.sites, self.activated, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
-                                    self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.eik_loss)
+        cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.tet32.sites.shape[0], self.tet32.summits, self.tet32.valid_tets, self.tet32.sites, self.activated, self.sdf_smooth, self.sdf_smooth_2, self.fine_features.detach(), 
+                                            self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.eik_loss)
         self.norm_grad = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1, 1)
         self.norm_grad[self.norm_grad == 0.0] = 1.0
         self.unormed_grad[:] = self.grad_sdf_space[:]
@@ -1425,7 +1593,7 @@ class Runner:
         backprop_cuda.knn_smooth(self.tet32.sites.shape[0], self.knn, self.hlvl, self.sigma, self.sigma_feat, 1, self.tet32.sites,  self.activated,
                                 self.grad_sdf_space, self.sdf, self.fine_features, self.tet32.knn_sites, self.sdf_smooth)
 
-        cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.tet32.sites.shape[0], self.tet32.summits, self.tet32.sites, self.activated, self.sdf.detach(), self.sdf_smooth, self.fine_features.detach(), 
+        cvt_grad_cuda.eikonal_grad(self.tet32.nb_tets, self.tet32.sites.shape[0], self.tet32.summits, self.tet32.valid_tets, self.tet32.sites, self.activated, self.sdf_smooth, self.sdf_smooth, self.fine_features.detach(), 
                                             self.grad_eik, self.grad_norm_smooth, self.grad_sdf_space, self.vol_tet32, self.weights_diff, self.weights_tot_diff, self.eik_loss)
         
         norm_grads = torch.linalg.norm(self.grad_sdf_space, ord=2, axis=-1, keepdims=True).reshape(-1, 1)
@@ -1445,7 +1613,7 @@ class Runner:
             self.offsets[:] = 0
             self.activated[:] = 1
             img_ids = img_idx*torch.ones((rays_o_batch.shape[0], 1)).cuda().int()
-            nb_samples = tet32_march_cuda.tet32_march_count(self.inv_s, rays_o_batch.shape[0], rays_d_batch, self.tet32.sites, self.sdf, self.tet32.summits, self.tet32.neighbors, img_ids, 
+            nb_samples = tet32_march_cuda.tet32_march_count(self.inv_s, rays_o_batch.shape[0], rays_d_batch, self.tet32.sites, self.sdf_smooth, self.tet32.summits, self.tet32.neighbors, self.tet32.valid_tets, img_ids, 
                                                self.cam_ids, self.tet32.offsets_cam, self.tet32.cam_tets, self.activated, self.offsets)
 
             #nb_samples = self.tet32.sample_rays_cuda(self.inv_s, img_ids, rays_d_batch, self.sdf_smooth, self.cam_ids, self.in_weights, self.in_z, self.in_sdf, self.in_ids, self.offsets, self.activated, self.n_samples)    
@@ -1456,7 +1624,7 @@ class Runner:
             start = timer()
             self.samples[:] = 0.0
             self.out_grads[:] = 0.0
-            tet32_march_cuda.tet32_march_offset(self.inv_s, rays_o_batch.shape[0], rays_d_batch, self.tet32.sites, self.sdf, self.tet32.summits, self.tet32.neighbors, img_ids, 
+            tet32_march_cuda.tet32_march_offset(self.inv_s, rays_o_batch.shape[0], rays_d_batch, self.tet32.sites, self.sdf_smooth, self.tet32.summits, self.tet32.neighbors, self.tet32.valid_tets, img_ids, 
                                                 self.cam_ids, self.tet32.offsets_cam, self.tet32.cam_tets, self.grad_sdf_space, self.fine_features.detach(),  
                                                 self.out_weights, self.out_z, self.out_sdf, self.out_ids, self.out_grads, self.out_feat, self.samples_rays, self.samples, 
                                                 self.offsets)
@@ -1553,9 +1721,12 @@ class Runner:
         self.activated = torch.zeros(self.tet32.sites.shape[0], dtype=torch.int32).cuda().contiguous()      
 
         self.sdf_smooth = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()  
+        self.sdf_smooth_2 = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()  
         self.counter = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()   
 
         self.weight_sdf_smooth = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()  
+
+        self.feat_smooth = torch.zeros([self.sdf.shape[0], self.dim_feats]).float().cuda().contiguous()  
         
         self.grad_features = torch.zeros([self.sdf.shape[0], self.dim_feats]).float().cuda().contiguous()  
         self.grad_norm_feat = torch.zeros([self.sdf.shape[0], 12]).float().cuda().contiguous()  
@@ -1568,6 +1739,17 @@ class Runner:
         self.grad_sdf_net = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()          
         self.grad_sdf_norm = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()         
         self.grad_sdf_L2 = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()           
+
+        self.div = torch.zeros(self.sdf.shape[0]).float().cuda().contiguous() 
+        self.div_2 = torch.zeros(self.sdf.shape[0]).float().cuda().contiguous() 
+        self.div_feat = torch.zeros([self.sdf.shape[0], self.dim_feats]).float().cuda().contiguous() 
+        #self.div_norm[:] = 0.0
+        #self.grad_norm_Lapl = torch.zeros([self.sdf.shape[0]]).float().cuda().contiguous()      
+
+        
+        self.norm_smooth = torch.zeros([self.tet32.sites.shape[0], 3]).float().cuda().contiguous()   
+        self.grad_norm_L2 = torch.zeros([self.tet32.sites.shape[0], 3]).float().cuda().contiguous()   
+        self.grad_norm_sdf_L2 = torch.zeros(self.sdf.shape[0]).float().cuda().contiguous()    
 
         
         #print("sdf related")
@@ -1582,8 +1764,7 @@ class Runner:
         self.grad_eik = torch.zeros([self.tet32.sites.shape[0]]).float().cuda().contiguous() 
         self.grad_norm_smooth = torch.zeros([self.tet32.sites.shape[0]]).float().cuda().contiguous() 
         
-        self.div = torch.zeros(self.sdf.shape).float().cuda().contiguous() 
-        self.div_2 = torch.zeros(self.sdf.shape).float().cuda().contiguous() 
+        self.div_norm = torch.zeros([self.tet32.sites.shape[0], 3]).float().cuda().contiguous() 
 
         #print("sites related")
         #input()
@@ -1711,7 +1892,7 @@ class Runner:
         sites_list = sorted(glob(os.path.join(os.path.join(self.base_exp_dir, 'checkpoints', 'sites_{:0>6d}_lvl*'.format(self.iter_step)))))
         print(sites_list)
         
-        self.tet32 = tet32.Tet32(sites, id = 0)
+        self.tet32 = tet32.Tet32(sites, 0, self.knn, self.hlvl)
         self.tet32.lvl = len(sites_list)-1
 
         self.tet32.lvl_sites = []
@@ -1763,7 +1944,7 @@ class Runner:
             self.learning_rate_cvt =  self.learning_rate_cvt_list[1]
             self.s_w = self.s_w_list[1]
             self.e_w =  self.e_w_list[1]
-            self.tv_w = self.tv_w[1]
+            self.tv_w = self.tv_w_list[1]
             self.tv_f = self.tv_f_list[1]
 
             self.end_iter_loc = up_iters[1] - up_iters[0]
@@ -1774,8 +1955,8 @@ class Runner:
             
 
         if (self.iter_step+1) == up_iters[1]:
-            self.s_start = 100 #30/(10.0*self.sigma) #50.0
-            self.s_max = 400 #60/(5.0*self.sigma) #200
+            self.s_start = 200 #30/(10.0*self.sigma) #50.0
+            self.s_max = 800 #60/(5.0*self.sigma) #200
 
             self.learning_rate = self.learning_rate_list[2]
             self.learning_rate_sdf = self.learning_rate_sdf_list[2]
@@ -1784,19 +1965,21 @@ class Runner:
             self.learning_rate_cvt =  self.learning_rate_cvt_list[2]
             self.s_w = self.s_w_list[2]
             self.e_w =  self.e_w_list[2]
-            self.tv_w = self.tv_w[2]
+            self.tv_w = self.tv_w_list[2]
             self.tv_f = self.tv_f_list[2]
 
             self.end_iter_loc = up_iters[2] - up_iters[1]
             self.vortSDF_renderer_fine.mask_reg = self.mask_w_list[2]
             if self.double_net:
                 self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[2]
+            self.sigma_start = 0.03
+            self.sigma_max = 0.015
             
             
         if (self.iter_step+1) == up_iters[2]:
             warm_up = 500
-            self.s_start = 200 #30/(10.0*self.sigma) #50.0
-            self.s_max = 500 #60/(5.0*self.sigma) #200
+            self.s_start = 400 #30/(10.0*self.sigma) #50.0
+            self.s_max = 1500 #60/(5.0*self.sigma) #200
 
             self.learning_rate = self.learning_rate_list[3]
             self.learning_rate_sdf = self.learning_rate_sdf_list[3]
@@ -1805,7 +1988,7 @@ class Runner:
             self.learning_rate_cvt =  self.learning_rate_cvt_list[3]
             self.s_w = self.s_w_list[3]
             self.e_w =  self.e_w_list[3]
-            self.tv_w = self.tv_w[3]
+            self.tv_w = self.tv_w_list[3]
             self.tv_f = self.tv_f_list[3]
 
             self.end_iter_loc = up_iters[3] - up_iters[2]
@@ -1813,12 +1996,14 @@ class Runner:
             if self.double_net:
                 self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[3]
             lamda_c = 0.5
+            self.sigma_start = 0.015
+            self.sigma_max = 0.008
             
 
         if (self.iter_step+1) == up_iters[3]:
             warm_up = 500
-            self.s_start = 300# 30/(10.0*self.sigma) #50.0
-            self.s_max = 800# 60/(5.0*self.sigma) #200
+            self.s_start = 200# 30/(10.0*self.sigma) #50.0
+            self.s_max = 400# 60/(5.0*self.sigma) #200
 
             self.learning_rate = self.learning_rate_list[4]
             self.learning_rate_sdf = self.learning_rate_sdf_list[4]
@@ -1827,7 +2012,7 @@ class Runner:
             self.learning_rate_cvt =  self.learning_rate_cvt_list[4]
             self.s_w = self.s_w_list[4]
             self.e_w =  self.e_w_list[4]
-            self.tv_w = self.tv_w[4]
+            self.tv_w = self.tv_w_list[4]
             self.tv_f = self.tv_f_list[4]
 
             self.end_iter_loc = up_iters[4] - up_iters[3]
@@ -1836,10 +2021,13 @@ class Runner:
                 self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[4]
             lamda_c = 0.5
             #full_reg = 3
+            self.sigma_start = 0.0078
+            self.sigma_max = 0.004
+            self.dataset.gen_all_rays(3)
             
         if (self.iter_step+1) == up_iters[4]:
-            self.s_start = 800#30/(10.0*self.sigma) #50.0
-            self.s_max = 6000#60/(5.0*self.sigma) #200
+            self.s_start = 1000#30/(10.0*self.sigma) #50.0
+            self.s_max = 4000#60/(5.0*self.sigma) #200
 
             self.learning_rate = self.learning_rate_list[5]
             self.learning_rate_sdf = self.learning_rate_sdf_list[5]
@@ -1857,13 +2045,15 @@ class Runner:
             if self.double_net:
                 self.vortSDF_renderer_coarse_net.mask_reg = self.mask_w_list[5]
             lamda_c = 0.2
-            self.sigma_start = 0.0056
-            self.sigma_max = 0.003
+            self.sigma_start = 0.003
+            self.sigma_max = 0.0015
+            self.dataset.gen_all_rays(1)
+            self.dataset.gen_all_rays_masked(1)
 
        
         
         self.w_g = 1.0
-        self.mask_background = abs(self.sdf) > 10.0 #4.0*self.sigma
+        self.mask_background = abs(self.sdf) > 12.0*self.sigma_start
         self.sigma_feat = 0.06
         self.inv_s = 60/(5.0*self.sigma)
         print(self.sigma)

@@ -20,6 +20,87 @@
 /** Device functions **/
 /** Device functions **/
 /** Device functions **/
+
+
+__global__ void valid_tet_kernel(
+    const size_t nb_tets,
+    const float sigma,
+    const int *__restrict__ tets,
+    const float *__restrict__ sites,
+    const int *__restrict__ background,
+    int *__restrict__ valid)
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= nb_tets)
+    {
+        return;
+    }
+
+    int id_3 = tets[4*idx]^tets[4*idx+1]^tets[4*idx+2]^tets[4*idx+3];
+
+    if (background[tets[4*idx]] == 1 || background[tets[4*idx + 1]] == 1 || background[tets[4*idx + 2]] == 1 || background[id_3] == 1)
+        valid[idx] = 0;
+
+    return;
+
+
+    float edge_length = sqrt((sites[3*tets[4*idx]] - sites[3*tets[4*idx+1]]) * (sites[3*tets[4*idx]] - sites[3*tets[4*idx+1]]) + 
+                               (sites[3*tets[4*idx]+1] - sites[3*tets[4*idx+1]+1]) * (sites[3*tets[4*idx]+1] - sites[3*tets[4*idx+1]+1]) + 
+                               (sites[3*tets[4*idx]+2] - sites[3*tets[4*idx+1]+2]) * (sites[3*tets[4*idx]+2] - sites[3*tets[4*idx+1]+2])); 
+
+    if (edge_length > 4.0f*sigma) {
+        valid[idx] = 0;
+        return;
+    }
+
+    edge_length = sqrt((sites[3*tets[4*idx]] - sites[3*tets[4*idx+2]]) * (sites[3*tets[4*idx]] - sites[3*tets[4*idx+2]]) + 
+                               (sites[3*tets[4*idx]+1] - sites[3*tets[4*idx+2]+1]) * (sites[3*tets[4*idx]+1] - sites[3*tets[4*idx+2]+1]) + 
+                               (sites[3*tets[4*idx]+2] - sites[3*tets[4*idx+2]+2]) * (sites[3*tets[4*idx]+2] - sites[3*tets[4*idx+2]+2])); 
+
+    if (edge_length > 4.0f*sigma) {
+        valid[idx] = 0;
+        return;
+    }
+
+    edge_length = sqrt((sites[3*tets[4*idx]] - sites[3*id_3]) * (sites[3*tets[4*idx]] - sites[3*id_3]) + 
+                               (sites[3*tets[4*idx]+1] - sites[3*id_3+1]) * (sites[3*tets[4*idx]+1] - sites[3*id_3+1]) + 
+                               (sites[3*tets[4*idx]+2] - sites[3*id_3+2]) * (sites[3*tets[4*idx]+2] - sites[3*id_3+2])); 
+
+    if (edge_length > 4.0f*sigma) {
+        valid[idx] = 0;
+        return;
+    }
+
+    edge_length = sqrt((sites[3*tets[4*idx + 1]] - sites[3*tets[4*idx+2]]) * (sites[3*tets[4*idx + 1]] - sites[3*tets[4*idx+2]]) + 
+                               (sites[3*tets[4*idx + 1]+1] - sites[3*tets[4*idx+2]+1]) * (sites[3*tets[4*idx + 1]+1] - sites[3*tets[4*idx+2]+1]) + 
+                               (sites[3*tets[4*idx + 1]+2] - sites[3*tets[4*idx+2]+2]) * (sites[3*tets[4*idx + 1]+2] - sites[3*tets[4*idx+2]+2])); 
+
+    if (edge_length > 4.0f*sigma) {
+        valid[idx] = 0;
+        return;
+    }
+    
+    edge_length = sqrt((sites[3*tets[4*idx + 1]] - sites[3*id_3]) * (sites[3*tets[4*idx + 1]] - sites[3*id_3]) + 
+                               (sites[3*tets[4*idx + 1]+1] - sites[3*id_3+1]) * (sites[3*tets[4*idx + 1]+1] - sites[3*id_3+1]) + 
+                               (sites[3*tets[4*idx + 1]+2] - sites[3*id_3+2]) * (sites[3*tets[4*idx + 1]+2] - sites[3*id_3+2])); 
+
+    if (edge_length > 4.0f*sigma) {
+        valid[idx] = 0;
+        return;
+    }
+    
+    edge_length = sqrt((sites[3*tets[4*idx + 2]] - sites[3*id_3]) * (sites[3*tets[4*idx + 2]] - sites[3*id_3]) + 
+                               (sites[3*tets[4*idx + 2]+1] - sites[3*id_3+1]) * (sites[3*tets[4*idx + 2]+1] - sites[3*id_3+1]) + 
+                               (sites[3*tets[4*idx + 2]+2] - sites[3*id_3+2]) * (sites[3*tets[4*idx + 2]+2] - sites[3*id_3+2])); 
+
+    if (edge_length > 4.0f*sigma) {
+        valid[idx] = 0;
+        return;
+    }
+}
+
+
+
 __global__ void upsample_counter_kernel(
     const size_t nb_edges,
     const float sigma,
@@ -39,8 +120,8 @@ __global__ void upsample_counter_kernel(
                                (sites[3*edge[2*idx]+1] - sites[3*edge[2*idx+1]+1]) * (sites[3*edge[2*idx]+1] - sites[3*edge[2*idx+1]+1]) + 
                                (sites[3*edge[2*idx]+2] - sites[3*edge[2*idx+1]+2]) * (sites[3*edge[2*idx]+2] - sites[3*edge[2*idx+1]+2])); 
 
-    if (fabs(sdf[edge[2*idx]]) < 2.0f*sigma || fabs(sdf[edge[2*idx+1]]) < 2.0f*sigma /*|| 
-        sdf[edge[2*idx]]*sdf[edge[2*idx+1]] <= 0.0f || fmin(fabs(sdf[edge[2*idx]]), fabs(sdf[edge[2*idx+1]])) < 1.5*edge_length*/) {
+    if (fabs(sdf[edge[2*idx]]) < 2.0f*sigma || fabs(sdf[edge[2*idx+1]]) < 2.0f*sigma || 
+        sdf[edge[2*idx]]*sdf[edge[2*idx+1]] <= 0.0f || fmin(fabs(sdf[edge[2*idx]]), fabs(sdf[edge[2*idx+1]])) < 1.5*edge_length) {
         atomicAdd(counter, 1);
         atomicExch(&active_sites[edge[2*idx]], 1);
         atomicExch(&active_sites[edge[2*idx + 1]], 1);
@@ -116,8 +197,8 @@ __global__ void upsample_kernel(
                                (sites[3*edge[2*idx]+1] - sites[3*edge[2*idx+1]+1]) * (sites[3*edge[2*idx]+1] - sites[3*edge[2*idx+1]+1]) + 
                                (sites[3*edge[2*idx]+2] - sites[3*edge[2*idx+1]+2]) * (sites[3*edge[2*idx]+2] - sites[3*edge[2*idx+1]+2])); 
 
-    if (fabs(true_sdf[edge[2*idx]]) < 2.0f*sigma || fabs(true_sdf[edge[2*idx+1]]) < 2.0f*sigma /*|| 
-            true_sdf[edge[2*idx]]*true_sdf[edge[2*idx+1]] <= 0.0f || fmin(fabs(true_sdf[edge[2*idx]]), fabs(true_sdf[edge[2*idx+1]])) < 1.5*edge_length*/) {
+    if (fabs(true_sdf[edge[2*idx]]) < 2.0f*sigma || fabs(true_sdf[edge[2*idx+1]]) < 2.0f*sigma || 
+            true_sdf[edge[2*idx]]*true_sdf[edge[2*idx+1]] <= 0.0f || fmin(fabs(true_sdf[edge[2*idx]]), fabs(true_sdf[edge[2*idx+1]])) < 1.5*edge_length) {
         int new_idx = atomicAdd(counter, 1);
         new_sites[3*new_idx] = (sites[3*edge[2*idx]] + sites[3*edge[2*idx+1]]) / 2.0f;
         new_sites[3*new_idx + 1] = (sites[3*edge[2*idx] + 1] + sites[3*edge[2*idx+1] + 1]) / 2.0f;
@@ -429,6 +510,28 @@ __global__ void make_cam_adjacencies_kernel(
 /** CPU functions **/
 /** CPU functions **/
 
+void valid_tet_cuda(
+    size_t nb_tets,
+    float sigma,
+    torch::Tensor tets,
+    torch::Tensor sites,
+    torch::Tensor background,
+    torch::Tensor valid) 
+{
+    const int threads = 1024;
+    const int blocks = (nb_tets + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
+    AT_DISPATCH_FLOATING_TYPES( sites.type(),"valid_tet_kernel", ([&] {  
+        valid_tet_kernel CUDA_KERNEL(blocks,threads) (
+            nb_tets,
+            sigma,
+            tets.data_ptr<int>(),
+            sites.data_ptr<float>(),
+            background.data_ptr<int>(),
+            valid.data_ptr<int>()); 
+    }));
+
+    cudaDeviceSynchronize();
+}
 
 // 
 int upsample_counter_cuda(

@@ -901,7 +901,7 @@ __global__ void knn_interpolate_kernel(
     }
     
     for (int i = 0; i < dim_sdf; i++) {
-        sdf_out[dim_sdf*idx + i] = total_weight < 1.0e-12 ? 20.0f : total_sdf / total_weight;
+        sdf_out[dim_sdf*idx + i] = total_weight < 1.0e-12 ? sdf[dim_sdf*knn_id + i] : total_sdf / total_weight;
     }
 
     return;
@@ -1008,110 +1008,33 @@ __global__ void knn_smooth_kernel(
         return;
     }
 
-    /*if (dim_sdf == 1 && fabs(sdf[idx]) > 3.0f*sigma) {
-        sdf_smooth[idx] = sdf[idx];
-        return;
-    }*/
-
     if (activated[idx] == 0)
         return;
 
     float total_weight = 0.0f;
     float total_sdf = 0.0f;
 
-    int nb_lvl = 2;//fmin(3, num_knn / 32); //num_knn / 32; //fmin(2, num_knn / 32);
-
+    int nb_lvl = 1;//fmin(3, num_knn / 32); //num_knn / 32; //fmin(2, num_knn / 32);
     float length_edge = 0.0f;
     int knn_id;
 
-    float3 curr_point = vertices[idx]; //ake_float3(vertices[3*idx],vertices[3*idx+1],vertices[3*idx+2]);
-    //float3 curr_grad = grads[idx];
+    float3 curr_point = vertices[idx]; 
     float3 curr_edge = make_float3(0.0,0.0,0.0);
-
-    //float curr_point[3] {vertices[3*idx], vertices[3*idx + 1], vertices[3*idx + 2]};
-    //float curr_grad[3] {grads[3*idx], grads[3*idx + 1], grads[3*idx + 2]};
-    //float curr_edge[3] {};
-
-    //__shared__ float smem[96] {};
-    //__shared__ float wmem[96] {};
-    /*
-    int lvl_curr = threadIdx.x / 32;
-    int i_curr = threadIdx.x % 32;
-    knn_id = neighbors[num_knn*idx + lvl_curr*32 + i];
-    if (knn_id != -1) {
-        curr_edge = curr_point - make_float3(vertices[3*knn_id],vertices[3*knn_id+1],vertices[3*knn_id+2]);
-        length_edge = dot(curr_edge, curr_edge);
-        if (length_edge >= max_dist) {
-
-            if (length_edge > max_dist)
-                max_dist = length_edge;
-            
-            smem[32*lvl_curr + i_curr] = exp(-length_edge/(sigma*sigma)) * sdf[knn_id];
-            wmem[32*lvl_curr + i_curr] = exp(-length_edge/(sigma*sigma));
-        }
-    }
-
-    __syncthreads();
-    if (threadIdx.x < 16) {
-        smem[32*lvl_curr + threadIdx.x] = smem[32*lvl_curr + threadIdx.x + 16]; 
-        wmem[32*lvl_curr + threadIdx.x] = wmem[32*lvl_curr + threadIdx.x + 16]; 
-    }
-    __syncthreads();
-    if (threadIdx.x < 8) {
-        smem[32*lvl_curr + threadIdx.x] = smem[32*lvl_curr + threadIdx.x + 8]; 
-        wmem[32*lvl_curr + threadIdx.x] = wmem[32*lvl_curr + threadIdx.x + 8]; 
-    }
-    __syncthreads();
-    if (threadIdx.x < 4) {
-        smem[32*lvl_curr + threadIdx.x] = smem[32*lvl_curr + threadIdx.x + 4]; 
-        wmem[32*lvl_curr + threadIdx.x] = wmem[32*lvl_curr + threadIdx.x + 4]; 
-    }
-    __syncthreads();
-    if (threadIdx.x < 2) {
-        smem[32*lvl_curr + threadIdx.x] = smem[32*lvl_curr + threadIdx.x + 2]; 
-        wmem[32*lvl_curr + threadIdx.x] = wmem[32*lvl_curr + threadIdx.x + 2]; 
-    }
-    __syncthreads();
-
-    total_weight = wmem[0] + wmem[1] + wmem[32] + wmem[32 + 1]  + wmem[64] + wmem[64 + 1]; 
-    sdf_smooth[idx] = total_weight == 0.0f ? 0.0f : 
-        (smem[0] + smem[1] + smem[32] + smem[32 + 1]  + smem[64] + smem[64 + 1])/total_weight;
-
-    */
 
     float radius = 2.0f*sigma;
     float max_dist = -1.0f;
     for (int lvl_curr = 0; lvl_curr < nb_lvl; lvl_curr++) {
-        for (int i = 0; i < 32; i++) {
-            knn_id = neighbors[num_knn*idx + lvl_curr*32 + i];
+        for (int i = 0; i < 48; i++) {
+            knn_id = neighbors[num_knn*idx + lvl_curr*48 + i];
             if (knn_id == -1)
                 break;
 
-            curr_edge = curr_point - vertices[knn_id]; //make_float3(vertices[3*knn_id],vertices[3*knn_id+1],vertices[3*knn_id+2]);
+            curr_edge = curr_point - vertices[knn_id];
             
             length_edge = dot(curr_edge, curr_edge);
             
-            //curr_edge[0] = (curr_point[0] - vertices[3*knn_id]);
-            //curr_edge[1] = (curr_point[1] - vertices[3*knn_id + 1]);
-            //curr_edge[2] = (curr_point[2] - vertices[3*knn_id + 2]);
-            //length_edge = curr_edge[0]*curr_edge[0] + curr_edge[1]*curr_edge[1] + curr_edge[2]*curr_edge[2];
-            
-            if (length_edge < max_dist) // || activated[knn_id] == -1)///*sdf[dim_sdf*knn_id] == 0.0f*/ || sqrt(length_edge) > radius 
-            ///*|| (dim_sdf > 1 && activated[knn_id] == 0)*/)
+            if (length_edge < max_dist)
                 continue;
-
-            // add bilateral smooth term with grad
-            //length_o = fabs(curr_edge[0]*curr_grad[0] + curr_edge[1]*curr_grad[1] + curr_edge[2]*curr_grad[2]);
-
-            //if (dim_sdf == 1)
-            //    length_o = (sdf[idx] - sdf[dim_sdf*knn_id + i])*(sdf[idx] - sdf[dim_sdf*knn_id + i]);
-
-            // add bilateral smooth term with features
-            //length_feat = 0.0f;
-            /*for (int i = 0; i < DIM_L_FEAT; i++) {
-                length_feat = length_feat +  (feat[DIM_L_FEAT*idx+ i] - feat[DIM_L_FEAT*knn_id+ i])*
-                                                (feat[DIM_L_FEAT*idx+ i] - feat[DIM_L_FEAT*knn_id+ i]);
-            }*/
 
             if (length_edge > max_dist)
                 max_dist = length_edge;
@@ -1119,15 +1042,13 @@ __global__ void knn_smooth_kernel(
             for (int i = 0; i < dim_sdf; i++) {
                 total_sdf = total_sdf + exp(-length_edge/(sigma*sigma)) * sdf[dim_sdf*knn_id + i];
                 total_weight = total_weight + exp(-length_edge/(sigma*sigma));
-                //total_sdf = total_sdf + exp(-length_edge/(sigma*sigma) - length_feat/(0.05f) - length_o/(sigma*sigma)) * sdf[dim_sdf*knn_id + i];
-                //total_weight = total_weight + exp(-length_edge/(sigma*sigma) - length_feat/(0.05f) - length_o/(sigma*sigma));
             }
         }
         radius = 2.0f*radius;
     }
     
     for (int i = 0; i < dim_sdf; i++) {
-        sdf_smooth[dim_sdf*idx + i] = total_weight == 0.0f ? 0.0f : total_sdf / total_weight;
+        sdf_smooth[dim_sdf*idx + i] = total_weight == 0.0f ? sdf[dim_sdf*idx + i] : total_sdf / total_weight;
     }
 
     return;
@@ -1857,12 +1778,12 @@ void knn_smooth_sdf_cuda(
     torch::Tensor sdf_smooth
 )
 {
-    /*const int threads = 1024;
+    const int threads = 1024;
     const int blocks = (num_sites + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
     AT_DISPATCH_FLOATING_TYPES( sdf.type(),"knn_smooth_kernel", ([&] {  
         knn_smooth_kernel CUDA_KERNEL(blocks,threads) (
             num_sites,                // number of rays
-            num_knn,
+            num_knn*num_lvl,
             sigma,
             sigma_feat,
             dim_sdf,
@@ -1874,9 +1795,9 @@ void knn_smooth_sdf_cuda(
             neighbors.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)
             sdf_smooth.data_ptr<float>());
     }));
-    cudaDeviceSynchronize();*/
+    cudaDeviceSynchronize();
 
-    const int threads = num_knn*num_lvl;
+    /*const int threads = num_knn*num_lvl;
     const int blocks = num_sites; // ceil for example 8192 + 255 / 256 = 32
     AT_DISPATCH_FLOATING_TYPES( sdf.type(),"knn_smooth_kernel_o", ([&] {  
         knn_smooth_kernel_o CUDA_KERNEL(blocks,threads) (
@@ -1890,7 +1811,7 @@ void knn_smooth_sdf_cuda(
             neighbors.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)
             sdf_smooth.data_ptr<float>());
     }));
-    cudaDeviceSynchronize();
+    cudaDeviceSynchronize();*/
 }
 
 

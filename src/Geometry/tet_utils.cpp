@@ -7,6 +7,14 @@
 
 using namespace std;
 
+void valid_tet_cuda(
+    size_t nb_tets,
+    float sigma,
+    torch::Tensor tets,
+    torch::Tensor sites,
+    torch::Tensor background,
+    torch::Tensor valid) ;
+
 int upsample_counter_cuda(
     size_t nb_edges,
     float sigma,
@@ -89,6 +97,24 @@ int count_cam_neighbors_cuda(
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
 // ***************************
+
+void valid_tet(
+    size_t nb_tets,
+    float sigma,
+    torch::Tensor tets,
+    torch::Tensor sites,
+    torch::Tensor background,
+    torch::Tensor valid) 
+{
+    valid_tet_cuda(
+        nb_tets,
+        sigma,
+        tets,
+        sites,
+        background,
+        valid);
+}
+
 int upsample_counter(
     size_t nb_edges,
     float sigma,
@@ -289,4 +315,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("upsample_tet", &upsample_tet, "upsample_tet (CPP)");
     m.def("count_cam_neighbors", &count_cam_neighbors, "count_cam_neighbors (CPP)");
     m.def("compute_cam_neighbors", &compute_cam_neighbors, "compute_cam_neighbors (CPP)");
+    m.def("valid_tet", &valid_tet, "valid_tet (CPP)");
 }

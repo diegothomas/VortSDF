@@ -95,6 +95,7 @@ void eikonal_grad_cuda(
     size_t num_tets,                // number of rays
     size_t num_sites,                // number of rays
     torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  valid_tets,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  activated,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
@@ -107,6 +108,18 @@ void eikonal_grad_cuda(
     torch::Tensor  weights,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor  eik_loss     // [N_voxels, 4] for each voxel => it's vertices
+);
+
+void backprop_norm_grad_cuda(
+    size_t num_tets,                // number of rays
+    torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  activated,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  grad_norm,     // [N_voxels, 4] for each voxel => it's vertices)
+    torch::Tensor  vol,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights_tot    // [N_voxels, 4] for each voxel => it's vertices
 );
 
 void concat_feat_cuda(
@@ -322,6 +335,7 @@ void eikonal_grad(
     size_t num_tets,                // number of rays
     size_t num_sites,                // number of rays
     torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  valid_tets,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  activated,  // [N_voxels, 4] for each voxel => it's neighbors
     torch::Tensor  sdf,  // [N_voxels, 4] for each voxel => it's neighbors
@@ -339,6 +353,7 @@ void eikonal_grad(
         num_tets,
         num_sites,
         tets,
+        valid_tets, 
         sites, 
         activated,
         sdf, 
@@ -352,6 +367,29 @@ void eikonal_grad(
         weights_tot,     // [N_voxels, 4] for each voxel => it's vertices
         eik_loss);
 
+}
+
+void backprop_norm_grad(
+    size_t num_tets,                // number of rays
+    torch::Tensor  tets,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  sites,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  activated,  // [N_voxels, 4] for each voxel => it's neighbors
+    torch::Tensor  grad_sdf,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  grad_norm,     // [N_voxels, 4] for each voxel => it's vertices)
+    torch::Tensor  vol,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor  weights_tot    // [N_voxels, 4] for each voxel => it's vertices
+) {
+    backprop_norm_grad_cuda(
+        num_tets,
+        tets,
+        sites, 
+        activated,
+        grad_sdf,   
+        grad_norm, 
+        vol,     // [N_voxels, 4] for each voxel => it's vertices
+        weights,     // [N_voxels, 4] for each voxel => it's vertices
+        weights_tot);
 }
 
 void concat_feat(
@@ -387,4 +425,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("eikonal_grad", &eikonal_grad, "eikonal_grad (CPP)");
     m.def("concat_feat", &concat_feat, "concat_feat (CPP)");
     m.def("diff_tensor", &diff_tensor, "diff_tensor (CPP)");
+    m.def("backprop_norm_grad", &backprop_norm_grad, "backprop_norm_grad (CPP)");
 }
