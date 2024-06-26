@@ -26,7 +26,7 @@ __global__ void valid_tet_kernel(
     const size_t nb_tets,
     const float sigma,
     const int *__restrict__ tets,
-    const float *__restrict__ sites,
+    const double *__restrict__ sites,
     const int *__restrict__ background,
     int *__restrict__ valid)
 {
@@ -44,11 +44,11 @@ __global__ void valid_tet_kernel(
     return;
 
 
-    float edge_length = sqrt((sites[3*tets[4*idx]] - sites[3*tets[4*idx+1]]) * (sites[3*tets[4*idx]] - sites[3*tets[4*idx+1]]) + 
+    double edge_length = sqrt((sites[3*tets[4*idx]] - sites[3*tets[4*idx+1]]) * (sites[3*tets[4*idx]] - sites[3*tets[4*idx+1]]) + 
                                (sites[3*tets[4*idx]+1] - sites[3*tets[4*idx+1]+1]) * (sites[3*tets[4*idx]+1] - sites[3*tets[4*idx+1]+1]) + 
                                (sites[3*tets[4*idx]+2] - sites[3*tets[4*idx+1]+2]) * (sites[3*tets[4*idx]+2] - sites[3*tets[4*idx+1]+2])); 
 
-    if (edge_length > 4.0f*sigma) {
+    if (edge_length > 4.0*sigma) {
         valid[idx] = 0;
         return;
     }
@@ -57,7 +57,7 @@ __global__ void valid_tet_kernel(
                                (sites[3*tets[4*idx]+1] - sites[3*tets[4*idx+2]+1]) * (sites[3*tets[4*idx]+1] - sites[3*tets[4*idx+2]+1]) + 
                                (sites[3*tets[4*idx]+2] - sites[3*tets[4*idx+2]+2]) * (sites[3*tets[4*idx]+2] - sites[3*tets[4*idx+2]+2])); 
 
-    if (edge_length > 4.0f*sigma) {
+    if (edge_length > 4.0*sigma) {
         valid[idx] = 0;
         return;
     }
@@ -66,7 +66,7 @@ __global__ void valid_tet_kernel(
                                (sites[3*tets[4*idx]+1] - sites[3*id_3+1]) * (sites[3*tets[4*idx]+1] - sites[3*id_3+1]) + 
                                (sites[3*tets[4*idx]+2] - sites[3*id_3+2]) * (sites[3*tets[4*idx]+2] - sites[3*id_3+2])); 
 
-    if (edge_length > 4.0f*sigma) {
+    if (edge_length > 4.0*sigma) {
         valid[idx] = 0;
         return;
     }
@@ -75,7 +75,7 @@ __global__ void valid_tet_kernel(
                                (sites[3*tets[4*idx + 1]+1] - sites[3*tets[4*idx+2]+1]) * (sites[3*tets[4*idx + 1]+1] - sites[3*tets[4*idx+2]+1]) + 
                                (sites[3*tets[4*idx + 1]+2] - sites[3*tets[4*idx+2]+2]) * (sites[3*tets[4*idx + 1]+2] - sites[3*tets[4*idx+2]+2])); 
 
-    if (edge_length > 4.0f*sigma) {
+    if (edge_length > 4.0*sigma) {
         valid[idx] = 0;
         return;
     }
@@ -84,7 +84,7 @@ __global__ void valid_tet_kernel(
                                (sites[3*tets[4*idx + 1]+1] - sites[3*id_3+1]) * (sites[3*tets[4*idx + 1]+1] - sites[3*id_3+1]) + 
                                (sites[3*tets[4*idx + 1]+2] - sites[3*id_3+2]) * (sites[3*tets[4*idx + 1]+2] - sites[3*id_3+2])); 
 
-    if (edge_length > 4.0f*sigma) {
+    if (edge_length > 4.0*sigma) {
         valid[idx] = 0;
         return;
     }
@@ -93,7 +93,7 @@ __global__ void valid_tet_kernel(
                                (sites[3*tets[4*idx + 2]+1] - sites[3*id_3+1]) * (sites[3*tets[4*idx + 2]+1] - sites[3*id_3+1]) + 
                                (sites[3*tets[4*idx + 2]+2] - sites[3*id_3+2]) * (sites[3*tets[4*idx + 2]+2] - sites[3*id_3+2])); 
 
-    if (edge_length > 4.0f*sigma) {
+    if (edge_length > 4.0*sigma) {
         valid[idx] = 0;
         return;
     }
@@ -105,7 +105,7 @@ __global__ void upsample_counter_kernel(
     const size_t nb_edges,
     const float sigma,
     const int *__restrict__ edge,
-    const float *__restrict__ sites,
+    const double *__restrict__ sites,
     const float *__restrict__ sdf,
     int *__restrict__ active_sites,
     int *__restrict__ counter)
@@ -116,12 +116,12 @@ __global__ void upsample_counter_kernel(
         return;
     }
 
-    float edge_length = sqrt((sites[3*edge[2*idx]] - sites[3*edge[2*idx+1]]) * (sites[3*edge[2*idx]] - sites[3*edge[2*idx+1]]) + 
+    double edge_length = sqrt((sites[3*edge[2*idx]] - sites[3*edge[2*idx+1]]) * (sites[3*edge[2*idx]] - sites[3*edge[2*idx+1]]) + 
                                (sites[3*edge[2*idx]+1] - sites[3*edge[2*idx+1]+1]) * (sites[3*edge[2*idx]+1] - sites[3*edge[2*idx+1]+1]) + 
                                (sites[3*edge[2*idx]+2] - sites[3*edge[2*idx+1]+2]) * (sites[3*edge[2*idx]+2] - sites[3*edge[2*idx+1]+2])); 
 
     if (fabs(sdf[edge[2*idx]]) < 2.0f*sigma || fabs(sdf[edge[2*idx+1]]) < 2.0f*sigma || 
-        sdf[edge[2*idx]]*sdf[edge[2*idx+1]] <= 0.0f || fmin(fabs(sdf[edge[2*idx]]), fabs(sdf[edge[2*idx+1]])) < 1.5*edge_length) {
+        sdf[edge[2*idx]]*sdf[edge[2*idx+1]] <= 0.0f || fmin(fabs(sdf[edge[2*idx]]), fabs(sdf[edge[2*idx+1]])) < float(1.5*edge_length)) {
         atomicAdd(counter, 1);
         atomicExch(&active_sites[edge[2*idx]], 1);
         atomicExch(&active_sites[edge[2*idx + 1]], 1);
@@ -178,11 +178,11 @@ __global__ void upsample_kernel(
     const size_t nb_edges,
     const float sigma,
     const int *__restrict__ edge,
-    const float *__restrict__ sites,
+    const double *__restrict__ sites,
     const float *__restrict__ sdf,
     const float *__restrict__ true_sdf,
     const float *__restrict__ feats,
-    float *__restrict__ new_sites,
+    double *__restrict__ new_sites,
     float *__restrict__ new_sdf,
     float *__restrict__ new_feats,
     int *__restrict__ counter)
@@ -193,16 +193,16 @@ __global__ void upsample_kernel(
         return;
     }
 
-    float edge_length = sqrt((sites[3*edge[2*idx]] - sites[3*edge[2*idx+1]]) * (sites[3*edge[2*idx]] - sites[3*edge[2*idx+1]]) + 
+    double edge_length = sqrt((sites[3*edge[2*idx]] - sites[3*edge[2*idx+1]]) * (sites[3*edge[2*idx]] - sites[3*edge[2*idx+1]]) + 
                                (sites[3*edge[2*idx]+1] - sites[3*edge[2*idx+1]+1]) * (sites[3*edge[2*idx]+1] - sites[3*edge[2*idx+1]+1]) + 
                                (sites[3*edge[2*idx]+2] - sites[3*edge[2*idx+1]+2]) * (sites[3*edge[2*idx]+2] - sites[3*edge[2*idx+1]+2])); 
 
     if (fabs(true_sdf[edge[2*idx]]) < 2.0f*sigma || fabs(true_sdf[edge[2*idx+1]]) < 2.0f*sigma || 
-            true_sdf[edge[2*idx]]*true_sdf[edge[2*idx+1]] <= 0.0f || fmin(fabs(true_sdf[edge[2*idx]]), fabs(true_sdf[edge[2*idx+1]])) < 1.5*edge_length) {
+            true_sdf[edge[2*idx]]*true_sdf[edge[2*idx+1]] <= 0.0f || fmin(fabs(true_sdf[edge[2*idx]]), fabs(true_sdf[edge[2*idx+1]])) < float(1.5*edge_length)) {
         int new_idx = atomicAdd(counter, 1);
-        new_sites[3*new_idx] = (sites[3*edge[2*idx]] + sites[3*edge[2*idx+1]]) / 2.0f;
-        new_sites[3*new_idx + 1] = (sites[3*edge[2*idx] + 1] + sites[3*edge[2*idx+1] + 1]) / 2.0f;
-        new_sites[3*new_idx + 2] = (sites[3*edge[2*idx] + 2] + sites[3*edge[2*idx+1] + 2]) / 2.0f;
+        new_sites[3*new_idx] = (sites[3*edge[2*idx]] + sites[3*edge[2*idx+1]]) / 2.0;
+        new_sites[3*new_idx + 1] = (sites[3*edge[2*idx] + 1] + sites[3*edge[2*idx+1] + 1]) / 2.0;
+        new_sites[3*new_idx + 2] = (sites[3*edge[2*idx] + 2] + sites[3*edge[2*idx+1] + 2]) / 2.0;
         
         new_sdf[new_idx] = (sdf[edge[2*idx]] + sdf[edge[2*idx+1]]) / 2.0f;
 
@@ -525,7 +525,7 @@ void valid_tet_cuda(
             nb_tets,
             sigma,
             tets.data_ptr<int>(),
-            sites.data_ptr<float>(),
+            sites.data_ptr<double>(),
             background.data_ptr<int>(),
             valid.data_ptr<int>()); 
     }));
@@ -553,7 +553,7 @@ int upsample_counter_cuda(
                 nb_edges,
                 sigma,
                 edges.data_ptr<int>(),
-                sites.data_ptr<float>(),
+                sites.data_ptr<double>(),
                 sdf.data_ptr<float>(),
                 active_sites.data_ptr<int>(),
                 counter); 
@@ -624,11 +624,11 @@ void upsample_cuda(
                 nb_edges,
                 sigma,
                 edges.data_ptr<int>(),
-                sites.data_ptr<float>(),
+                sites.data_ptr<double>(),
                 sdf.data_ptr<float>(),
                 true_sdf.data_ptr<float>(),
                 feats.data_ptr<float>(),
-                new_sites.data_ptr<float>(),
+                new_sites.data_ptr<double>(),
                 new_sdf.data_ptr<float>(),
                 new_feats.data_ptr<float>(),
                 counter); 

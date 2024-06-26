@@ -26,7 +26,7 @@ std::vector<at::Tensor> MakeLaplacian(size_t num_vertices, size_t num_tets, torc
         std::cout << "Load data to compute laplacian" << std::endl;
         Eigen::MatrixXd V, U;
         Eigen::MatrixXi F;
-        float* vertices = (float*) vertices_T.data_ptr<float>();
+        double* vertices = (double*) vertices_T.data_ptr<double>();
         int* tets = (int*) tets_T.data_ptr<int>();
         int* valid = (int*) tets_valid.data_ptr<int>();
 
@@ -45,6 +45,39 @@ std::vector<at::Tensor> MakeLaplacian(size_t num_vertices, size_t num_tets, torc
 
         int nb_valid_tets = 0;
         for (int i = 0; i < num_tets; i++) {
+            int id_3 = tets[4 * i]^ tets[4 * i+1]^ tets[4 * i+2]^tets[4 * i + 3];
+            double edge_1[3] = {vertices[3*tets[4 * i]] - vertices[3*tets[4 * i + 1]],
+                                vertices[3*tets[4 * i] + 1] - vertices[3*tets[4 * i + 1] + 1],
+                                vertices[3*tets[4 * i] + 2] - vertices[3*tets[4 * i + 1] + 2]};
+            double edge_2[3] = {vertices[3*tets[4 * i]] - vertices[3*tets[4 * i + 2]],
+                                vertices[3*tets[4 * i] + 1] - vertices[3*tets[4 * i + 2] + 1],
+                                vertices[3*tets[4 * i] + 2] - vertices[3*tets[4 * i + 2] + 2]};
+            double edge_3[3] = {vertices[3*tets[4 * i]] - vertices[3*id_3],
+                                vertices[3*tets[4 * i] + 1] - vertices[3*id_3 + 1],
+                                vertices[3*tets[4 * i] + 2] - vertices[3*id_3 + 2]};
+            double edge_4[3] = {vertices[3*tets[4 * i + 1]] - vertices[3*tets[4 * i + 2]],
+                                vertices[3*tets[4 * i + 1] + 1] - vertices[3*tets[4 * i + 2] + 1],
+                                vertices[3*tets[4 * i + 1] + 2] - vertices[3*tets[4 * i + 2] + 2]};
+            double edge_5[3] = {vertices[3*tets[4 * i + 1]] - vertices[3*id_3],
+                                vertices[3*tets[4 * i + 1] + 1] - vertices[3*id_3 + 1],
+                                vertices[3*tets[4 * i + 1] + 2] - vertices[3*id_3 + 2]};
+            double edge_6[3] = {vertices[3*tets[4 * i + 2]] - vertices[3*id_3],
+                                vertices[3*tets[4 * i + 2] + 1] - vertices[3*id_3 + 1],
+                                vertices[3*tets[4 * i + 2] + 2] - vertices[3*id_3 + 2]};
+
+            double length_1 = sqrt(edge_1[0]*edge_1[0] + edge_1[1]*edge_1[1] + edge_1[2]*edge_1[2]);
+            double length_2 = sqrt(edge_2[0]*edge_2[0] + edge_2[1]*edge_2[1] + edge_2[2]*edge_2[2]);
+            double length_3 = sqrt(edge_3[0]*edge_3[0] + edge_3[1]*edge_3[1] + edge_3[2]*edge_3[2]);
+            double length_4 = sqrt(edge_4[0]*edge_4[0] + edge_4[1]*edge_4[1] + edge_4[2]*edge_4[2]);
+            double length_5 = sqrt(edge_5[0]*edge_5[0] + edge_5[1]*edge_5[1] + edge_5[2]*edge_5[2]);
+            double length_6 = sqrt(edge_6[0]*edge_6[0] + edge_6[1]*edge_6[1] + edge_6[2]*edge_6[2]);
+
+            if (length_1 + length_2 <= length_3 || length_1 + length_3 <= length_2 || length_2 + length_3 <= length_1 ||
+                  length_1 + length_2 <= length_4 || length_1 + length_4 <= length_2 || length_2 + length_4 <= length_1 || 
+                  length_1 + length_4 <= length_3 || length_1 + length_3 <= length_4 || length_4 + length_3 <= length_1 ||
+                  length_4 + length_2 <= length_3 || length_4 + length_3 <= length_2 || length_2 + length_3 <= length_4)
+                  valid[i] = 0;
+
             if (valid[i] == 1) 
                 nb_valid_tets++;
         }

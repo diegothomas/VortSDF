@@ -862,8 +862,8 @@ __global__ void knn_interpolate_kernel(
     const size_t num_knn,  
     float sigma,
     const size_t dim_sdf,
-    float *__restrict__ vertices_src,     // [N_voxels, 4] for each voxel => it's vertices
-    float *__restrict__ vertices_trg,     // [N_voxels, 4] for each voxel => it's vertices
+    double *__restrict__ vertices_src,     // [N_voxels, 4] for each voxel => it's vertices
+    double *__restrict__ vertices_trg,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ neighbors,     // [N_voxels, 4] for each voxel => it's vertices)
     float *__restrict__ sdf_out
@@ -875,14 +875,14 @@ __global__ void knn_interpolate_kernel(
         return;
     }
 
-    float total_weight = 0.0f;
-    float total_sdf = 0.0f;
+    double total_weight = 0.0;
+    double total_sdf = 0.0;
 
-    float length_edge, length_feat, length_o = 0.0f;
+    double length_edge, length_feat, length_o = 0.0;
     int knn_id;
 
-    float curr_point[3] {vertices_trg[3*idx], vertices_trg[3*idx + 1], vertices_trg[3*idx + 2]};
-    float curr_edge[3] {};
+    double curr_point[3] {vertices_trg[3*idx], vertices_trg[3*idx + 1], vertices_trg[3*idx + 2]};
+    double curr_edge[3] {};
 
     for (int i = 0; i < num_knn; i++) {
         knn_id = neighbors[num_knn*idx + i];
@@ -895,13 +895,13 @@ __global__ void knn_interpolate_kernel(
         length_edge = curr_edge[0]*curr_edge[0] + curr_edge[1]*curr_edge[1] + curr_edge[2]*curr_edge[2];
         
         for (int i = 0; i < dim_sdf; i++) {
-            total_sdf = total_sdf + exp(-length_edge/(sigma*sigma)) * sdf[dim_sdf*knn_id + i];
-            total_weight = total_weight + exp(-length_edge/(sigma*sigma));
+            total_sdf = total_sdf + exp(-length_edge/double(sigma*sigma)) * double(sdf[dim_sdf*knn_id + i]);
+            total_weight = total_weight + exp(-length_edge/double(sigma*sigma));
         }
     }
     
     for (int i = 0; i < dim_sdf; i++) {
-        sdf_out[dim_sdf*idx + i] = total_weight < 1.0e-12 ? sdf[dim_sdf*knn_id + i] : total_sdf / total_weight;
+        sdf_out[dim_sdf*idx + i] = total_weight < 1.0e-12 ? sdf[dim_sdf*knn_id + i] : float(total_sdf / total_weight);
     }
 
     return;
@@ -993,7 +993,7 @@ __global__ void knn_smooth_kernel(
     float sigma,
     float sigma_feat,
     const size_t dim_sdf,
-    float3 *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    double3 *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
     int *__restrict__ activated,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ grads,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
@@ -1011,18 +1011,18 @@ __global__ void knn_smooth_kernel(
     if (activated[idx] == 0)
         return;
 
-    float total_weight = 0.0f;
-    float total_sdf = 0.0f;
+    double total_weight = 0.0;
+    double total_sdf = 0.0;
 
     int nb_lvl = 1;//fmin(3, num_knn / 32); //num_knn / 32; //fmin(2, num_knn / 32);
-    float length_edge = 0.0f;
+    double length_edge = 0.0;
     int knn_id;
 
-    float3 curr_point = vertices[idx]; 
-    float3 curr_edge = make_float3(0.0,0.0,0.0);
+    double3 curr_point = vertices[idx]; 
+    double3 curr_edge = make_double3(0.0,0.0,0.0);
 
     float radius = 2.0f*sigma;
-    float max_dist = -1.0f;
+    double max_dist = -1.0;
     for (int lvl_curr = 0; lvl_curr < nb_lvl; lvl_curr++) {
         for (int i = 0; i < 48; i++) {
             knn_id = neighbors[num_knn*idx + lvl_curr*48 + i];
@@ -1040,15 +1040,15 @@ __global__ void knn_smooth_kernel(
                 max_dist = length_edge;
             
             for (int i = 0; i < dim_sdf; i++) {
-                total_sdf = total_sdf + exp(-length_edge/(sigma*sigma)) * sdf[dim_sdf*knn_id + i];
-                total_weight = total_weight + exp(-length_edge/(sigma*sigma));
+                total_sdf = total_sdf + exp(-length_edge/double(sigma*sigma)) * double(sdf[dim_sdf*knn_id + i]);
+                total_weight = total_weight + exp(-length_edge/double(sigma*sigma));
             }
         }
         radius = 2.0f*radius;
     }
     
     for (int i = 0; i < dim_sdf; i++) {
-        sdf_smooth[dim_sdf*idx + i] = total_weight == 0.0f ? sdf[dim_sdf*idx + i] : total_sdf / total_weight;
+        sdf_smooth[dim_sdf*idx + i] = total_weight == 0.0 ? sdf[dim_sdf*idx + i] : float(total_sdf / total_weight);
     }
 
     return;
@@ -1745,7 +1745,7 @@ void knn_interpolate_cuda(
     torch::Tensor sdf_out
 )
 {
-    const int threads = 1024;
+    const int threads = 512;
     const int blocks = (num_sites + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
     AT_DISPATCH_FLOATING_TYPES( sdf.type(),"knn_interpolate_kernel", ([&] {  
         knn_interpolate_kernel CUDA_KERNEL(blocks,threads) (
@@ -1753,8 +1753,8 @@ void knn_interpolate_cuda(
             num_knn,
             sigma,
             dim_sdf,
-            vertices_src.data_ptr<float>(),       // [N_rays, 6]
-            vertices_trg.data_ptr<float>(),       // [N_rays, 6]
+            vertices_src.data_ptr<double>(),       // [N_rays, 6]
+            vertices_trg.data_ptr<double>(),       // [N_rays, 6]
             sdf.data_ptr<float>(),       // [N_rays, 6]
             neighbors.data_ptr<int>(),     // [N_voxels, 4] for each voxel => it's vertices)
             sdf_out.data_ptr<float>());
@@ -1778,7 +1778,7 @@ void knn_smooth_sdf_cuda(
     torch::Tensor sdf_smooth
 )
 {
-    const int threads = 1024;
+    const int threads = 512;//1024;
     const int blocks = (num_sites + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
     AT_DISPATCH_FLOATING_TYPES( sdf.type(),"knn_smooth_kernel", ([&] {  
         knn_smooth_kernel CUDA_KERNEL(blocks,threads) (
@@ -1787,7 +1787,7 @@ void knn_smooth_sdf_cuda(
             sigma,
             sigma_feat,
             dim_sdf,
-            (float3*)thrust::raw_pointer_cast(vertices.data_ptr<float>()),       // [N_rays, 6]
+            (double3*)thrust::raw_pointer_cast(vertices.data_ptr<double>()),       // [N_rays, 6]
             activated.data_ptr<int>(),       // [N_rays, 6]
             grads.data_ptr<float>(),       // [N_rays, 6]
             sdf.data_ptr<float>(),       // [N_rays, 6]

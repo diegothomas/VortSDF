@@ -44,6 +44,19 @@ __device__ double volume_tetrahedron_32(float a[3], float b[3], float c[3], floa
 	return res;
 }
 
+__device__ double volume_tetrahedron_64(double a[3], double b[3], double c[3], double d[3]) {
+	double ad[3] = { a[0] - d[0], a[1] - d[1], a[2] - d[2] };
+	double bd[3] = { b[0] - d[0], b[1] - d[1], b[2] - d[2] };
+	double cd[3] = { c[0] - d[0], c[1] - d[1], c[2] - d[2] };
+
+	double n[3] = { bd[1] * cd[2] - bd[2] * cd[1],
+					-(bd[0] * cd[2] - bd[2] * cd[0]),
+					bd[0] * cd[1] - bd[1] * cd[0] };
+
+	double res = abs(dot3D_gpu_d(ad, n)) / 6.0;
+	return res;
+}
+
 //---------------------------------------------------
 //	calculate minor of matrix OR build new matrix : k-had = minor
 __device__ void Minor(float* minorMatrix, int colMatrix,  float* newMinorMatrix, int sizeMatrix){
@@ -695,14 +708,14 @@ __global__ void cvt_grad_cuda_kernel(
     const size_t num_sites,                // number of rays
     const size_t num_knn,                // number of rays
     const float sigma,                // number of rays
-    const float *__restrict__ thetas, 
-    const float *__restrict__ phis, 
-    const float *__restrict__ gammas, 
+    const double *__restrict__ thetas, 
+    const double *__restrict__ phis, 
+    const double *__restrict__ gammas, 
     const int *__restrict__ neighbors,  // [N_voxels, 4] for each voxel => it's neighbors
-    const float *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices
+    const double *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices
     const int *__restrict__ freeze,     // [N_voxels, 4] for each voxel => it's vertices
     const float *__restrict__ sdf,     // [N_voxels, 4] for each voxel => it's vertices
-    float *__restrict__ grad_sites,     // [N_voxels, 4] for each voxel => it's vertices
+    double *__restrict__ grad_sites,     // [N_voxels, 4] for each voxel => it's vertices
     float* loss
 )
 {
@@ -715,34 +728,34 @@ __global__ void cvt_grad_cuda_kernel(
     if (freeze[idx] == 1)
         return;
 
-    float ray[9] {1.0, 0.0, 0.0,
+    double ray[9] {1.0, 0.0, 0.0,
                     0.0, 1.0, 0.0,
                     0.0, 0.0, 1.0};
 
-    float curr_site[3] {sites[3*idx], sites[3*idx + 1], sites[3*idx + 2]};
+    double curr_site[3] {sites[3*idx], sites[3*idx + 1], sites[3*idx + 2]};
     
-    float theta = thetas[idx] * 2.0f * PI;
-    float phi = phis[idx] * 2.0f * PI;
-    float gamma = gammas[idx] * 2.0f * PI;
-    float rot[9] {cosf(phi)*cosf(gamma), sinf(theta)*sinf(phi)*cosf(gamma) - cosf(theta)*sinf(gamma), cosf(theta)*sinf(phi)*cosf(gamma) + sinf(theta)*sinf(gamma),
+    double theta = thetas[idx] * 2.0f * PI;
+    double phi = phis[idx] * 2.0f * PI;
+    double gamma = gammas[idx] * 2.0f * PI;
+    double rot[9] {cosf(phi)*cosf(gamma), sinf(theta)*sinf(phi)*cosf(gamma) - cosf(theta)*sinf(gamma), cosf(theta)*sinf(phi)*cosf(gamma) + sinf(theta)*sinf(gamma),
                     cosf(phi)*sinf(gamma), sinf(theta)*sinf(phi)*sinf(gamma) + cosf(theta)*cosf(gamma), cosf(theta)*sinf(phi)*sinf(gamma) - sinf(theta)*cosf(gamma),
                     -sinf(phi), sinf(theta)*cosf(phi), cosf(theta)*cosf(phi)}; 
 
-    float curr_ray[3] {0.0, 0.0, 0.0};
-    float nmle[3] {0.0, 0.0, 0.0};
-    float b_point[3] {0.0, 0.0, 0.0};
+    double curr_ray[3] {0.0, 0.0, 0.0};
+    double nmle[3] {0.0, 0.0, 0.0};
+    double b_point[3] {0.0, 0.0, 0.0};
     int knn_id = -1;
 
-    float denom = 0.0f;
-    float denom1 = 0.0f;
-    float denom2 = 0.0f;
-    float num1 = 0.0f;
-    float num2 = 0.0f;
-    float weight_cvt = 1.0f;
+    double denom = 0.0f;
+    double denom1 = 0.0f;
+    double denom2 = 0.0f;
+    double num1 = 0.0f;
+    double num2 = 0.0f;
+    double weight_cvt = 1.0f;
 
-    float nmle_length, alpha, alpha_min, alpha_max;
-    float d_min_dist[3] {0.0, 0.0, 0.0};
-    float d_max_dist[3] {0.0, 0.0, 0.0};
+    double nmle_length, alpha, alpha_min, alpha_max;
+    double d_min_dist[3] {0.0, 0.0, 0.0};
+    double d_max_dist[3] {0.0, 0.0, 0.0};
 
     for (int r_id = 0; r_id < 3; r_id++) {
         
@@ -750,11 +763,11 @@ __global__ void cvt_grad_cuda_kernel(
         curr_ray[1] = rot[3]*ray[3*r_id] + rot[4]*ray[3*r_id+1] + rot[5]*ray[3*r_id+2];
         curr_ray[2] = rot[6]*ray[3*r_id] + rot[7]*ray[3*r_id+1] + rot[8]*ray[3*r_id+2];
 
-        float min_dist = 1.0e32;
+        double min_dist = 1.0e32;
         int min_id = -1;
-        float max_dist = -1.0e32;
+        double max_dist = -1.0e32;
         int max_id = -1;
-        float dist = 0.0f;
+        double dist = 0.0f;
         alpha_min = 0.5f; alpha_max = 0.5f;
 
         for (int i = 0; i < num_knn; i++) {
@@ -775,11 +788,11 @@ __global__ void cvt_grad_cuda_kernel(
             
             alpha = 0.5f;
             if (sdf[idx]*sdf[knn_id] < 0.0f) {
-                alpha = fabs(sdf[idx])/(fabs(sdf[idx]) + fabs(sdf[knn_id]));
+                alpha = double(fabs(sdf[idx])/(fabs(sdf[idx]) + fabs(sdf[knn_id])));
             } else if ((sdf[idx]-2.0f*sigma)*(sdf[knn_id]-2.0f*sigma) < 0.0f) {
-                alpha = fabs((sdf[idx]-2.0f*sigma))/(fabs((sdf[idx]-2.0f*sigma)) + fabs(sdf[knn_id]-2.0f*sigma));
+                alpha = double(fabs((sdf[idx]-2.0f*sigma))/(fabs((sdf[idx]-2.0f*sigma)) + fabs(sdf[knn_id]-2.0f*sigma)));
             }else if ((sdf[idx]+2.0f*sigma)*(sdf[knn_id]+2.0f*sigma) < 0.0f) {
-                alpha = fabs((sdf[idx]+2.0f*sigma))/(fabs((sdf[idx]+2.0f*sigma)) + fabs(sdf[knn_id]+2.0f*sigma));
+                alpha = double(fabs((sdf[idx]+2.0f*sigma))/(fabs((sdf[idx]+2.0f*sigma)) + fabs(sdf[knn_id]+2.0f*sigma)));
             }
 
             // Compute middle point
@@ -839,7 +852,7 @@ __global__ void cvt_grad_cuda_kernel(
         /*grad_sites[3*idx] = grad_sites[3*idx] - (min_dist+max_dist) * curr_ray[0];  
         grad_sites[3*idx+1] = grad_sites[3*idx+1] - (min_dist+max_dist) * curr_ray[1];    
         grad_sites[3*idx+2] = grad_sites[3*idx+2] - (min_dist+max_dist) * curr_ray[2];*/ 
-        atomicAdd(loss, fabs(min_dist+max_dist));
+        atomicAdd(loss, fabs(float(min_dist+max_dist)));
     }
 
     return;
@@ -1039,7 +1052,7 @@ __global__ void update_sdf_cuda_kernel(
 __global__ void diff_tensor_kernel(
     const size_t num_tets,                // number of rays
     const int *__restrict__ tets,  // [N_voxels, 4] for each voxel => it's neighbors
-    float *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices
+    double *__restrict__ sites,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ vol,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ weights,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ weights_tot
@@ -1055,25 +1068,21 @@ __global__ void diff_tensor_kernel(
     ids[0] = tets[4*idx];  ids[1] = tets[4*idx + 1];  ids[2] = tets[4*idx + 2];
     ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[4*idx + 3];
 
-    float center_point[3] {0.0, 0.0, 0.0};
+    double center_point[3] {0.0, 0.0, 0.0};
     for (int i = 0; i < 3; i++) {
         center_point[i] = (sites[3*ids[0] + i] + sites[3*ids[1] + i] + sites[3*ids[2] + i] + sites[3*ids[3] + i])/4.0f;
     }
 
-    vol[idx] = 1.0f; // volume_tetrahedron_32(&sites[3*ids[0]], &sites[3*ids[1]], &sites[3*ids[2]], &sites[3*ids[3]]);
+    vol[idx] = volume_tetrahedron_64(&sites[3*ids[0]], &sites[3*ids[1]], &sites[3*ids[2]], &sites[3*ids[3]]);
     
-    float curr_n[3] {0.0, 0.0, 0.0};
-    float dX[12];
-    float G[9] {0.0, 0.0, 0.0, 
+    double curr_n[3] {0.0, 0.0, 0.0};
+    double dX[12];
+    double G[9] {0.0, 0.0, 0.0, 
                 0.0, 0.0, 0.0, 
                 0.0, 0.0, 0.0}; //dXT dX
-    float G_inv[9] {0.0, 0.0, 0.0, 
+    double G_inv[9] {0.0, 0.0, 0.0, 
                 0.0, 0.0, 0.0, 
                 0.0, 0.0, 0.0};
-
-    float Weights_curr[12] {0.0, 0.0, 0.0, 0.0,
-                            0.0, 0.0, 0.0, 0.0,
-                            0.0, 0.0, 0.0, 0.0};   
 
     for (int r_id = 0; r_id < 4; r_id++) {
         curr_n[0] = sites[3*ids[r_id]];
@@ -1092,7 +1101,7 @@ __global__ void diff_tensor_kernel(
 
     // Compute inverse of G
     // det = a11 (a22 a33 – a23 a32) – a12 (a21 a33 – a23 a31) + a13 (a21 a32 – a22 a31)
-    float det = G[0] * (G[4]*G[8] - G[5]*G[7]) - G[1]*(G[3]*G[8] - G[5]*G[6]) + G[2] * (G[3]*G[7] - G[4] * G[6]);
+    double det = G[0] * (G[4]*G[8] - G[5]*G[7]) - G[1]*(G[3]*G[8] - G[5]*G[6]) + G[2] * (G[3]*G[7] - G[4] * G[6]);
     if (det == 0.0f) { 
         return;
     }
@@ -1109,9 +1118,9 @@ __global__ void diff_tensor_kernel(
 
     // Matrix multiplication
     for (int i = 0; i < 4; i++) {
-        weights[12*idx + 3*i] = G_inv[0] * dX[3*i] + G_inv[1] * dX[3*i + 1] + G_inv[2] * dX[3*i + 2];
-        weights[12*idx + 3*i + 1] = G_inv[3] * dX[3*i] + G_inv[4] * dX[3*i + 1] + G_inv[5] * dX[3*i + 2];
-        weights[12*idx + 3*i + 2] = G_inv[6] * dX[3*i] + G_inv[7] * dX[3*i + 1] + G_inv[8] * dX[3*i + 2];
+        weights[12*idx + 3*i] = float(G_inv[0] * dX[3*i] + G_inv[1] * dX[3*i + 1] + G_inv[2] * dX[3*i + 2]);
+        weights[12*idx + 3*i + 1] = float(G_inv[3] * dX[3*i] + G_inv[4] * dX[3*i + 1] + G_inv[5] * dX[3*i + 2]);
+        weights[12*idx + 3*i + 2] = float(G_inv[6] * dX[3*i] + G_inv[7] * dX[3*i + 1] + G_inv[8] * dX[3*i + 2]);
     }   
     
     
@@ -1185,7 +1194,7 @@ __global__ void eikonal_grad_kernel(
     }
     
     float norm_grad = sqrt(elem_0*elem_0 + elem_1*elem_1 + elem_2*elem_2);
-    //float norm_grad = sqrt(elem_smooth_0*elem_smooth_0 + elem_smooth_1*elem_smooth_1 + elem_smooth_2*elem_smooth_2);
+    float norm_grad_smooth = sqrt(elem_smooth_0*elem_smooth_0 + elem_smooth_1*elem_smooth_1 + elem_smooth_2*elem_smooth_2);
 
     float diff_loss[3]  {};
     if (norm_grad > 0.0f) {
@@ -1213,9 +1222,13 @@ __global__ void eikonal_grad_kernel(
                                         diff_loss[1] * Weights_curr[3*i + 1] + 
                                         diff_loss[2] * Weights_curr[3*i + 2])*volume_tet / weights_tot[ids[i]]);
                                         
-        atomicAdd(&grad_smooth[ids[i]], ((elem_0 - elem_smooth_0) * Weights_curr[3*i] + 
+        atomicAdd(&grad_smooth[ids[i]], ((elem_0 / norm_grad - elem_smooth_0 / norm_grad_smooth) * Weights_curr[3*i] + 
+                                        (elem_1 / norm_grad - elem_smooth_1 / norm_grad_smooth) * Weights_curr[3*i + 1] + 
+                                        (elem_2 / norm_grad - elem_smooth_2 / norm_grad_smooth) * Weights_curr[3*i + 2])*volume_tet / (2.0f*weights_tot[ids[i]]));
+
+        /*atomicAdd(&grad_smooth[ids[i]], ((elem_0 - elem_smooth_0) * Weights_curr[3*i] + 
                                         (elem_1 - elem_smooth_1) * Weights_curr[3*i + 1] + 
-                                        (elem_2 - elem_smooth_2) * Weights_curr[3*i + 2])*volume_tet / (2.0f*weights_tot[ids[i]]));
+                                        (elem_2 - elem_smooth_2) * Weights_curr[3*i + 2])*volume_tet / (2.0f*weights_tot[ids[i]]));*/
 
         atomicAdd(&grad_sdf[3*ids[i]], elem_0*volume_tet / weights_tot[ids[i]]);
         atomicAdd(&grad_sdf[3*ids[i] + 1], elem_1*volume_tet / weights_tot[ids[i]]);
@@ -1444,21 +1457,21 @@ float cvt_grad_cuda(
         cudaMemset(loss, 0, sizeof(float));
 
 
-        const int threads = 1024;
+        const int threads = 512;//1024;
         const int blocks = (num_sites + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
         AT_DISPATCH_FLOATING_TYPES( sites.type(),"cvt_grad_cuda", ([&] {  
             cvt_grad_cuda_kernel CUDA_KERNEL(blocks,threads) (
                 num_sites,
                 num_knn,
                 sigma,
-                thetas.data_ptr<float>(),
-                phis.data_ptr<float>(),
-                gammas.data_ptr<float>(),
+                thetas.data_ptr<double>(),
+                phis.data_ptr<double>(),
+                gammas.data_ptr<double>(),
                 neighbors.data_ptr<int>(),
-                sites.data_ptr<float>(),
+                sites.data_ptr<double>(),
                 freeze.data_ptr<int>(),
                 sdf.data_ptr<float>(),
-                grad_sites.data_ptr<float>(),
+                grad_sites.data_ptr<double>(),
                 loss); 
     }));
 
@@ -1533,7 +1546,7 @@ void diff_tensor_cuda(
         diff_tensor_kernel CUDA_KERNEL(blocks,threads) (
             num_tets,
             tets.data_ptr<int>(),
-            sites.data_ptr<float>(),
+            sites.data_ptr<double>(),
             vol.data_ptr<float>(),
             weights.data_ptr<float>(),
             weights_tot.data_ptr<float>()); 

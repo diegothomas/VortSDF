@@ -72,7 +72,6 @@ def sample_Bbox(bound_min, bound_max, resolution, perturb_f = 0.0):
     if perturb_f > 0.0:
         samples = samples + perturb_f*random.rand(samples.shape[0], 3)
     print(samples.shape[0], " points sampled")
-    samples = samples.astype(np.float32)
     return samples
 
 def exterior_Bbox(bound_min, bound_max, resolution, shift):
