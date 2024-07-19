@@ -71,6 +71,7 @@ float eikonal_loss_cuda(
 void smooth_cuda(
     size_t num_edges,
     float sigma,
+    float dim,
     torch::Tensor vertices,
     torch::Tensor activated,
     torch::Tensor sdf,
@@ -329,6 +330,7 @@ float eikonal_loss(
 void smooth_sdf(
     size_t num_edges,
     float sigma,
+    float dim,
     torch::Tensor vertices,
     torch::Tensor activated,
     torch::Tensor sdf,
@@ -341,6 +343,7 @@ void smooth_sdf(
     //std::cout << "Backprop feature gradients" << std::endl; 
     smooth_cuda(num_edges,
     sigma,
+    dim,
     vertices,
     activated,
     sdf,

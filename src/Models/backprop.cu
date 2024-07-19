@@ -18,7 +18,7 @@
 #define FAKEINIT
 #endif
 
-#define DIM_L_FEAT 32
+#define DIM_L_FEAT 16
 #define PI 3.141592653589793238462643383279502884197
 
 /** Device functions **/
@@ -454,81 +454,22 @@ __global__ void backprop_unit_norm_kernel(
     ids[0] = tets[4*idx];  ids[1] = tets[4*idx + 1];  ids[2] = tets[4*idx + 2];
     ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[4*idx + 3];
 
-    
     if (activated[ids[0]] == 0 && 
         activated[ids[1]] == 0 && 
         activated[ids[2]] == 0 && 
         activated[ids[3]] == 0)
         return;
 
-
-    float volume_tet = vol[idx];
-    
+    float volume_tet = vol[idx];    
     float *Weights_curr = &weights[12*idx];    
-    
-    float grad_curr[3] {};
-    if (weights_tot[ids[0]] > 1.0e-10) {
-        grad_curr[0] = (volume_tet/(4.0*weights_tot[ids[0]])) * (3.0*Weights_curr[0]);
-        grad_curr[1] = (volume_tet/(4.0*weights_tot[ids[0]])) * (3.0*Weights_curr[1]);
-        grad_curr[2] = (volume_tet/(4.0*weights_tot[ids[0]])) * (3.0*Weights_curr[2]);
 
-        float scale = norm_grad[ids[0]]*norm_grad[ids[0]] == 0.0f ? 0.0f : 1.0f/(norm_grad[ids[0]]*norm_grad[ids[0]]);
-        float A = (grad_norm[3*ids[0]]*grad_curr[0] + grad_norm[3*ids[0]+1]*grad_curr[1] + grad_norm[3*ids[0]+2]*grad_curr[2]);
-        float B = norm_grad[ids[0]] == 0.0f ? 0.0f : 
-                    (grad_unornmed[3*ids[0]]*grad_norm[3*ids[0]] + 
-                    grad_unornmed[3*ids[0] + 1]*grad_norm[3*ids[0] + 1] + 
-                    grad_unornmed[3*ids[0] + 2]*grad_norm[3*ids[0] + 2]) / norm_grad[ids[0]];
-        float C = B*(grad_unornmed[3*ids[0]]*grad_curr[0] + grad_unornmed[3*ids[0]+1]*grad_curr[1] + grad_unornmed[3*ids[0]+2]*grad_curr[2]);
-
-        atomicAdd(&grad_sdf[ids[0]], scale * (norm_grad[ids[0]] * A - C));
-    }
-
-    if (weights_tot[ids[1]] > 0.0f) {
-        grad_curr[0] = (volume_tet/(4.0*weights_tot[ids[1]])) * (3.0*Weights_curr[3*1]);
-        grad_curr[1] = (volume_tet/(4.0*weights_tot[ids[1]])) * (3.0*Weights_curr[3*1+1]);
-        grad_curr[2] = (volume_tet/(4.0*weights_tot[ids[1]])) * (3.0*Weights_curr[3*1+2]);
-
-        float scale = norm_grad[ids[1]]*norm_grad[ids[1]] == 0.0f ? 0.0f : 1.0f/(norm_grad[ids[1]]*norm_grad[ids[1]]);
-        float A = (grad_norm[3*ids[1]]*grad_curr[0] + grad_norm[3*ids[1]+1]*grad_curr[1] + grad_norm[3*ids[1]+2]*grad_curr[2]);
-        float B = norm_grad[ids[1]] == 0.0f ? 0.0f : 
-                    (grad_unornmed[3*ids[1]]*grad_norm[3*ids[1]] + 
-                    grad_unornmed[3*ids[1] + 1]*grad_norm[3*ids[1] + 1] + 
-                    grad_unornmed[3*ids[1] + 2]*grad_norm[3*ids[1] + 2]) / norm_grad[ids[1]];
-        float C = B*(grad_unornmed[3*ids[1]]*grad_curr[0] + grad_unornmed[3*ids[1]+1]*grad_curr[1] + grad_unornmed[3*ids[1]+2]*grad_curr[2]);
-
-        atomicAdd(&grad_sdf[ids[1]], scale * (norm_grad[ids[1]] * A - C));
-    }
-
-    if (weights_tot[ids[2]] > 0.0f) {
-        grad_curr[0] = (volume_tet/(4.0*weights_tot[ids[2]])) * (3.0*Weights_curr[3*2]);
-        grad_curr[1] = (volume_tet/(4.0*weights_tot[ids[2]])) * (3.0*Weights_curr[3*2+1]);
-        grad_curr[2] = (volume_tet/(4.0*weights_tot[ids[2]])) * (3.0*Weights_curr[3*2+2]);
-
-        float scale = norm_grad[ids[2]]*norm_grad[ids[2]] == 0.0f ? 0.0f : 1.0f/(norm_grad[ids[2]]*norm_grad[ids[2]]);
-        float A = (grad_norm[3*ids[2]]*grad_curr[0] + grad_norm[3*ids[2]+1]*grad_curr[1] + grad_norm[3*ids[2]+2]*grad_curr[2]);
-        float B = norm_grad[ids[2]] == 0.0f ? 0.0f : 
-                    (grad_unornmed[3*ids[2]]*grad_norm[3*ids[2]] + 
-                    grad_unornmed[3*ids[2] + 1]*grad_norm[3*ids[2] + 1] + 
-                    grad_unornmed[3*ids[2] + 2]*grad_norm[3*ids[2] + 2]) / norm_grad[ids[2]];
-        float C = B*(grad_unornmed[3*ids[2]]*grad_curr[0] + grad_unornmed[3*ids[2]+1]*grad_curr[1] + grad_unornmed[3*ids[2]+2]*grad_curr[2]);
-
-        atomicAdd(&grad_sdf[ids[2]], scale * (norm_grad[ids[2]] * A - C));
-    }
-    
-    if (weights_tot[ids[3]] > 0.0f) {
-        grad_curr[0] = (volume_tet/(4.0*weights_tot[ids[3]])) * (3.0*Weights_curr[3*3]);
-        grad_curr[1] = (volume_tet/(4.0*weights_tot[ids[3]])) * (3.0*Weights_curr[3*3+1]);
-        grad_curr[2] = (volume_tet/(4.0*weights_tot[ids[3]])) * (3.0*Weights_curr[3*3+2]);
-
-        float scale = norm_grad[ids[3]]*norm_grad[ids[3]] == 0.0f ? 0.0f : 1.0f/(norm_grad[ids[3]]*norm_grad[ids[3]]);
-        float A = (grad_norm[3*ids[3]]*grad_curr[0] + grad_norm[3*ids[3]+1]*grad_curr[1] + grad_norm[3*ids[3]+2]*grad_curr[2]);
-        float B = norm_grad[ids[3]] == 0.0f ? 0.0f : 
-                    (grad_unornmed[3*ids[3]]*grad_norm[3*ids[3]] + 
-                    grad_unornmed[3*ids[3] + 1]*grad_norm[3*ids[3] + 1] + 
-                    grad_unornmed[3*ids[3] + 2]*grad_norm[3*ids[3] + 2]) / norm_grad[ids[3]];
-        float C = B*(grad_unornmed[3*ids[3]]*grad_curr[0] + grad_unornmed[3*ids[3]+1]*grad_curr[1] + grad_unornmed[3*ids[3]+2]*grad_curr[2]);
-
-        atomicAdd(&grad_sdf[ids[3]], scale * (norm_grad[ids[3]] * A - C));
+    for (int i = 0; i < 4; i++) {
+        float norm_grad = sqrt(grad_unornmed[3*ids[i]]*grad_unornmed[3*ids[i]] + grad_unornmed[3*ids[i]+1]*grad_unornmed[3*ids[i]+1] + grad_unornmed[3*ids[i]+2]*grad_unornmed[3*ids[i]+2]);
+        if (norm_grad > 1.0e-8) {
+            atomicAdd(&grad_sdf[ids[i]], (grad_norm[3*ids[i]] * (1.0f/norm_grad - grad_unornmed[3*ids[i]]*grad_unornmed[3*ids[i]] / (norm_grad*norm_grad*norm_grad)) * (3.0f*Weights_curr[3*i] - Weights_curr[3*((i+1)%4)] - Weights_curr[3*((i+2)%4)] - Weights_curr[3*((i+3)%4)]) / 4.0f  +
+                                    grad_norm[3*ids[i] + 1] * (1.0f/norm_grad - grad_unornmed[3*ids[i] + 1]*grad_unornmed[3*ids[i] + 1] / (norm_grad*norm_grad*norm_grad)) * (3.0f*Weights_curr[3*i + 1] - Weights_curr[3*((i+1)%4) + 1] - Weights_curr[3*((i+2)%4) + 1] - Weights_curr[3*((i+3)%4) + 1]) / 4.0f + 
+                                    grad_norm[3*ids[i] + 2] * (1.0f/norm_grad - grad_unornmed[3*ids[i] + 2]*grad_unornmed[3*ids[i] + 2] / (norm_grad*norm_grad*norm_grad)) * (3.0f*Weights_curr[3*i + 2] - Weights_curr[3*((i+1)%4) + 2] - Weights_curr[3*((i+2)%4) + 2] - Weights_curr[3*((i+3)%4) + 2]) / 4.0f) * volume_tet / weights_tot[ids[i]]);
+        }   
     }
 }
 
@@ -637,6 +578,59 @@ __global__ void smooth_grad_kernel(
 
     return;
 }
+
+__global__ void smooth_grad_n_kernel(
+    const size_t num_edges,                // number of rays
+    float sigma,
+    int  dim,
+    float *__restrict__ vertices,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ activated,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ nmle,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ feat,     // [N_voxels, 4] for each voxel => it's vertices
+    int *__restrict__ edges,     // [N_voxels, 4] for each voxel => it's vertices)
+    float *__restrict__ nmle_grad,    // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ feat_grad,     // [N_voxels, 4] for each voxel => it's vertices
+    float *__restrict__ counter     // [N_voxels, 4] for each voxel => it's vertices
+    )
+{
+    const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_edges)
+    {
+        return;
+    }
+
+    //if (!(activated[edges[2*idx]] >= 1 || activated[edges[2*idx + 1]] >= 1))
+    //     return;
+    
+    float length_edge = (vertices[3*edges[2*idx]] - vertices[3*edges[2*idx+1]])*(vertices[3*edges[2*idx]] - vertices[3*edges[2*idx+1]]) +
+                            (vertices[3*edges[2*idx] + 1] - vertices[3*edges[2*idx+1] + 1])*(vertices[3*edges[2*idx] + 1] - vertices[3*edges[2*idx+1] + 1]) +
+                            (vertices[3*edges[2*idx] + 2] - vertices[3*edges[2*idx+1] + 2])*(vertices[3*edges[2*idx] + 2] - vertices[3*edges[2*idx+1] + 2]);
+
+    
+    int n = edges[2*idx];
+    int id_curr = edges[2*idx + 1];
+
+    if (dim == 3) {
+	    float norm_grad = sqrt(nmle[3*n]*nmle[3*n] + nmle[3*n + 1]*nmle[3*n + 1] + nmle[3*n + 2]*nmle[3*n + 2]);
+	    float norm_grad_curr = sqrt(nmle[3*id_curr]*nmle[3*id_curr] + nmle[3*id_curr + 1]*nmle[3*id_curr + 1] + nmle[3*id_curr + 2]*nmle[3*id_curr + 2]);
+        float dot_prod = nmle[3*n]*nmle[3*id_curr] + nmle[3*n + 1]*nmle[3*id_curr + 1] + nmle[3*n + 2]*nmle[3*id_curr + 2];
+        
+        if (norm_grad > 1.0e-8 && norm_grad_curr > 1.0e-8) {
+            for (int i = 0; i < dim; i++) {
+                atomicAdd(&nmle_grad[dim*n + i], (1.0f / norm_grad_curr) * (dot_prod * nmle[3*n + i] / (norm_grad*norm_grad*norm_grad) - nmle[3*id_curr + i] / norm_grad) * exp(-length_edge/(sigma*sigma))) ;     // * exp(-length_edge/(sigma*sigma))
+                atomicAdd(&nmle_grad[dim*id_curr + i], (1.0f / norm_grad) * (dot_prod * nmle[3*id_curr + i] / (norm_grad_curr*norm_grad_curr*norm_grad_curr) - nmle[3*n + i] / norm_grad_curr) * exp(-length_edge/(sigma*sigma))) ; //* exp(-length_edge/(sigma*sigma))
+            }
+        }
+    } else {
+        for (int i = 0; i < dim; i++) {
+            atomicAdd(&nmle_grad[dim*n + i], (nmle[dim*n + i] - nmle[dim*id_curr + i]));// * exp(-length_edge/(sigma*sigma))) ;     
+            atomicAdd(&nmle_grad[dim*id_curr + i], -(nmle[dim*n + i] - nmle[dim*id_curr + i]));// * exp(-length_edge/(sigma*sigma))) ; 
+        }
+    }
+
+    return;
+}
+
 
 /*__global__ void geo_feat_kernel(
     const size_t num_samples,                // number of rays
@@ -1014,7 +1008,7 @@ __global__ void knn_smooth_kernel(
     double total_weight = 0.0;
     double total_sdf = 0.0;
 
-    int nb_lvl = 1;//fmin(3, num_knn / 32); //num_knn / 32; //fmin(2, num_knn / 32);
+    int nb_lvl = 2;//fmin(3, num_knn / 32); //num_knn / 32; //fmin(2, num_knn / 32);
     double length_edge = 0.0;
     int knn_id;
 
@@ -1024,8 +1018,8 @@ __global__ void knn_smooth_kernel(
     float radius = 2.0f*sigma;
     double max_dist = -1.0;
     for (int lvl_curr = 0; lvl_curr < nb_lvl; lvl_curr++) {
-        for (int i = 0; i < 48; i++) {
-            knn_id = neighbors[num_knn*idx + lvl_curr*48 + i];
+        for (int i = 0; i < 16; i++) {
+            knn_id = neighbors[num_knn*idx + lvl_curr*16 + i];
             if (knn_id == -1)
                 break;
 
@@ -1577,6 +1571,7 @@ float eikonal_loss_cuda(
 void smooth_cuda(
     size_t num_edges,
     float sigma,
+    float dim,
     torch::Tensor vertices,
     torch::Tensor activated,
     torch::Tensor sdf,
@@ -1589,10 +1584,11 @@ void smooth_cuda(
 {
     const int threads = 1024;
     const int blocks = (num_edges + threads - 1) / threads; // ceil for example 8192 + 255 / 256 = 32
-    AT_DISPATCH_FLOATING_TYPES( sdf.type(),"smooth_grad_kernel", ([&] {  
-        smooth_grad_kernel CUDA_KERNEL(blocks,threads) (
+    AT_DISPATCH_FLOATING_TYPES( sdf.type(),"smooth_grad_n_kernel", ([&] {  
+        smooth_grad_n_kernel CUDA_KERNEL(blocks,threads) (
             num_edges,
             sigma,
+            dim,
             vertices.data_ptr<float>(),
             activated.data_ptr<int>(),
             sdf.data_ptr<float>(),

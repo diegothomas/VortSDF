@@ -16,6 +16,16 @@ import imageio
 import xml.etree.cElementTree as ET
 
 
+def clean_mask(mask):
+    from scipy import ndimage as ndi
+    mask[:,:,:] = mask[:,:,:] > 0.5
+    labels, nb_labels = ndi.label(mask)
+    sizes_b = np.bincount(labels.ravel())
+    mask_sizes = sizes_b > 1000
+    mask_sizes[0] = 0
+    mask_clean = mask_sizes[labels]
+    return mask_clean.astype(np.float32)
+
 def load_Rt_from(filename):
     lines = open(filename).read().splitlines()
     lines = [[x[0], x[1], x[2], x[3]] for x in (x.split(" ") for x in lines)]
@@ -193,9 +203,9 @@ class Dataset:
                     P = world_mat
                 P = P[:3, :4]
                 intrinsics, pose, pose_inv = load_K_Rt_from_P(None, P)
-                self.intrinsics_all.append(torch.from_numpy(intrinsics))
-                self.pose_all.append(torch.from_numpy(pose))
-                self.pose_all_inv.append(torch.from_numpy(pose_inv))
+                self.intrinsics_all.append(torch.from_numpy(intrinsics).double())
+                self.pose_all.append(torch.from_numpy(pose).double())
+                self.pose_all_inv.append(torch.from_numpy(pose_inv).double())
                 if len(self.masks_lis) > 0:
                     mask_ = (cv.imread(self.masks_lis[i]) / 255.).astype(np.float32)
                     if mask_.ndim == 3:
@@ -215,7 +225,7 @@ class Dataset:
             self.masks_np = np.stack(all_masks, 0)
             if mask:
                 assert len(self.masks_lis) > 0
-                bg = 1. if white_bg else 0.
+                bg = 0.5 #1. if white_bg else 0.
                 self.images_np = self.images_np * self.masks_np + bg * (1 - self.masks_np)
 
                 
@@ -248,10 +258,14 @@ class Dataset:
                 pose = np.eye(4)
                 pose[:3, :3] = R.T # From camera to world rotation
                 pose[:3, 3] = (-R.T @ T)[:, 0] # Camera center in world pose
-                matrices.append((K, pose))
+                pose_inv = np.eye(4)
+                pose_inv[:3, :3] = R # From world rotation
+                pose_inv[:3, 3] = T[:, 0] 
+                matrices.append((K, pose, pose_inv))
 
             all_intrinsics = []
             all_poses = []
+            all_poses_inv = []
             all_imgs = []
             all_masks = []
             all_min_x = []
@@ -262,10 +276,11 @@ class Dataset:
                 print(f"Loading image {i}...")
                 intrinsic_curr = np.array(matrices[i][0])
                 intrinsic_curr[:2, :] /= reso_level
-                all_intrinsics.append(torch.from_numpy(intrinsic_curr))
-                all_poses.append(torch.from_numpy(matrices[i][1]))
+                all_intrinsics.append(torch.from_numpy(intrinsic_curr).double())
+                all_poses.append(torch.from_numpy(matrices[i][1]).double())
+                all_poses_inv.append(torch.from_numpy(matrices[i][2]).double())
                 if len(mask_paths) > 0:
-                    mask_ = (cv.imread(mask_paths[i]) / 255.).astype(np.float32)
+                    mask_ = clean_mask((cv.imread(mask_paths[i]) / 255.).astype(np.float32))
                     if mask_.ndim == 3:
                         all_masks.append(mask_[...,:3])
                     else:
@@ -276,13 +291,13 @@ class Dataset:
                     p_x, p_y = torch.meshgrid(tx, ty)
 
                     mask_pp = mask_[(p_y.long(), p_x.long())]
-                    p_front_x = p_x[mask_pp[:,:,0] == 1]
-                    p_front_y = p_y[mask_pp[:,:,0] == 1]
+                    p_front_x = p_x[mask_pp[:,:,0] > 0.5]
+                    p_front_y = p_y[mask_pp[:,:,0] > 0.5]
 
-                    min_x = int(p_front_x.min().numpy()) 
-                    max_x = int(p_front_x.max().numpy()) 
-                    min_y = int(p_front_y.min().numpy()) 
-                    max_y = int(p_front_y.max().numpy()) 
+                    min_x = max(0, int(p_front_x.min().numpy()) - 10)
+                    max_x = min(mask_.shape[1]-1, int(p_front_x.max().numpy()) + 10)
+                    min_y = max(0, int(p_front_y.min().numpy()) - 10)
+                    max_y = min(mask_.shape[0]-1, int(p_front_y.max().numpy()) + 10)
 
                     all_min_x.append(min_x)
                     all_max_x.append(max_x)
@@ -312,7 +327,7 @@ class Dataset:
 
             self.intrinsics_all = all_intrinsics
             self.pose_all = all_poses
-            self.pose_all_inv = all_poses
+            self.pose_all_inv = all_poses_inv
             self.images_np = imgs
             self.masks_np = masks
             self.n_images = NCAMS
@@ -322,7 +337,7 @@ class Dataset:
             self.all_max_y = np.stack(all_max_y, 0)
             
             for i in range(self.n_images):
-                self.images_np[i][self.masks_np[i][:,:,0] == 0.0,:] = [1.0,1.0,1.0]
+                self.images_np[i][self.masks_np[i][:,:,0] == 0.0,:] = [0.5,0.5,0.5]
                 
             # world_mat is a projection matrix from world to image
             trans_file = sorted(glob(os.path.join(self.data_dir, 'transform_*.txt')))
@@ -348,10 +363,11 @@ class Dataset:
         self.images_smooth_np_2 = block_reduce(self.images_np, block_size=(1,2,2,1), func=np.mean)
         self.masks_smooth_np_2 = block_reduce(self.masks_np, block_size=(1,2,2,1), func=np.mean)
         """for i in range(self.n_images):
-            cv2.imwrite('Exp/img.png', 255*self.images_smooth_np[i,:,:,:])
-            print(self.images_smooth_np.shape)
+            cv2.imwrite('Exp/img{}.png'.format(i), 255*self.images_np[i,self.all_min_y[i]:self.all_max_y[i],self.all_min_x[i]:self.all_max_x[i],:])
+            cv2.imwrite('Exp/mask{}.png'.format(i), 255*self.masks_np[i,self.all_min_y[i]:self.all_max_y[i],self.all_min_x[i]:self.all_max_x[i],:])
             print(self.images_np.shape)
-            input()"""
+            print(self.images_np.shape)
+            #input()"""
 
         self.images = torch.from_numpy(self.images_np.astype(np.float32)).cpu()  # [n_images, H, W, 3]
         self.masks  = torch.from_numpy(self.masks_np.astype(np.float32)).cpu()   # [n_images, H, W, 3]
@@ -360,7 +376,7 @@ class Dataset:
         self.images_smooth_3 = torch.from_numpy(self.images_smooth_np_3.astype(np.float32)).cpu()  # [n_images, H, W, 3]
         self.masks_smooth_3  = torch.from_numpy(self.masks_smooth_np_3.astype(np.float32)).cpu()   # [n_images, H, W, 3]
         self.images_smooth_2 = torch.from_numpy(self.images_smooth_np_2.astype(np.float32)).cpu()  # [n_images, H, W, 3]
-        self.masks_smooth_2  = torch.from_numpy(self.masks_smooth_np_2.astype(np.float32)).cpu()   # [n_images, H, W, 3]
+        self.masks_smooth_2  = torch.from_numpy(self.masks_smooth_np_2.astype(np.float32)).cpu()   # [n_images, H, W, 3]"""
         self.intrinsics_all = torch.stack(self.intrinsics_all).to(self.device)   # [n_images, 4, 4]
         self.intrinsics_all_inv = torch.inverse(self.intrinsics_all)  # [n_images, 4, 4]
         self.focal = self.intrinsics_all[0][0, 0]
@@ -377,6 +393,8 @@ class Dataset:
         #self.gen_all_rays()
         #self.gen_all_rays_masked()
 
+        #self.save_dataset(data_name)
+
         print('Load data: End')
 
     def save_dataset(self, data_name):
@@ -385,12 +403,23 @@ class Dataset:
         intr = self.intrinsics_all[0].cpu().numpy()
 
         with open(self.render_cameras_name, 'w') as f:
-            for i in range(4):
-                f.write(f"{intr[i,0]} {intr[i,1]} {intr[i,2]} {intr[i,3]}\n")
+            for i in range(3):
+                f.write(f"{intr[i,0]} {intr[i,1]} {intr[i,2]} 0.0\n")
+            f.write(f"0.0 0.0 0.0 1.0\n")
+            #for i in range(4):
+            #    f.write(f"{intr[i,0]} {intr[i,1]} {intr[i,2]} {intr[i,3]}\n")
+
+            
+        with open(self.object_cameras_name, 'w') as f:
+            for idx in range(self.n_images):
+                extr = self.pose_all[idx].cpu().numpy()
+                for i in range(4):
+                    f.write(f"{extr[i,0]} {extr[i,1]} {extr[i,2]} {extr[i,3]}\n")
                 
-        object_bbox = Load_Visual_Hull(data_name, self)
-        with open(self.data_dir + 'bbox.txt', 'w') as f:
-            f.write(f"{object_bbox[0]} {object_bbox[3]} {object_bbox[1]} {object_bbox[4]} {object_bbox[2]} {object_bbox[5]}\n")
+                
+        #object_bbox = Load_Visual_Hull(data_name, self)
+        #with open(self.data_dir + 'bbox.txt', 'w') as f:
+        #    f.write(f"{object_bbox[0]} {object_bbox[3]} {object_bbox[1]} {object_bbox[4]} {object_bbox[2]} {object_bbox[5]}\n")
 
         for idx in range(self.n_images):
             extr = self.pose_all[idx].cpu().numpy()
@@ -664,14 +693,14 @@ class Dataset:
         pixels_x, pixels_y = torch.meshgrid(tx, ty)
         color = (self.images[img_idx][(pixels_y.long(), pixels_x.long())]).cuda()    # batch_size, 3
         mask = (self.masks[img_idx][(pixels_y.long(), pixels_x.long())]).cuda()      # batch_size, 3
-        pixels_x_f = pixels_x.float() 
-        pixels_y_f = pixels_y.float() 
-        p = torch.stack([pixels_x_f, pixels_y_f, torch.ones_like(pixels_y_f)], dim=-1).to(self.device)   # W, H, 3
+        pixels_x_f = pixels_x.double() + 0.5
+        pixels_y_f = pixels_y.double() + 0.5
+        p = torch.stack([pixels_x_f, pixels_y_f, torch.ones_like(pixels_y_f)], dim=-1).double().to(self.device)   # W, H, 3
         p = torch.matmul(self.intrinsics_all_inv[img_idx, None, None, :3, :3], p[:, :, :, None]).squeeze()  # W, H, 3
         rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)  # W, H, 3
         rays_v = torch.matmul(self.pose_all[img_idx, None, None, :3, :3], rays_v[:, :, :, None]).squeeze()  # W, H, 3
         rays_o = self.pose_all[img_idx, None, None, :3, 3].expand(rays_v.shape)  # W, H, 3
-        return torch.cat([rays_o.transpose(0, 1), rays_v.transpose(0, 1), color.transpose(0, 1), mask[:, :, :1].transpose(0, 1)], dim=-1)
+        return torch.cat([rays_o.transpose(0, 1), rays_v.transpose(0, 1), color.transpose(0, 1), mask[:, :, :1].transpose(0, 1)], dim=-1).float()
     
     def gen_rays_z_id_RGB_at(self, img_idx, resolution_level=1, shift = 0):
         """
@@ -683,12 +712,12 @@ class Dataset:
         pixels_x, pixels_y = torch.meshgrid(tx, ty)
         color = (self.images[img_idx][(pixels_y.long(), pixels_x.long())]).cuda()    # batch_size, 3
         mask = (self.masks[img_idx][(pixels_y.long(), pixels_x.long())]).cuda()      # batch_size, 3
-        p = torch.stack([pixels_x, pixels_y, torch.ones_like(pixels_y)], dim=-1).to(self.device)   # W, H, 3
+        p = torch.stack([pixels_x, pixels_y, torch.ones_like(pixels_y)], dim=-1).double().to(self.device)   # W, H, 3
         p = torch.matmul(self.intrinsics_all_inv[img_idx, None, None, :3, :3], p[:, :, :, None]).squeeze()  # W, H, 3
         rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)  # W, H, 3
         rays_v = torch.matmul(self.pose_all[img_idx, None, None, :3, :3], rays_v[:, :, :, None]).squeeze()  # W, H, 3
         rays_o = self.pose_all[img_idx, None, None, :3, 3].expand(rays_v.shape)  # W, H, 3
-        return pixels_y.long().transpose(0, 1), pixels_x.long().transpose(0, 1), torch.cat([rays_o.transpose(0, 1), rays_v.transpose(0, 1), color.transpose(0, 1), mask[:, :, :1].transpose(0, 1)], dim=-1)
+        return pixels_y.long().transpose(0, 1), pixels_x.long().transpose(0, 1), torch.cat([rays_o.transpose(0, 1), rays_v.transpose(0, 1), color.transpose(0, 1), mask[:, :, :1].transpose(0, 1)], dim=-1).float()
     
 
     def gen_random_rays_at(self, img_idx, batch_size):
@@ -864,14 +893,14 @@ class Dataset:
                 color = self.images[img_idx][(pixels_y, pixels_x)]    # batch_size, 3
                 mask = self.masks[img_idx][(pixels_y, pixels_x)]      # batch_size, 3"""
 
-        pixels_x_f = pixels_x.float()*lvl# + torch.rand(pixels_x.shape)-0.5
-        pixels_y_f = pixels_y.float()*lvl# + torch.rand(pixels_y.shape)-0.5
-        p = torch.stack([pixels_x_f, pixels_y_f, torch.ones_like(pixels_y_f)], dim=-1).float().to(self.device)   # batch_size, 3
+        pixels_x_f = pixels_x.double()*lvl# + torch.rand(pixels_x.shape)-0.5
+        pixels_y_f = pixels_y.double()*lvl# + torch.rand(pixels_y.shape)-0.5
+        p = torch.stack([pixels_x_f, pixels_y_f, torch.ones_like(pixels_y_f)], dim=-1).double().to(self.device)   # batch_size, 3
         p = torch.matmul(self.intrinsics_all_inv[img_idx, None, :3, :3], p[:, :, None]).squeeze() # batch_size, 3
         rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)    # batch_size, 3
         rays_v = torch.matmul(self.pose_all[img_idx, None, :3, :3], rays_v[:, :, None]).squeeze()  # batch_size, 3
         rays_o = self.pose_all[img_idx, None, :3, 3].expand(rays_v.shape) # batch_size, 3
-        return torch.cat([rays_o.cpu(), rays_v.cpu(), color, mask[:, :1]], dim=-1).cuda()     # batch_size, 10
+        return torch.cat([rays_o.cpu(), rays_v.cpu(), color, mask[:, :1], torch.from_numpy(img_idx*np.ones((color.shape[0], 1)))], dim=-1).cuda().float()     # batch_size, 10
     
     def gen_random_rays_zbuff_topk_at(self, conf_map, img_idx, batch_size):
         """
@@ -1021,11 +1050,11 @@ class Dataset:
             if lvl == 1:
                 fact = 1
                 if self.data_type == 'KINOVIS':
-                    tx = torch.linspace(self.all_min_x[img_idx], self.all_max_x[img_idx]-1, self.all_max_x[img_idx] - self.all_min_x[img_idx])
-                    ty = torch.linspace(self.all_min_y[img_idx], self.all_max_y[img_idx]-1, self.all_max_y[img_idx] - self.all_min_y[img_idx])
+                    tx = torch.linspace(fact*self.all_min_x[img_idx], fact*self.all_max_x[img_idx]-fact, (self.all_max_x[img_idx] - self.all_min_x[img_idx])*fact)
+                    ty = torch.linspace(fact*self.all_min_y[img_idx], fact*self.all_max_y[img_idx]-fact, (self.all_max_y[img_idx] - self.all_min_y[img_idx])*fact)
                     pixels_x, pixels_y = torch.meshgrid(tx, ty)
-                    color = self.images[img_idx][(pixels_y.long(), pixels_x.long())]    # batch_size, 3
-                    mask = self.masks[img_idx][(pixels_y.long(), pixels_x.long())]      # batch_size, 3
+                    color = self.images[img_idx][(pixels_y.long()//fact, pixels_x.long()//fact)]    # batch_size, 3
+                    mask = self.masks[img_idx][(pixels_y.long()//fact, pixels_x.long()//fact)]      # batch_size, 3
                 else:
                     tx = torch.linspace(0, fact*self.W - fact, fact*self.W)
                     ty = torch.linspace(0, fact*self.H - fact, fact*self.H)
@@ -1100,8 +1129,8 @@ class Dataset:
                 print("WRONG LVL")
                 exit()
 
-            pixels_x_f = pixels_x.double() #*lvl# + torch.rand(pixels_x.shape)-0.5
-            pixels_y_f = pixels_y.double() #*lvl# + torch.rand(pixels_y.shape)-0.5
+            pixels_x_f = pixels_x.double()+0.5 #*lvl# + torch.rand(pixels_x.shape)-0.5
+            pixels_y_f = pixels_y.double()+0.5 #*lvl# + torch.rand(pixels_y.shape)-0.5
             p = torch.stack([pixels_x_f, pixels_y_f, torch.ones_like(pixels_y_f)], dim=-1).double().to(self.device)   # batch_size, 3
             p = torch.matmul(self.intrinsics_all_inv[img_idx, None, None, :3, :3], p[:, :, :, None]).squeeze() # batch_size, 3
             rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)    # batch_size, 3
@@ -1114,17 +1143,21 @@ class Dataset:
             self.all_colors.append(color.cpu().reshape(-1,3))
             self.all_ids.append(img_idx*np.ones((color.shape[0]*color.shape[1], 1)))
 
-        self.all_rays_o = np.stack(self.all_rays_o, 0).reshape(-1,3)
-        self.all_rays_v = np.stack(self.all_rays_v, 0).reshape(-1,3)
-        self.all_masks = np.stack(self.all_masks, 0).reshape(-1,1)
-        self.all_colors = np.stack(self.all_colors, 0).reshape(-1,3)
-        self.all_ids = np.stack(self.all_ids, 0).reshape(-1,1)
+        self.all_rays_o = np.concatenate(self.all_rays_o, 0).reshape(-1,3)
+        self.all_rays_v = np.concatenate(self.all_rays_v, 0).reshape(-1,3)
+        self.all_masks = np.concatenate(self.all_masks, 0).reshape(-1,1)
+        self.all_colors = np.concatenate(self.all_colors, 0).reshape(-1,3)
+        self.all_ids = np.concatenate(self.all_ids, 0).reshape(-1,1)
+
+        #self.weight_rays = (1.0/self.all_ids.shape[0])*torch.ones(self.all_ids.shape).cuda()
+        #self.weight_rays = np.ones(self.all_ids.shape)
 
         print(self.all_rays_o.shape)
         print(self.all_rays_v.shape)
         print(self.all_masks.shape)
         print(self.all_colors.shape)
         print(self.all_ids.shape)
+
         
     def gen_all_rays_masked(self, lvl = 1):
         """
@@ -1252,11 +1285,13 @@ class Dataset:
         print(self.all_ids_masked.shape)
 
     def get_random_rays(self, batch_size):
+        #sum_p = self.weight_rays.sum()
+        #self.weight_rays = self.weight_rays / sum_p
         tot_rays = self.all_rays_o.shape[0]
-        rand_ids = torch.randint(low=0, high=tot_rays, size=[batch_size])
+        rand_ids = torch.randint(low=0, high=tot_rays, size=[batch_size]) #, p = self.weight_rays)
 
         return torch.cat([torch.from_numpy(self.all_rays_o[rand_ids,:]), torch.from_numpy(self.all_rays_v[rand_ids,:]), 
-                          torch.from_numpy(self.all_colors[rand_ids,:]), torch.from_numpy(self.all_masks[rand_ids,:]), torch.from_numpy(self.all_ids[rand_ids,:])], dim=-1).cuda().float()
+                          torch.from_numpy(self.all_colors[rand_ids,:]), torch.from_numpy(self.all_masks[rand_ids,:]), torch.from_numpy(self.all_ids[rand_ids,:])], dim=-1).cuda().float() #, torch.from_numpy(rand_ids).cuda()
 
     def get_random_rays_masked(self, batch_size):
         tot_rays = self.all_rays_o_masked.shape[0]
@@ -1289,9 +1324,15 @@ class Dataset:
             p = torch.matmul(self.pose_all_inv[id_curr,:3,:3], p[:,:]).squeeze()
             p = torch.matmul(self.intrinsics_all[id_curr, :3,:3], p[:,:]).squeeze()
             z = torch.stack([p[2,:], p[2,:]], dim=0)
-            pixels = (p[:2,:]/z[:]).cpu().detach().numpy()
+            pixels = np.rint((p[:2,:]/z[:]).cpu().detach().numpy())
+            z = z.cpu().numpy()
+            pixels[0, z[0,:] == 0] = -1.0
+            pixels[1, z[0,:] == 0] = -1.0
+            pixels[0, abs(pixels[0,:]) > self.W-1] = self.W + 100
+            pixels[1, abs(pixels[1,:]) > self.H-1] = self.H + 100
             pixels = pixels.astype(np.int32)
             pixels_clipped = np.copy(pixels)
+
 
             pixels_clipped[0,pixels[0,:] < 0] = 0
             pixels_clipped[1,pixels[1,:] < 0] = 0
@@ -1304,10 +1345,15 @@ class Dataset:
             mask = mask * (pixels[0,:] <= self.W-1)
             mask = mask * (pixels[1,:] <= self.H-1)
 
-            valid[mask == 1] = valid[mask == 1] + 1   
+            valid[mask > 0.0] = valid[mask > 0.0] + 1   
+            
+            """for i in range(pixels.shape[1]):
+                print(pixels[:,i], mask[i])
+            
+            print(self.W, self.H)
+            input()"""
 
         return valid
     
     
-
 

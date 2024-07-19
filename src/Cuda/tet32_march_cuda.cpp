@@ -90,6 +90,7 @@ void tet32_march_offset_cuda(
     torch::Tensor out_grads,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_feat,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor samples_rays,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor samples_reff,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor samples,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor offset     // [N_voxels, 4] for each voxel => it's vertices
 );
@@ -249,6 +250,7 @@ void tet32_march_offset(
     torch::Tensor out_grads,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_feat,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor samples_rays,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor samples_reff,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor samples,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor offset     // [N_voxels, 4] for each voxel => it's vertices
 ) {
@@ -274,6 +276,7 @@ void tet32_march_offset(
         out_grads,   
         out_feat,  
         samples_rays,  
+        samples_reff,  
         samples,  
         offset);
 }

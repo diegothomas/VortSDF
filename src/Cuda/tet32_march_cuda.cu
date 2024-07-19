@@ -17,7 +17,7 @@
 #endif
 
 #define STOP_TRANS 1.0e-12
-#define DIM_L_FEAT 32
+#define DIM_L_FEAT 16
 #define DIM_F4_FEAT 8
 #define CLIP_ALPHA 60.0
 
@@ -617,6 +617,7 @@ __global__ void tet32_march_offset_kernel(
     float *__restrict__ out_grads,     // [N_voxels, 4] for each voxel => it's vertices
     float *__restrict__ out_feat,     // [N_voxels, 4] for each voxel => it's vertices
 	float *__restrict__ samples_rays,
+	float *__restrict__ samples_reff,
 	float *__restrict__ samples,
     int *__restrict__ offset     // [N_voxels, 4] for each voxel => it's vertices
 )
@@ -645,6 +646,7 @@ __global__ void tet32_march_offset_kernel(
     float *grads_ray = &out_grads[start*3];
     float *feats_ray = &out_feat[DIM_L_FEAT*start];
     float *samples_d = &samples_rays[start*3];
+    float *samples_r = &samples_reff[start*3];
     float *samples_v = &samples[start*3];
 
     // build base w.r.t ray
@@ -932,6 +934,11 @@ __global__ void tet32_march_offset_kernel(
 					samples_d[3 * s_id] = ray_d[0];
 					samples_d[3 * s_id + 1] = ray_d[1];
 					samples_d[3 * s_id + 2] = ray_d[2];		
+					
+					float dot_prod = grads_ray[3*s_id]*ray_d[0] + grads_ray[3*s_id + 1]*ray_d[1] + grads_ray[3*s_id + 2]*ray_d[2];
+					samples_r[3 * s_id] = grads_ray[3*s_id] - 2.0f*dot_prod*ray_d[0];
+					samples_r[3 * s_id + 1] = grads_ray[3*s_id + 1] - 2.0f*dot_prod*ray_d[1];
+					samples_r[3 * s_id + 2] = grads_ray[3*s_id + 2] - 2.0f*dot_prod*ray_d[2];	
 
 					for (int l = 0; l < 3; l++) {
 						weights_ray[7*s_id + l] = prev_weights[l];
@@ -2170,6 +2177,7 @@ void tet32_march_offset_cuda(
     torch::Tensor out_grads,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor out_feat,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor samples_rays,     // [N_voxels, 4] for each voxel => it's vertices
+    torch::Tensor samples_reff,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor samples,     // [N_voxels, 4] for each voxel => it's vertices
     torch::Tensor offset     // [N_voxels, 4] for each voxel => it's vertices
 )   {
@@ -2198,6 +2206,7 @@ void tet32_march_offset_cuda(
                 out_grads.data_ptr<float>(),
                 out_feat.data_ptr<float>(),
                 samples_rays.data_ptr<float>(),
+                samples_reff.data_ptr<float>(),
                 samples.data_ptr<float>(),
                 offset.data_ptr<int>());  
     	}));	

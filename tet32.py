@@ -10,6 +10,7 @@ from tqdm import tqdm
 from multiprocessing import Process, Value, Array, Manager
 import time 
 from pysdf import SDF
+import trimesh
 
 from torch.utils.cpp_extension import load
 tet32_march_cuda = load('tet32_march_cuda', ['src/Cuda/tet32_march_cuda.cpp', 'src/Cuda/tet32_march_cuda.cu'], verbose=True)
@@ -449,7 +450,7 @@ class Tet32(Process):
   
             ############ Compute approximated CVT gradients at sites()
             grad_sites[:] = 0.0
-            loss_cvt = cvt_grad_cuda.cvt_grad(self.sites.shape[0], self.KNN, radius, thetas, phis, gammas, self.knn_sites, self.sites, torch.from_numpy(outside_flag).int().cuda().contiguous(), sdf, grad_sites)
+            loss_cvt = cvt_grad_cuda.cvt_grad(self.sites.shape[0], self.KNN, 2*radius, thetas, phis, gammas, self.knn_sites, self.sites, torch.from_numpy(outside_flag).int().cuda().contiguous(), sdf, grad_sites)
             grad_sites = grad_sites / self.sites.shape[0]
             
             grad_sites_sdf[:] = 0.0
@@ -523,19 +524,31 @@ class Tet32(Process):
 
         return sdf.cpu().numpy(), fine_features.cpu().numpy()
 
-    def upsample(self, sdf, sdf_smooth, feat, visual_hull, res, cam_sites, cam_ids, lr, flag = True, radius = 0.3):    
+    def upsample(self, sdf, sdf_smooth, feat, visual_hull, res, cam_sites, cam_ids, lr, cvt_it = 1000, flag = True, radius = 0.3):    
         self.nb_pre_sites = self.sites.shape[0]
         if True: #self.nb_pre_sites < 1.0e6:  
             self.lvl_sites.append(np.arange(self.sites.shape[0]))
 
         ## Smooth current mesh and build sdf        
         tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(sdf.astype(np.float64)),0.0)
-        #tri_mesh.filter_smooth_laplacian(number_of_iterations=3)
+        tri_mesh.filter_smooth_laplacian(number_of_iterations=1)
 
-        self.tri_vertices = np.asarray(tri_mesh.vertices)
-        self.tri_faces = np.asarray(tri_mesh.triangles)
-        f = SDF(np.asarray(self.tri_vertices), np.asarray(self.tri_faces))
+        tri_mesh = trimesh.Trimesh(vertices=np.asarray(tri_mesh.vertices), faces=np.asarray(tri_mesh.triangles))
+        tri_mesh = sorted(tri_mesh.split(only_watertight=False), key=lambda x : x.vertices.shape[0], reverse=True)[0]
+
+        """triangle_clusters, cluster_n_triangles, cluster_area = tri_mesh.cluster_connected_triangles()
+        triangle_clusters = np.asarray(triangle_clusters)
+        cluster_n_triangles = np.asarray(cluster_n_triangles)
+        largest_cluster_idx = cluster_n_triangles.argmax()
+        triangles_to_remove = triangle_clusters != largest_cluster_idx
+        tri_mesh.remove_triangles_by_mask(triangles_to_remove)"""
+
+        self.tri_vertices = np.asarray(tri_mesh.vertices, dtype=np.float32)
+        self.tri_faces = np.asarray(tri_mesh.faces)
+        f = SDF(self.tri_vertices, self.tri_faces)
         true_sdf = -f(self.sites.cpu().numpy())
+        true_sdf[true_sdf[:] > 1.0] = 1.0
+        true_sdf[true_sdf[:] < -1.0] = -1.0
         true_sdf = torch.from_numpy(true_sdf).float().cuda()
 
         sites = self.sites.cpu().numpy()
@@ -621,7 +634,7 @@ class Tet32(Process):
         cam_ids = torch.from_numpy(cam_ids).int().cuda()
                 
         self.sites = torch.from_numpy(self.sites).double().cuda()
-        self.CVT(outside_flag, cam_ids.long(), torch.from_numpy(true_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), 300, radius, 0.1, lr)
+        self.CVT(outside_flag, cam_ids.long(), torch.from_numpy(true_sdf).float().cuda(), torch.from_numpy(in_feat).float().cuda(), cvt_it, radius, 0.1, lr) #300
        
         #ply.save_ply("Exp/bmvs_man/testprevlvlv.ply", (self.sites[self.lvl_sites[0][:]]).transpose())
         prev_kdtree = scipy.spatial.KDTree(new_sites)
@@ -651,16 +664,19 @@ class Tet32(Process):
         out_sdf = out_sdf.cpu().numpy()
         
         #out_sdf = -f(self.sites)
-        mask_background = abs(f(self.sites)) > 4.0*radius
-        self.mask_background = torch.from_numpy(mask_background).int().cuda()
 
         #if flag:
         #    out_sdf[mask_background[:] == True] = radius
 
         if True: #flag:
             out_sdf = -f(self.sites)
+            #out_sdf[out_sdf[:] > 4.0*radius] = 4.0*radius
+            #out_sdf[out_sdf[:] < -4.0*radius] = -4.0*radius
             #out_sdf[abs(out_sdf) > 0] = -f(self.sites)[abs(out_sdf) > 0]
             #out_sdf[out_sdf < 0] = -radius/2.0
+            
+        mask_background = f(self.sites) >= 2.0*radius
+        self.mask_background = torch.from_numpy(mask_background).int().cuda()
 
         """lap_sdf = -f(self.sites)
         out_sdf[abs(out_sdf[:]) > radius] = lap_sdf[abs(out_sdf[:]) > radius]"""
@@ -721,21 +737,20 @@ class Tet32(Process):
     def surface_from_sdf(self, values, filename = "", translate = None, scale = None):
         #print(values.shape)
         tri_mesh = self.o3d_mesh.extract_triangle_mesh(o3d.utility.DoubleVector(values.astype(np.float64)),0.0)
+        tri_mesh = trimesh.Trimesh(vertices=np.asarray(tri_mesh.vertices), faces=np.asarray(tri_mesh.triangles))
 
         """filter_smooth_laplacian(self, number_of_iterations=1, lambda_filter=0.5, filter_scope=<FilterScope.All: 0>)"""
         
         if translate is not None:
             translate = np.ascontiguousarray(translate, dtype=np.float32)
-        
-        #print(tri_mesh)
-        self.tri_vertices = np.asarray(tri_mesh.vertices)
 
         if translate is not None:
-            self.tri_vertices = np.dot(self.tri_vertices, scale) + translate
+            tri_mesh.vertices = np.dot(tri_mesh.vertices, scale) + translate
 
-        self.tri_faces = np.asarray(tri_mesh.triangles)
         if not filename == "":
-            ply.save_ply(filename, np.asarray(self.tri_vertices).transpose(), f=(np.asarray(self.tri_faces)).transpose())
+            tri_mesh.export(filename, encoding='binary')
+            #o3d.io.write_triangle_mesh(filename, tri_mesh)
+            #ply.save_ply(filename, np.asarray(self.tri_vertices).transpose(), f=(np.asarray(self.tri_faces)).transpose())
 
     def smooth_sdf(self, sdf):
         ## Smooth current mesh and build sdf        

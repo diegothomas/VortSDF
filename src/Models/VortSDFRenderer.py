@@ -125,7 +125,7 @@ class VortSDFRenderingFunction(autograd.Function):
         Errorimg = Image.fromarray((255.0*error_rgb[:num_rays,:,:3].reshape(1,-1,3)).astype(dtype=np.uint8), 'RGB')
         #Errorimg = Image.fromarray((255.0*color_error[:num_rays,:].reshape(1,-1,3)).cpu().numpy().astype(dtype=np.uint8), 'RGB')
         Errorimg.save('Exp/Errorimg.png')"""
-        return color_error.sum()   
+        return color_error   
 
     @staticmethod
     def backward(ctx, grad_colors):

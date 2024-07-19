@@ -17,6 +17,8 @@ void MaskLaplacian_gpu(torch::Tensor mask_sites, torch::Tensor L_values, torch::
 
 void SparseMul_gpu(torch::Tensor div, torch::Tensor sdf, int dim, torch::Tensor active_sites, torch::Tensor M_values, torch::Tensor L_values, torch::Tensor L_outer_start, torch::Tensor L_nonZeros, size_t L_nnZ, size_t L_outerSize, size_t L_cols);
 
+void TVNorm_gpu(torch::Tensor div, torch::Tensor weights, torch::Tensor norm, torch::Tensor active_sites, torch::Tensor M_values, torch::Tensor L_values, torch::Tensor L_outer_start, torch::Tensor L_nonZeros,  size_t L_nnZ, size_t L_outerSize, size_t L_cols);
+
 #define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
@@ -175,8 +177,14 @@ void MaskLaplacian(torch::Tensor mask_sites, torch::Tensor L_values, torch::Tens
 }
 
 
+void TVNorm(torch::Tensor div, torch::Tensor weights, torch::Tensor norm, torch::Tensor active_sites, torch::Tensor M_values, torch::Tensor L_values, torch::Tensor L_outer_start, torch::Tensor L_nonZeros,  size_t L_nnZ, size_t L_outerSize, size_t L_cols)  {
+    TVNorm_gpu(div, weights, norm, active_sites, M_values, L_values, L_outer_start, L_nonZeros, L_nnZ, L_outerSize, L_cols);
+}
+
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("MakeLaplacian", &MakeLaplacian, "MakeLaplacian (CPP)");
     m.def("MeanCurve", &MeanCurve, "MeanCurve (CPP)");
     m.def("MaskLaplacian", &MaskLaplacian, "MaskLaplacian (CPP)");
+    m.def("TVNorm", &TVNorm, "TVNorm (CPP)");
 }

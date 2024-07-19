@@ -20,7 +20,7 @@
 #define PI 3.141592653589793238462643383279502884197
 #define _MAX_K_NN 24
 #define _BUFF_SIZE 2048
-#define DIM_L_FEAT 32
+#define DIM_L_FEAT 16
 
 /** Device functions **/
 /** Device functions **/
@@ -1218,13 +1218,21 @@ __global__ void eikonal_grad_kernel(
             continue;
         
         
-        atomicAdd(&grad_eik[ids[i]], (diff_loss[0] * Weights_curr[3*i] + 
-                                        diff_loss[1] * Weights_curr[3*i + 1] + 
-                                        diff_loss[2] * Weights_curr[3*i + 2])*volume_tet / weights_tot[ids[i]]);
+        atomicAdd(&grad_eik[ids[i]], (diff_loss[0] * (3.0f*Weights_curr[3*i] - Weights_curr[3*((i+1)%4)] - Weights_curr[3*((i+2)%4)] - Weights_curr[3*((i+3)%4)]) / 4.0f +
+                                        diff_loss[1] * (3.0f*Weights_curr[3*i + 1] - Weights_curr[3*((i+1)%4) + 1] - Weights_curr[3*((i+2)%4) + 1] - Weights_curr[3*((i+3)%4) + 1]) / 4.0f + 
+                                        diff_loss[2] * (3.0f*Weights_curr[3*i + 2] - Weights_curr[3*((i+1)%4) + 2] - Weights_curr[3*((i+2)%4) + 2] - Weights_curr[3*((i+3)%4) + 2]) / 4.0f) * volume_tet / weights_tot[ids[i]]);
                                         
-        atomicAdd(&grad_smooth[ids[i]], ((elem_0 / norm_grad - elem_smooth_0 / norm_grad_smooth) * Weights_curr[3*i] + 
-                                        (elem_1 / norm_grad - elem_smooth_1 / norm_grad_smooth) * Weights_curr[3*i + 1] + 
-                                        (elem_2 / norm_grad - elem_smooth_2 / norm_grad_smooth) * Weights_curr[3*i + 2])*volume_tet / (2.0f*weights_tot[ids[i]]));
+        if (norm_grad > 1.0e-8 && norm_grad_smooth > 1.0e-8) {
+            float dot_prod = elem_0 * elem_smooth_0 + elem_1 * elem_smooth_1 + elem_2 * elem_smooth_2;
+            atomicAdd(&grad_smooth[ids[i]], ((1.0f / norm_grad_smooth) * (dot_prod * elem_0 / (norm_grad*norm_grad*norm_grad) - elem_smooth_0 / norm_grad) * (3.0f*Weights_curr[3*i] - Weights_curr[3*((i+1)%4)] - Weights_curr[3*((i+2)%4)] - Weights_curr[3*((i+3)%4)]) / 4.0f  + 
+                                            (1.0f / norm_grad_smooth) * (dot_prod * elem_1 / (norm_grad*norm_grad*norm_grad) - elem_smooth_1 / norm_grad)* (3.0f*Weights_curr[3*i + 1] - Weights_curr[3*((i+1)%4) + 1] - Weights_curr[3*((i+2)%4) + 1] - Weights_curr[3*((i+3)%4) + 1]) / 4.0f + 
+                                            (1.0f / norm_grad_smooth) * (dot_prod * elem_2 / (norm_grad*norm_grad*norm_grad) - elem_smooth_2 / norm_grad) * (3.0f*Weights_curr[3*i + 2] - Weights_curr[3*((i+1)%4) + 2] - Weights_curr[3*((i+2)%4) + 2] - Weights_curr[3*((i+3)%4) + 2]) / 4.0f) * volume_tet / weights_tot[ids[i]]);
+
+            /*atomicAdd(&grad_smooth[ids[i]], ((elem_0 - elem_smooth_0) * (3.0f*Weights_curr[3*i] - Weights_curr[3*((i+1)%4)] - Weights_curr[3*((i+2)%4)] - Weights_curr[3*((i+3)%4)]) / 4.0f  + 
+                                            (elem_1 - elem_smooth_1) * (3.0f*Weights_curr[3*i + 1] - Weights_curr[3*((i+1)%4) + 1] - Weights_curr[3*((i+2)%4) + 1] - Weights_curr[3*((i+3)%4) + 1]) / 4.0f + 
+                                            (elem_2 - elem_smooth_2)* (3.0f*Weights_curr[3*i + 2] - Weights_curr[3*((i+1)%4) + 2] - Weights_curr[3*((i+2)%4) + 2] - Weights_curr[3*((i+3)%4) + 2]) / 4.0f)*volume_tet / weights_tot[ids[i]]);*/
+
+        }
 
         /*atomicAdd(&grad_smooth[ids[i]], ((elem_0 - elem_smooth_0) * Weights_curr[3*i] + 
                                         (elem_1 - elem_smooth_1) * Weights_curr[3*i + 1] + 
@@ -1234,7 +1242,7 @@ __global__ void eikonal_grad_kernel(
         atomicAdd(&grad_sdf[3*ids[i] + 1], elem_1*volume_tet / weights_tot[ids[i]]);
         atomicAdd(&grad_sdf[3*ids[i] + 2], elem_2*volume_tet / weights_tot[ids[i]]);
 
-        //atomicAdd(&Loss[ids[i]], abs(sqrt(norm_grad)-1)*volume_tet / weights_tot[ids[i]]);
+        atomicAdd(&Loss[ids[i]], abs(sqrt(norm_grad)-1)*volume_tet / weights_tot[ids[i]]);
     }
 
 
@@ -1292,7 +1300,7 @@ __global__ void backprop_norm_grad_kernel(
         return;
     }
 
-    int ids[4] = {0, 0, 0, 0,};
+    int ids[4] = {0, 0, 0, 0};
     ids[0] = tets[4*idx];  ids[1] = tets[4*idx + 1];  ids[2] = tets[4*idx + 2];
     ids[3] = ids[0] ^ ids[1] ^ ids[2] ^ tets[4*idx + 3];
 
@@ -1304,9 +1312,13 @@ __global__ void backprop_norm_grad_kernel(
         if (weights_tot[ids[i]] == 0.0f) 
             continue;
 
-        atomicAdd(&grad_sdf[ids[i]], (grad_norm[3*ids[i]] * Weights_curr[3*i] + 
+        /*atomicAdd(&grad_sdf[ids[i]], (grad_norm[3*ids[i]] * Weights_curr[3*i] + 
                                         grad_norm[3*ids[i] + 1] * Weights_curr[3*i + 1] + 
-                                        grad_norm[3*ids[i] + 2] * Weights_curr[3*i + 2])*volume_tet / (2.0f*weights_tot[ids[i]]));
+                                        grad_norm[3*ids[i] + 2] * Weights_curr[3*i + 2])*volume_tet / (2.0f*weights_tot[ids[i]]));*/
+
+        atomicAdd(&grad_sdf[ids[i]], (grad_norm[3*ids[i]] * (3.0f*Weights_curr[3*i] - Weights_curr[3*((i+1)%4)] - Weights_curr[3*((i+2)%4)] - Weights_curr[3*((i+3)%4)]) / 4.0f +
+                                        grad_norm[3*ids[i] + 1] * (3.0f*Weights_curr[3*i + 1] - Weights_curr[3*((i+1)%4) + 1] - Weights_curr[3*((i+2)%4) + 1] - Weights_curr[3*((i+3)%4) + 1]) / 4.0f + 
+                                        grad_norm[3*ids[i] + 2] * (3.0f*Weights_curr[3*i + 2] - Weights_curr[3*((i+1)%4) + 2] - Weights_curr[3*((i+2)%4) + 2] - Weights_curr[3*((i+3)%4) + 2]) / 4.0f) * volume_tet / weights_tot[ids[i]]);
     }
 
 
@@ -1592,6 +1604,7 @@ void eikonal_grad_cuda(
                 weights_tot.data_ptr<float>(),
                 eik_loss.data_ptr<float>()); 
         }));
+		cudaDeviceSynchronize();
 
         /*const int threads2 = 1024;
         const int blocks2 = (num_sites + threads2 - 1) / threads2; // ceil for example 8192 + 255 / 256 = 32
@@ -1634,6 +1647,7 @@ void backprop_norm_grad_cuda(
                 weights.data_ptr<float>(),
                 weights_tot.data_ptr<float>()); 
         }));    
+		cudaDeviceSynchronize();
 }
 
 

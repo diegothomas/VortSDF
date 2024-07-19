@@ -11,11 +11,21 @@ from pyhocon import ConfigFactory
 import matplotlib
 import matplotlib.pyplot as plt
 import pymeshlab
+import trimesh
+import colormap
 
 from pysdf import SDF
 import shutil
 
 #THRESH = 0.02
+
+
+def load_Rt_from(filename):
+    lines = open(filename).read().splitlines()
+    lines = [[x[0], x[1], x[2], x[3]] for x in (x.split(" ") for x in lines)]
+    pose = np.asarray(lines).astype(np.float32).squeeze()
+
+    return pose
 
 def if_not_exists_makedir(path ,comment = None , delete = False , confirm_delete = True):
     if not os.path.exists(path):
@@ -334,93 +344,97 @@ def load_factory(path , device, min_B = [-np.inf, -np.inf, np.inf], max_B = [np.
     return verts , verts_tensor , face_tensor , face_vertices , vertices_normal , face_normal
 
 def chamfer(GT_path, dir_path, heat_map_path, mesh_list, THRESH, device = None, min_B = [-np.inf, -np.inf, -np.inf], max_B = [np.inf, np.inf, np.inf]):
-    verts_GT, verts_GT_tensor, face_GT, face_vertices_GT, vertices_normal_GT, face_normal_GT = load_factory(GT_path, device, min_B, max_B)
-    
-    verts_list = []
-    verts_tensor_list = []
-    face_list = []
-    face_vertices_list = []
-    vertices_normal_list = []
-    face_normal_list = []
-    for mesh in mesh_list:
-        verts, verts_tensor, face, face_vertices, vertices_normal, face_normal = load_factory(mesh, device, min_B, max_B)
-        
-        verts_list.append(verts)
-        verts_tensor_list.append(verts_tensor)
-        face_list.append(face)
-        face_vertices_list.append(face_vertices)
-        vertices_normal_list.append(vertices_normal)
-        face_normal_list.append(face_normal)
+    print("Loading {} ...".format(GT_path))
+    #verts_GT, verts_GT_tensor, face_GT, face_vertices_GT, vertices_normal_GT, face_normal_GT = load_factory(GT_path, device, min_B, max_B)
+    gt_mesh = trimesh.load_mesh(GT_path)
 
-    print("start computing chamfer distance")
-
-    #######################################################
-    ### GTMesh's point 2 Predicted Mesh's face distance
-    #######################################################
+    trans_file = os.path.join(dir_path, 'transform.txt')
+    print(trans_file)
+    transfo = load_Rt_from(trans_file) 
     
-    GT_f = SDF(verts_GT_tensor.reshape(-1,3).cpu().numpy(), face_GT.reshape(-1,3).cpu().numpy())
-
-    """verts_GT_tensor_dx_m = np.clone(verts_GT_tensor.reshape(-1,3).cpu().numpy())
-    verts_GT_tensor_dx_m[:,0] = verts_GT_tensor_dx_m[:,0] - 0.001
-    verts_GT_tensor_dx_M = np.clone(verts_GT_tensor.reshape(-1,3).cpu().numpy())
-    verts_GT_tensor_dx_M[:,0] = verts_GT_tensor_dx_M[:,0] + 0.001
+    gt_mesh.vertices = (gt_mesh.vertices @ transfo[:3,:3].T + transfo[:3, 3].reshape((3,1)).T)
+    gt_mesh = gt_mesh.slice_plane((0,0,0.05), (0,0,1)) ##gt_mesh = gt_mesh.slice_plane((0,0,0.05), (0,0,1))
+    #gt_mesh = gt_mesh.slice_plane((0,-0.34,0), (0,1,0)) 
+    """gt_mesh = gt_mesh.slice_plane((-2.8,0,0), (1,0,0)) 
+    gt_mesh = gt_mesh.slice_plane((0.2,0,0), (-1,0,0)) 
+    gt_mesh = gt_mesh.slice_plane((0,-2.0,0), (0,1,0))
+    gt_mesh = gt_mesh.slice_plane((0,1.6,0), (0,-1,0))"""
+    """gt_mesh = gt_mesh.slice_plane((0,0,35.6), (0,0,1))
+    gt_mesh = gt_mesh.slice_plane((0,0,42), (0,0,-1))
+    gt_mesh = gt_mesh.slice_plane((-6.9,0,0), (1,0,0))
+    gt_mesh = gt_mesh.slice_plane((-0.9,0,0), (-1,0,0))
+    gt_mesh = gt_mesh.slice_plane((0,-3.5,0), (0,1,0))
+    gt_mesh = gt_mesh.slice_plane((0,3.1,0), (0,-1,0))"""
     
-    verts_GT_tensor_dy_m = np.clone(verts_GT_tensor.reshape(-1,3).cpu().numpy())
-    verts_GT_tensor_dy_m[:,1] = verts_GT_tensor_dy_m[:,1] - 0.001
-    verts_GT_tensor_dy_M = np.clone(verts_GT_tensor.reshape(-1,3).cpu().numpy())
-    verts_GT_tensor_dy_M[:,1] = verts_GT_tensor_dy_M[:,1] + 0.001
-    
-    verts_GT_tensor_dz_m = np.clone(verts_GT_tensor.reshape(-1,3).cpu().numpy())
-    verts_GT_tensor_dz_m[:,2] = verts_GT_tensor_dz_m[:,2] - 0.001
-    verts_GT_tensor_dz_M = np.clone(verts_GT_tensor.reshape(-1,3).cpu().numpy())
-    verts_GT_tensor_dz_M[:,2] = verts_GT_tensor_dz_M[:,2] + 0.001"""
+    #print("Computing largest connected component of test mesh...")
+    #gt_mesh = sorted(gt_mesh.split(only_watertight=False), key=lambda x : x.vertices.shape[0], reverse=True)[0]
 
-    print("start computing iou")
-    sdf_list = []
-    iou_list = []
+    c = colormap.Colormap()
+    jet = c.cmap("jet")
+
     chamfer_list1 = []
     chamfer_list2 = []
-    mask = np.zeros(verts_GT_tensor.shape[1])
-    for i in range(len(mesh_list)):
-        f = SDF(verts_tensor_list[i].reshape(-1,3).cpu().numpy(), face_list[i].reshape(-1,3).cpu().numpy())
-        sdf_f = abs(f(verts_GT_tensor.reshape(-1,3).cpu().numpy()))
-        sdf_list.append(sdf_f)
-        mask = mask + (sdf_f < THRESH) 
+    for mesh in mesh_list:
+        print("Loading {} ...".format(mesh))
+        #verts, verts_tensor, face, face_vertices, vertices_normal, face_normal = load_factory(mesh, device, min_B, max_B)
+        pred_mesh = trimesh.load_mesh(mesh)
+        pred_mesh.vertices = (pred_mesh.vertices @ transfo[:3,:3].T + transfo[:3, 3].reshape((3,1)).T)
+        pred_mesh = pred_mesh.slice_plane((0,0,0.05), (0,0,1))
+        #pred_mesh = pred_mesh.slice_plane((0,-0.34,0), (0,1,0))
+        """pred_mesh = pred_mesh.slice_plane((0,0,35), (0,0,1))
+        pred_mesh = pred_mesh.slice_plane((0,0,42), (0,0,-1))
+        pred_mesh = pred_mesh.slice_plane((-6.9,0,0), (1,0,0))
+        pred_mesh = pred_mesh.slice_plane((-0.9,0,0), (-1,0,0))
+        pred_mesh = pred_mesh.slice_plane((0,-3.5,0), (0,1,0))
+        pred_mesh = pred_mesh.slice_plane((0,3.1,0), (0,-1,0))"""
+        """pred_mesh = pred_mesh.slice_plane((-2.8,0,0), (1,0,0)) 
+        pred_mesh = pred_mesh.slice_plane((0.2,0,0), (-1,0,0)) 
+        pred_mesh = pred_mesh.slice_plane((0,-2.0,0), (0,1,0)) 
+        pred_mesh = pred_mesh.slice_plane((0,1.6,0), (0,-1,0)) """
 
-        # Compute gradients of sdf = normal vectors
-        """grad_x = (f((verts_GT_tensor_dx_M).reshape(-1,3).cpu().numpy()) - f(verts_GT_tensor_dx_m.reshape(-1,3).cpu().numpy())) / 0.002
-        grad_y = (f((verts_GT_tensor_dy_M).reshape(-1,3).cpu().numpy()) - f(verts_GT_tensor_dy_m.reshape(-1,3).cpu().numpy())) / 0.002
-        grad_z = (f((verts_GT_tensor_dz_M).reshape(-1,3).cpu().numpy()) - f(verts_GT_tensor_dz_m.reshape(-1,3).cpu().numpy())) / 0.002
+        print("Computing largest connected component of test mesh...")
+        pred_mesh = sorted(pred_mesh.split(only_watertight=False), key=lambda x : x.vertices.shape[0], reverse=True)[0]
 
-        grad = np.stack((grad_x, grad_y, grad_z))
-        
-        norm_grad = np.linalg.norm(grad, ord=2, axis=-1, keepdims=True).reshape(-1, 1)
-        norm_grad[norm_grad == 0.0] = 1.0
-        grad = grad / norm_grad.expand(-1, 3)
-        """
+        print("Computing icp...")
+        m, transformed, cost = trimesh.registration.icp(gt_mesh.vertices, pred_mesh.vertices, initial=np.eye(4), threshold=1.0e-7, max_iterations=20)
+        #transformed = gt_mesh.vertices
 
-        Psdf_f = abs(GT_f(verts_tensor_list[i].reshape(-1,3).cpu().numpy()))
-        #iou = ((sdf_f < THRESH).sum())/(len(verts_GT))
-        iou = ((sdf_f < THRESH).sum() + (Psdf_f < THRESH).sum())/(len(verts_GT) + len(verts_list[i]))
-        iou_list.append(iou * 100)
+        print("Computing chamfer distances...")
+        sdf_gt = SDF(transformed, gt_mesh.faces)
+        sdf_test = SDF(pred_mesh.vertices, pred_mesh.faces)
 
-        dist0 = np.copy(sdf_f)
-        dist1 = np.copy(Psdf_f)
-        dist0[dist0 > 0.1] = 0.1
-        dist1[dist1 > 0.1] = 0.1
-        cd0 = float(np.mean(dist0))
-        cd1 = float(np.mean(dist1))
+        dists0 = np.abs(sdf_test(transformed))
+        dists1 = np.abs(sdf_gt(pred_mesh.vertices))
+
+        # Some values can be very high due to numerical errors
+        dists0[dists0 > 0.1] = 0.1
+        dists1[dists1 > 0.1] = 0.1
+
+        cd0 = float(np.mean(dists0))
+        cd1 = float(np.mean(dists1))
+
+        print("Chamfer dist gt -> test:", cd0)
+        print("Chamfer dist test -> gt:", cd1)
+
         chamfer_list1.append(cd0)
         chamfer_list2.append(cd1)
 
-    chamfer_list = []
-    for i in range(len(mesh_list)):
-        mesh_name = mesh_list[i].split("\\")[-1] # "/"
-        sdf_list[i][mask == 0] = 1.0e10
-        _ = save_color_mesh(sdf_list[i] , verts_GT , face_GT.cpu().numpy() , os.path.join(heat_map_path, mesh_name), vmin=0.0 , vmax=1.0*THRESH)   
-        chamfer_list.append(sdf_list[i][sdf_list[i] < 1000.0].mean() * 1000)
+        mesh_name = mesh.split("\\")[-1] # "/"
+        colors0 = jet(dists0 / THRESH)
+        gt_mesh.visual = trimesh.visual.color.ColorVisuals(mesh=gt_mesh, vertex_colors=np.uint8(colors0 * 255))
+        gt_mesh.apply_transform(m)
+        gt_mesh.export(os.path.join(heat_map_path, mesh_name), encoding='binary')
 
-    return chamfer_list, chamfer_list1, chamfer_list2, iou_list      
+        colors1 = jet(dists1 / THRESH)
+        pred_mesh.visual = trimesh.visual.color.ColorVisuals(mesh=pred_mesh, vertex_colors=np.uint8(colors1 * 255))
+        pred_mesh.export(os.path.join(heat_map_path, "pred_"+mesh_name), encoding='binary')
+
+        #_ = save_color_mesh(dists0, transformed , gt_mesh.faces, os.path.join(heat_map_path, mesh_name), vmin=0.0 , vmax=1.0*THRESH)   
+        #_ = save_color_mesh(dists1, pred_mesh.vertices , pred_mesh.faces, os.path.join(heat_map_path, "pred_"+mesh_name), vmin=0.0 , vmax=1.0*THRESH)   
+        
+        
+    return chamfer_list1, chamfer_list2      
+  
 
 def main():
     parser = argparse.ArgumentParser(description='chamfer distance')
@@ -477,11 +491,11 @@ def main():
     else:
         f = open(result_csv,"a")
 
-    Chamfer_results, Chamfer_results1, Chamfer_results2,  IoU_results = chamfer(args.GT_path, args.dir_path, heat_map_path,mesh_list,  0.02, device, min_B, max_B)
+    Chamfer_results1, Chamfer_results2 = chamfer(args.GT_path, args.dir_path, heat_map_path,mesh_list,  0.03, device) #, min_B, max_B)
     
     f.write(data_name +  ",")
-    for chm, chm1, chm2, iou in zip(Chamfer_results, Chamfer_results1, Chamfer_results2, IoU_results):
-        f.write("{} , {} , {} , {} ,".format(chm, chm1, chm2, iou)) 
+    for chm1, chm2 in zip(Chamfer_results1, Chamfer_results2):
+        f.write("{} , {} ,".format(chm1, chm2)) 
     f.write("\n")
 
     f.close()

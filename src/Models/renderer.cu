@@ -31,14 +31,14 @@ __device__ const float HUBER_EPS = 1.5f / 255.0f;
 
 __device__ float huber_loss(float3 x) 
 {
-    float3 absx = abs(x);
-    float3 r = mix(x * x * 0.5f, (absx - 0.5f * HUBER_EPS) * HUBER_EPS, greaterThan(abs(x), make_float3(HUBER_EPS, HUBER_EPS, HUBER_EPS)));
+    //float3 absx = abs(x);
+    float3 r = x * x * 0.5f; //mix(x * x * 0.5f, (absx - 0.5f * HUBER_EPS) * HUBER_EPS, greaterThan(abs(x), make_float3(HUBER_EPS, HUBER_EPS, HUBER_EPS)));
     return r.x + r.y + r.z;
 }
 
 __device__ float3 huber_grad(float3 x) 
 {
-    return mix(x, sign(x) * HUBER_EPS, greaterThan(abs(x), make_float3(HUBER_EPS, HUBER_EPS, HUBER_EPS)));
+    return x; //mix(x, sign(x) * HUBER_EPS, greaterThan(abs(x), make_float3(HUBER_EPS, HUBER_EPS, HUBER_EPS)));
 }
 
 __device__ float mid_loss(float3 x, float3 y) 
@@ -55,11 +55,11 @@ __device__ float3 mid_grad(float3 x, float3 y)
     float3 rb = y*y;
     return (x-y)/(min(sqrt(ra.x + ra.y + ra.z), sqrt(rb.x + rb.y + rb.z)) + 0.005f);*/
     float3 r = x-y;
-    r.x = r.x/(fabs(y.x) + 0.005f);
-    r.y = r.y/(fabs(y.y) + 0.005f);
-    r.z = r.z/(fabs(y.z) + 0.005f);
-    //if (y.x == 1.0f || y.y == 1.0f || y.z == 1.0f)
-    //    return 0.1*r;
+    /*r.x = r.x/(fabs(y.x) + 0.1f);
+    r.y = r.y/(fabs(y.y) + 0.1f);
+    r.z = r.z/(fabs(y.z) + 0.1f);
+    if (y.x == 1.0f || y.y == 1.0f || y.z == 1.0f)
+        return 0.1*r;*/
     return r;
     //return (x-y);
 }
@@ -463,7 +463,7 @@ __global__ void render_kernel(
     //if (color.w < 1.0f) {
         float msk = mask[idx] > 0.5f ? 1.0f : 0.0f;
         float3 integrated_color = make_float3(color.x + color.w * BACK_R, color.y + color.w * BACK_G, color.z + color.w * BACK_B);
-        //loat3 grad_color_diff = huber_grad(integrated_color - true_color[idx]);
+        //float3 grad_color_diff = huber_grad(integrated_color - true_color[idx]);
         float3 grad_color_diff = mid_grad(integrated_color, true_color[idx]);
 
         //Wtotal
@@ -520,9 +520,9 @@ __global__ void render_no_grad_kernel(
     float Wtotal = 0.0f;
     float4 color = trace_ray_no(sdf_seg, color_samples, offsets, &Wtotal, inv_s, idx);
 
-    color_out[3*idx] = color.x + color.w * BACK_R;
-    color_out[3*idx + 1] = color.y + color.w * BACK_G;
-    color_out[3*idx + 2] = color.z + color.w * BACK_B;
+    color_out[3*idx] = color.x + color.w * 0.0f;
+    color_out[3*idx + 1] = color.y + color.w * 0.0f;
+    color_out[3*idx + 2] = color.z + color.w * 0.0f;
 
     mask_out[idx] = color.w;
 
