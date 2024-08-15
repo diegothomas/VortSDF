@@ -1,9 +1,9 @@
 # VortSDF: 3D Modeling with Centroidal Voronoi Tesselation on Signed Distance Field
 Official implementation of ***VortSDF paper***
 
-### [Paper](https://arxiv.org/pdf/2304.09987.pdf)<br><br>
+### [Paper](https://arxiv.org/abs/2407.19837)<br><br>
 [VortSDF: 3D Modeling with Centroidal Voronoi Tesselation on Signed Distance Field]()<br>
-*[Diego Thomas]()<sup>1</sup>, [Briac Toussaint]()<sup>2</sup>, [Jean-Sebastien Franco]()<sup>2</sup>, [Edmond Boyer] ()<sup>2</sup>*<br>
+*[Diego Thomas]()<sup>1</sup>, [Briac Toussaint]()<sup>2</sup>, [Jean-Sebastien Franco]()<sup>2</sup>, [Edmond Boyer]()<sup>2</sup>*<br>
 <sup>1</sup> Kyushu University, Fukuoka, Japan<br>
 <sup>2</sup> INRIA Rhone Alpes, Grenoble, France<br>
 
