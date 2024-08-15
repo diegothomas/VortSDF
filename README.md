@@ -1,7 +1,7 @@
 # VortSDF: 3D Modeling with Centroidal Voronoi Tesselation on Signed Distance Field
 Official implementation of ***VortSDF paper***
 
-### [Paper](https://arxiv.org/abs/2407.19837)<br><br>
+### [Paper](https://arxiv.org/abs/2407.19837)   [Web site](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/) <br><br> 
 [VortSDF: 3D Modeling with Centroidal Voronoi Tesselation on Signed Distance Field]()<br>
 *[Diego Thomas]()<sup>1</sup>, [Briac Toussaint]()<sup>2</sup>, [Jean-Sebastien Franco]()<sup>2</sup>, [Edmond Boyer]()<sup>2</sup>*<br>
 <sup>1</sup> Kyushu University, Fukuoka, Japan<br>
